@@ -3,7 +3,7 @@ import { useGameStore } from '../store/useGameStore';
 import { generateCharacter, generateCharacterImage, generateUltimateImage, preloadImage, AIConfig } from '../utils/ai';
 import { presetCharacters } from '../data/presetCharacters';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge } from 'lucide-react';
+import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown } from 'lucide-react';
 import { ParticleField } from './ParticleField';
 
 const LOADING_STEPS = [
@@ -52,6 +52,7 @@ export const CharacterCreateScreen: React.FC = () => {
   const [loadingStep, setLoadingStep] = useState(0);
   const [retryHint, setRetryHint] = useState<string | null>(null);
   const [selectingPreset, setSelectingPreset] = useState<string | null>(null);
+  const [isMarketOpen, setIsMarketOpen] = useState(false);
 
   const cycleLoadingSteps = () => {
     let step = 0;
@@ -154,6 +155,81 @@ export const CharacterCreateScreen: React.FC = () => {
   };
 
   const StepIcon = LOADING_STEPS[loadingStep].icon;
+
+  const featuredNames = new Set(['唐三', '孙悟空', '奥特曼', '钢铁侠', '梅西']);
+  const featuredPresets = presetCharacters.filter((p) => featuredNames.has(p.name));
+  const morePresets = presetCharacters.filter((p) => !featuredNames.has(p.name));
+
+  const renderPresetGrid = (items: typeof presetCharacters) => (
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+      {items.map((preset) => {
+        const isSelecting = selectingPreset === preset.name;
+        const isDisabled = isGenerating || !!selectingPreset;
+        return (
+          <motion.button
+            key={preset.name}
+            onClick={() => handleSelectPreset(preset)}
+            disabled={isDisabled}
+            whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
+            whileTap={!isDisabled ? { scale: 0.97 } : {}}
+            className="relative group text-left rounded-lg overflow-hidden border-2 transition-all disabled:opacity-50"
+            style={{
+              borderColor: `rgba(${themeColorHex}, 0.3)`,
+              backgroundColor: 'rgba(11, 12, 16, 0.8)',
+            }}
+          >
+            {/* 头像 */}
+            <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
+              {preset.imageUrl ? (
+                <img
+                  src={preset.imageUrl}
+                  alt={preset.name}
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-xl font-black font-display" style={{ color: themeColor }}>
+                  {preset.name[0]}
+                </div>
+              )}
+              {/* 选中加载遮罩 */}
+              {isSelecting && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    className="w-5 h-5 border-2 border-transparent rounded-full"
+                    style={{ borderTopColor: themeColor }}
+                  />
+                </div>
+              )}
+              {/* 名称条 */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
+                <div className="text-[10px] font-bold font-display truncate" style={{ color: themeColor }}>
+                  {preset.name}
+                </div>
+              </div>
+            </div>
+            {/* 数值 */}
+            <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
+              <span className="flex items-center gap-1 text-[#C5C6C7]">
+                <Heart size={8} className="text-pink-400" /> {preset.hp}
+              </span>
+              <span className="flex items-center gap-1 text-[#C5C6C7]">
+                <Zap size={8} className="text-yellow-400" /> {preset.attack}
+              </span>
+              <span className="flex items-center gap-1 text-[#C5C6C7]">
+                <Shield size={8} className="text-blue-400" /> {preset.defense}
+              </span>
+              <span className="flex items-center gap-1 text-[#C5C6C7]">
+                <Gauge size={8} className="text-green-400" /> {preset.speed}
+              </span>
+            </div>
+          </motion.button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden grid-bg">
@@ -313,81 +389,44 @@ export const CharacterCreateScreen: React.FC = () => {
 
         {/* 角色市场：预设角色，可直接选择跳过生成 */}
         <div className="mt-8 pt-6 border-t" style={{ borderColor: `rgba(${themeColorHex}, 0.2)` }}>
-          <div className="flex items-center gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => setIsMarketOpen((v) => !v)}
+            className="w-full flex items-center gap-2 mb-3 group"
+            aria-expanded={isMarketOpen}
+          >
             <Store size={14} style={{ color: themeColor }} />
             <h3 className="text-xs font-bold tracking-wider" style={{ color: themeColor }}>
               角色市场 · PRESET CHARACTERS
             </h3>
             <span className="text-[9px] text-[#8a8d91] ml-auto">一键选择 · 免生成</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {presetCharacters.map((preset) => {
-              const isSelecting = selectingPreset === preset.name;
-              const isDisabled = isGenerating || !!selectingPreset;
-              return (
-                <motion.button
-                  key={preset.name}
-                  onClick={() => handleSelectPreset(preset)}
-                  disabled={isDisabled}
-                  whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
-                  whileTap={!isDisabled ? { scale: 0.97 } : {}}
-                  className="relative group text-left rounded-lg overflow-hidden border-2 transition-all disabled:opacity-50"
-                  style={{
-                    borderColor: `rgba(${themeColorHex}, 0.3)`,
-                    backgroundColor: 'rgba(11, 12, 16, 0.8)',
-                  }}
-                >
-                  {/* 头像 */}
-                  <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
-                    {preset.imageUrl ? (
-                      <img
-                        src={preset.imageUrl}
-                        alt={preset.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xl font-black font-display" style={{ color: themeColor }}>
-                        {preset.name[0]}
-                      </div>
-                    )}
-                    {/* 选中加载遮罩 */}
-                    {isSelecting && (
-                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                          className="w-5 h-5 border-2 border-transparent rounded-full"
-                          style={{ borderTopColor: themeColor }}
-                        />
-                      </div>
-                    )}
-                    {/* 名称条 */}
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
-                      <div className="text-[10px] font-bold font-display truncate" style={{ color: themeColor }}>
-                        {preset.name}
-                      </div>
-                    </div>
-                  </div>
-                  {/* 数值 */}
-                  <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Heart size={8} className="text-pink-400" /> {preset.hp}
-                    </span>
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Zap size={8} className="text-yellow-400" /> {preset.attack}
-                    </span>
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Shield size={8} className="text-blue-400" /> {preset.defense}
-                    </span>
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Gauge size={8} className="text-green-400" /> {preset.speed}
-                    </span>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
+            <motion.div
+              animate={{ rotate: isMarketOpen ? 180 : 0 }}
+              transition={{ duration: 0.25 }}
+              style={{ color: themeColor }}
+            >
+              <ChevronDown size={14} />
+            </motion.div>
+          </button>
+          {/* 第一行：推荐角色 */}
+          {renderPresetGrid(featuredPresets)}
+
+          {/* 展开后：其余角色 */}
+          <AnimatePresence initial={false}>
+            {isMarketOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                className="overflow-hidden"
+              >
+                <div className="mt-2">
+                  {renderPresetGrid(morePresets)}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
     </div>

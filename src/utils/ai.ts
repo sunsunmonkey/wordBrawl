@@ -210,7 +210,7 @@ export const generateCharacterImage = async (
 };
 
 /**
- * 生成大招图片：根据 ultimateType 直接返回本地预设类型图路径
+ * 生成大招图片：根据 ultimateType 从该类型的图片池中随机挑选一张本地预设图
  * 不再调用远程图片 API，避免大招生成的不确定性与等待时间
  */
 export const generateUltimateImage = async (
@@ -219,5 +219,8 @@ export const generateUltimateImage = async (
   _player?: 1 | 2,
   _modelOverride?: string,
 ): Promise<string> => {
-  return getUltimateTypeById(ultimateType)?.imageUrl ?? getUltimateTypeById(ULTIMATE_TYPE_IDS[0])?.imageUrl ?? '';
+  const type = getUltimateTypeById(ultimateType) ?? getUltimateTypeById(ULTIMATE_TYPE_IDS[0]);
+  if (!type) return '';
+  const pool = [type.imageUrl, ...(type.alternateImageUrls || [])];
+  return pool[Math.floor(Math.random() * pool.length)];
 };

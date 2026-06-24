@@ -725,19 +725,13 @@ const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({ overlay }
   const isCharging = overlay.charging;
   const isWarning = overlay.warning;
   const isRelease = !isWarning && !isCharging;
-  // 释放阶段按站位定位：左侧大招靠左，右侧大招靠右
-  const justifyClass = isRelease
-    ? overlay.side === 'left'
-      ? 'justify-start pl-8 sm:pl-16'
-      : 'justify-end pr-8 sm:pr-16'
-    : 'justify-center';
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className={`fixed inset-0 z-50 flex items-center pointer-events-none ultimate-overlay ${justifyClass}`}
+      className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none ultimate-overlay"
     >
       {/* 基础背景闪光 */}
       <motion.div
@@ -843,36 +837,45 @@ const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({ overlay }
         )}
       </AnimatePresence>
 
-      {/* 释放阶段：大招图片 + 技能名 */}
+      {/* 释放阶段：大招图片铺满全屏 + 技能名叠加 */}
       <AnimatePresence>
         {isRelease && (
-          <motion.div
-            initial={{ scale: 0.3, opacity: 0, rotate: -20 }}
-            animate={{ scale: 1, opacity: 1, rotate: 0 }}
-            exit={{ scale: 1.5, opacity: 0 }}
-            transition={{ type: 'spring', bounce: 0.4, duration: 0.8 }}
-            className="relative z-10 flex flex-col items-center"
-          >
+          <>
+            {/* 全屏大招图片背景 */}
             {overlay.skillImageUrl ? (
               <motion.div
-                {...style.imageAnimation}
-                className="w-[70vw] max-w-xl h-auto rounded-xl overflow-hidden border-4"
-                style={{
-                  borderColor: style.theme,
-                  boxShadow: `0 0 60px ${style.theme}, 0 0 120px ${style.secondary}99`,
-                }}
+                initial={{ opacity: 0, scale: 1.15 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.05 }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+                className="absolute inset-0 z-0 overflow-hidden"
               >
-                <img
+                <motion.img
+                  {...style.imageAnimation}
                   src={overlay.skillImageUrl}
                   alt={overlay.skillName}
                   className="w-full h-full object-cover ultimate-image-shake"
+                />
+                {/* 底部渐变遮罩，保证文字可读 */}
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: `linear-gradient(180deg, ${style.theme}22 0%, transparent 30%, transparent 50%, rgba(0,0,0,0.85) 100%)`,
+                  }}
+                />
+                {/* 侧边色调染色（标识攻击方） */}
+                <div
+                  className="absolute inset-0 mix-blend-overlay"
+                  style={{
+                    background: `linear-gradient(90deg, ${sideColor}55 0%, transparent 50%, ${sideColor}55 100%)`,
+                  }}
                 />
               </motion.div>
             ) : (
               <motion.div
                 animate={{ scale: [1, 1.2, 1] }}
                 transition={{ duration: 0.6, repeat: Infinity }}
-                className="text-9xl font-black font-display"
+                className="absolute z-0 text-9xl font-black font-display"
                 style={{
                   color: style.theme,
                   textShadow: `0 0 40px ${style.theme}, 0 0 80px ${style.secondary}`,
@@ -881,15 +884,18 @@ const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({ overlay }
                 ☄
               </motion.div>
             )}
+
+            {/* 叠加文字信息（顶部技能名 + 底部署名） */}
             <motion.div
-              initial={{ y: 30, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="mt-6 text-center"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="absolute top-10 left-0 right-0 text-center px-4 z-20"
             >
               <div
                 className="text-xs tracking-[0.5em] mb-2"
-                style={{ color: style.theme }}
+                style={{ color: style.theme, textShadow: `0 0 10px ${style.theme}` }}
               >
                 ▼ ULTIMATE SKILL ▼
               </div>
@@ -900,9 +906,18 @@ const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({ overlay }
               >
                 {overlay.skillName}
               </h2>
-              <div className="text-sm text-white/80 mt-2 tracking-wider">— {overlay.attackerName} —</div>
             </motion.div>
-          </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ delay: 0.4, duration: 0.5 }}
+              className="absolute bottom-10 left-0 right-0 text-center z-20"
+            >
+              <div className="text-sm text-white/90 tracking-wider">— {overlay.attackerName} —</div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </motion.div>

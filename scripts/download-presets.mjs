@@ -28,31 +28,85 @@ const presetDefs = [
     name: '赛博武士',
     avatarSeed: 101,
     imagePrompt: 'cyberpunk samurai with neon cyan katana, glowing oni mask, futuristic armor',
+    ultimateImagePrompt: 'cyberpunk samurai unleashing amaterasu cyan flame katana slash, thousand blade reflections, dark void, anime key visual',
   },
   {
     name: '星辰法师',
     avatarSeed: 202,
     imagePrompt: 'cosmic mage with starry purple cloak, glowing galaxy energy in hands, arcane symbols',
+    ultimateImagePrompt: 'cosmic mage creating big bang explosion, galaxies and stars swirling, purple blue stellar energy, anime key visual',
   },
   {
     name: '机械暴君',
     avatarSeed: 303,
     imagePrompt: 'giant mecha robot with heavy dark armor, red glowing eyes, industrial cyberpunk design',
+    ultimateImagePrompt: 'giant mecha robot firing all weapons, missile swarm, plasma cannons, city destruction, warzone, anime key visual',
   },
   {
     name: '暗影刺客',
     avatarSeed: 404,
     imagePrompt: 'dark ninja assassin with glowing red eyes, black shadow cloak, dual glowing daggers',
+    ultimateImagePrompt: 'dark ninja assassin creating thousand shadow blade slashes, crimson slash marks, black mist explosion, anime key visual',
   },
   {
     name: '烈焰女王',
     avatarSeed: 505,
     imagePrompt: 'fire queen with crown of flames, flowing red and orange hair, blazing dress, golden eyes',
+    ultimateImagePrompt: 'fire queen summoning inferno apocalypse, phoenix wings spread, lava erupting, burning sky, anime key visual',
   },
   {
     name: '冰霜巨人',
     avatarSeed: 606,
     imagePrompt: 'ice giant warrior with crystal blue armor, frozen massive hammer, glowing frost aura',
+    ultimateImagePrompt: 'ice giant warrior unleashing absolute zero blast, massive crystal ice shards explosion, frozen blue wasteland, anime key visual',
+  },
+  {
+    name: '唐三',
+    avatarSeed: 707,
+    imagePrompt: 'Tang San from Soul Land, young warrior with blue silver grass aura, sea god trident, elegant white and blue robes, glowing cyan eyes, anime style',
+    ultimateImagePrompt: 'Tang San as Sea God wielding golden trident, golden blue wave rings, divine ocean energy explosion, anime key visual',
+  },
+  {
+    name: '孙悟空',
+    avatarSeed: 808,
+    imagePrompt: 'Sun Wukong the Monkey King, golden fur, fiery eyes, holding Ruyi Jingu Bang staff, red and gold armor, clouds under feet, anime style',
+    ultimateImagePrompt: 'Sun Wukong giant form holding massive Ruyi Jingu Bang, golden fire aura, clouds breaking apart, mountain shattering, anime key visual',
+  },
+  {
+    name: '奥特曼',
+    avatarSeed: 909,
+    imagePrompt: 'Ultraman, silver and red armored giant hero, glowing color timer, heroic pose, cosmic background, anime style',
+    ultimateImagePrompt: 'Ultraman firing brilliant silver blue spacium beam, glowing heroic pose, cosmic light explosion, anime key visual',
+  },
+  {
+    name: '钢铁侠',
+    avatarSeed: 1010,
+    imagePrompt: 'Iron Man in advanced red and gold nanotech armor, arc reactor glowing, repulsor hands, flying pose, dark tech background, anime style',
+    ultimateImagePrompt: 'Iron Man Hulkbuster armor unleashing all weapons, red gold missiles and repulsors, massive explosion, warzone, anime key visual',
+  },
+  {
+    name: '梅西',
+    avatarSeed: 1111,
+    imagePrompt: 'Lionel Messi as an anime champion, wearing Argentina blue and white striped jersey, golden football aura, dribbling pose, stadium lights, anime style',
+    ultimateImagePrompt: 'Lionel Messi scoring legendary goal on green football field, golden ball trail, stadium lights explosion, anime key visual',
+  },
+  {
+    name: 'C罗',
+    avatarSeed: 1212,
+    imagePrompt: 'Cristiano Ronaldo as an anime ace, Portugal red and green jersey, muscular physique, mid-air bicycle kick pose, golden energy, stadium background, anime style',
+    ultimateImagePrompt: 'Cristiano Ronaldo bicycle kick mid air, golden lightning trail, roaring stadium crowd, anime key visual',
+  },
+  {
+    name: '卡卡西',
+    avatarSeed: 1313,
+    imagePrompt: 'Kakashi Hatake, silver spiky hair, mask covering lower face, sharingan eye glowing red, lightning chakra around hand, blue flak jacket, anime style',
+    ultimateImagePrompt: 'Kakashi using Kamui and Chidori, red sharingan spiral, lightning tearing through distorted space, anime key visual',
+  },
+  {
+    name: '超梦',
+    avatarSeed: 1414,
+    imagePrompt: 'Mewtwo, psychic Pokemon, purple and white feline humanoid, glowing purple eyes, telekinetic aura, futuristic lab background, anime style',
+    ultimateImagePrompt: 'Mewtwo unleashing psychic storm, purple telekinetic energy wave, reality distortion, futuristic lab destruction, anime key visual',
   },
 ];
 
@@ -134,6 +188,7 @@ function hashStringToSeed(str) {
 }
 
 const avatarFilename = (name) => `preset_avatar_${name}.jpg`;
+const ultimateFilename = (name) => `preset_ultimate_${name}.jpg`;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -173,6 +228,7 @@ const download = (url, destPath) =>
 const main = async () => {
   await fs.mkdir(path.join(OUT_DIR, 'avatars'), { recursive: true });
   await fs.mkdir(path.join(OUT_DIR, 'ultimates', 'types'), { recursive: true });
+  await fs.mkdir(path.join(OUT_DIR, 'ultimates', 'characters'), { recursive: true });
 
   const tasks = [];
   for (const def of presetDefs) {
@@ -180,6 +236,11 @@ const main = async () => {
       name: `${def.name} 头像`,
       url: buildAvatarUrl(def.imagePrompt, def.avatarSeed),
       dest: path.join(OUT_DIR, 'avatars', avatarFilename(def.name)),
+    });
+    tasks.push({
+      name: `${def.name} 大招`,
+      url: buildTypeUrl(def.ultimateImagePrompt),
+      dest: path.join(OUT_DIR, 'ultimates', 'characters', ultimateFilename(def.name)),
     });
   }
   for (const type of ultimateTypes) {
