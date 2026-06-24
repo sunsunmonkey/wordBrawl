@@ -1,0 +1,214 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0B0C10] text-[#C5C6C7] antialiased selection:bg-[#66FCF1] selection:text-[#0B0C10];
+    font-family: 'Rajdhani', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    background-image: 
+      radial-gradient(ellipse at top, rgba(102, 252, 241, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom, rgba(255, 0, 60, 0.08) 0%, transparent 50%),
+      linear-gradient(180deg, #0B0C10 0%, #06070a 100%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .glitch-hover:hover {
+    animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite;
+  }
+
+  .glitch-text {
+    position: relative;
+    animation: glitch-text 3s infinite linear alternate-reverse;
+  }
+  .glitch-text::before,
+  .glitch-text::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+  .glitch-text::before {
+    text-shadow: 2px 0 #FF003C;
+    clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%);
+    animation: glitch-anim-1 2s infinite linear alternate-reverse;
+  }
+  .glitch-text::after {
+    text-shadow: -2px 0 #66FCF1;
+    clip-path: polygon(0 60%, 100% 60%, 100% 100%, 0 100%);
+    animation: glitch-anim-2 2s infinite linear alternate-reverse;
+  }
+
+  .scanlines::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(transparent 0%, rgba(102, 252, 241, 0.04) 50%, transparent 100%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    animation: scanline-move 6s linear infinite;
+    mix-blend-mode: overlay;
+  }
+
+  .neon-border {
+    box-shadow: 
+      0 0 5px currentColor,
+      0 0 10px currentColor,
+      inset 0 0 5px rgba(255, 255, 255, 0.1);
+  }
+
+  .grid-bg {
+    background-image: 
+      linear-gradient(rgba(102, 252, 241, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(102, 252, 241, 0.07) 1px, transparent 1px);
+    background-size: 40px 40px;
+    animation: grid-pan 20s linear infinite;
+  }
+
+  .text-glow-cyan {
+    text-shadow: 0 0 6px #66FCF1, 0 0 18px rgba(102, 252, 241, 0.6);
+  }
+  .text-glow-pink {
+    text-shadow: 0 0 6px #FF003C, 0 0 18px rgba(255, 0, 60, 0.6);
+  }
+
+  .corner-frame::before, .corner-frame::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+  }
+  .corner-frame::before {
+    top: -1px; left: -1px;
+    border-right: none; border-bottom: none;
+  }
+  .corner-frame::after {
+    bottom: -1px; right: -1px;
+    border-left: none; border-top: none;
+  }
+
+  .crt-flicker {
+    animation: crt-flicker 4s infinite;
+  }
+}
+
+/* === Keyframes === */
+@keyframes glitch-skew {
+  0%, 100% { transform: skew(0deg); }
+  20% { transform: skew(-2deg) translateX(1px); }
+  40% { transform: skew(2deg) translateX(-1px); }
+  60% { transform: skew(-1deg); }
+  80% { transform: skew(1deg); }
+}
+
+@keyframes glitch-anim-1 {
+  0% { clip-path: polygon(0 2%, 100% 2%, 100% 5%, 0 5%); }
+  20% { clip-path: polygon(0 25%, 100% 25%, 100% 30%, 0 30%); }
+  40% { clip-path: polygon(0 50%, 100% 50%, 100% 51%, 0 51%); }
+  60% { clip-path: polygon(0 70%, 100% 70%, 100% 75%, 0 75%); }
+  80% { clip-path: polygon(0 90%, 100% 90%, 100% 92%, 0 92%); }
+  100% { clip-path: polygon(0 5%, 100% 5%, 100% 8%, 0 8%); }
+}
+
+@keyframes glitch-anim-2 {
+  0% { clip-path: polygon(0 35%, 100% 35%, 100% 38%, 0 38%); }
+  50% { clip-path: polygon(0 55%, 100% 55%, 100% 60%, 0 60%); }
+  100% { clip-path: polygon(0 80%, 100% 80%, 100% 85%, 0 85%); }
+}
+
+@keyframes glitch-text {
+  0%, 100% { text-shadow: 0 0 6px #66FCF1; }
+  50% { text-shadow: -2px 0 #FF003C, 2px 0 #66FCF1, 0 0 12px #66FCF1; }
+}
+
+@keyframes scanline-move {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100px; }
+}
+
+@keyframes grid-pan {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 40px; }
+}
+
+@keyframes crt-flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.85; }
+  94% { opacity: 1; }
+  96% { opacity: 0.95; }
+  97% { opacity: 1; }
+}
+
+@keyframes shake-screen {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-4px, 2px); }
+  20% { transform: translate(4px, -2px); }
+  30% { transform: translate(-3px, -3px); }
+  40% { transform: translate(3px, 3px); }
+  50% { transform: translate(-2px, 2px); }
+  60% { transform: translate(2px, -2px); }
+  70% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, 0); }
+  90% { transform: translate(0, -1px); }
+}
+
+.shake { animation: shake-screen 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+
+@keyframes hit-flash {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(255, 255, 255, 0.3); }
+}
+.hit-flash { animation: hit-flash 0.3s ease-out; }
+
+@keyframes damage-float {
+  0% { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
+  20% { transform: translate(-50%, -20px) scale(1.4); opacity: 1; }
+  100% { transform: translate(-50%, -80px) scale(1); opacity: 0; }
+}
+.damage-float { animation: damage-float 1.2s ease-out forwards; }
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 12px currentColor, 0 0 24px currentColor; }
+  50% { box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
+}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+@keyframes float-up {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+  100% { transform: translateY(0); }
+}
+.float-up { animation: float-up 3s ease-in-out infinite; }
+
+@keyframes spark-rise {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-100vh) scale(0); opacity: 0; }
+}
+.spark-particle {
+  animation: spark-rise linear infinite;
+}
+
+@keyframes slash-fade {
+  0% { transform: scale(0) rotate(-30deg); opacity: 0; }
+  20% { transform: scale(1.2) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1.5) rotate(20deg); opacity: 0; }
+}
+.slash-effect { animation: slash-fade 0.5s ease-out forwards; }
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1F2833;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #66FCF1, #45A29E);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #66FCF1;
+}
