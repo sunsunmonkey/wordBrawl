@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useGameStore } from "../store/useGameStore";
+import React, { useState, useEffect } from "react";
+import { useGameStore, BattleMode } from "../store/useGameStore";
 import { motion } from "framer-motion";
 import {
   Key,
@@ -9,16 +9,25 @@ import {
   Cpu,
   Zap,
   AlertTriangle,
+  Bot,
+  Hand,
 } from "lucide-react";
 import { ParticleField } from "./ParticleField";
 
 export const WelcomeScreen: React.FC = () => {
-  const { apiKey, baseUrl, model, setApiKey, setBaseUrl, setModel, setPhase } =
+  const { apiKey, baseUrl, model, battleMode, setApiKey, setBaseUrl, setModel, setBattleMode, setPhase } =
     useGameStore();
   const [inputKey, setInputKey] = useState(apiKey);
   const [inputBaseUrl, setInputBaseUrl] = useState(baseUrl);
   const [inputModel, setInputModel] = useState(model);
   const [error, setError] = useState("");
+
+  // 同步持久化的配置到输入框（处理 hydrate 时序问题）
+  useEffect(() => {
+    setInputKey(apiKey);
+    setInputBaseUrl(baseUrl);
+    setInputModel(model);
+  }, [apiKey, baseUrl, model]);
 
   const handleStart = () => {
     const k = inputKey.trim();
@@ -144,7 +153,7 @@ export const WelcomeScreen: React.FC = () => {
               type="text"
               value={inputModel}
               onChange={(e) => setInputModel(e.target.value)}
-              placeholder="ep-xxxxxxx 或 doubao-xxx"
+              placeholder=""
               className={inputBaseClass}
             />
           </div>
@@ -158,12 +167,11 @@ export const WelcomeScreen: React.FC = () => {
               type="password"
               value={inputKey}
               onChange={(e) => setInputKey(e.target.value)}
-              placeholder="sk-... 或 ARK key"
+              placeholder="sk-..."
               className={inputBaseClass}
             />
             <p className="text-xs text-[#8a8d91] mt-2 leading-relaxed">
-              <span className="text-[#66FCF1]">▸</span> 兼容 OpenAI /
-              火山方舟（ARK）等端点 · 头像由 Pollinations 免费生图
+              <span className="text-[#66FCF1]">▸</span> 请使用 OpenAI api 格式
             </p>
           </div>
 
@@ -172,6 +180,47 @@ export const WelcomeScreen: React.FC = () => {
               <AlertTriangle size={14} /> {error}
             </div>
           )}
+
+          {/* 战斗模式选择 */}
+          <div className="mb-4">
+            <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
+              <Zap size={14} />
+              BATTLE MODE
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setBattleMode('auto')}
+                className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
+                  battleMode === 'auto'
+                    ? 'border-[#66FCF1] bg-[#66FCF1]/10 text-[#66FCF1]'
+                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#66FCF1]/50'
+                }`}
+                style={battleMode === 'auto' ? { boxShadow: '0 0 12px rgba(102,252,241,0.4)' } : {}}
+              >
+                <Bot size={20} />
+                <span className="text-xs font-bold tracking-wider">AUTO</span>
+                <span className="text-[9px] opacity-70">AI 自动对战</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBattleMode('manual')}
+                className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
+                  battleMode === 'manual'
+                    ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]'
+                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#FFD700]/50'
+                }`}
+                style={battleMode === 'manual' ? { boxShadow: '0 0 12px rgba(255,215,0,0.4)' } : {}}
+              >
+                <Hand size={20} />
+                <span className="text-xs font-bold tracking-wider">MANUAL</span>
+                <span className="text-[9px] opacity-70">手动选技能</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-[#8a8d91] mt-2 leading-relaxed">
+              <span className="text-[#66FCF1]">▸</span> {battleMode === 'auto' ? 'AI 自动模拟整场战斗' : 'P1 先选技能 → P2 再选技能，轮流出手'}
+            </p>
+          </div>
 
           <motion.button
             onClick={handleStart}
