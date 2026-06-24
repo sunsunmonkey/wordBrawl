@@ -1,10 +1,25 @@
 import { CharacterData, BattleEvent, Skill } from '../store/useGameStore';
 
 const ULTIMATE_THRESHOLD = 100; // 大招充能阈值
-const CHARGE_PER_TURN = 25; // 每回合充能
-const CHARGE_PER_HIT = 12; // 受击充能
 
-export { ULTIMATE_THRESHOLD, CHARGE_PER_TURN, CHARGE_PER_HIT };
+// ===== 充能算法参数（多维度，让不同角色充能节奏差异化）=====
+const BASE_CHARGE_PER_TURN = 8; // 基础每回合充能（固定部分）
+const SPEED_CHARGE_FACTOR = 0.15; // 速度 → 充能：速度越快越先出手且充能越多
+const DAMAGE_DEALT_CHARGE_FACTOR = 0.12; // 造成伤害 → 充能：攻击型角色充能更快
+const DAMAGE_TAKEN_CHARGE_FACTOR = 0.2; // 受击伤害 → 充能：肉盾/反击型角色充能更快
+const CRIT_CHARGE_BONUS = 15; // 暴击额外充能
+const LOW_HP_RAGE_THRESHOLD = 0.3; // 血量低于 30% 触发狂暴
+const LOW_HP_RAGE_MULTIPLIER = 1.5; // 狂暴时充能倍率（绝地反击）
+// 不同技能类型的额外充能（辅助技能也有充能收益）
+const SKILL_TYPE_CHARGE_BONUS: Record<string, number> = {
+  attack: 0,
+  heal: 8,
+  buff: 10,
+  debuff: 10,
+  ultimate: 0,
+};
+
+export { ULTIMATE_THRESHOLD };
 
 export interface SkillResult {
   log: BattleEvent;
@@ -111,6 +126,19 @@ export class BattleEngine {
     }
   }
 
+  /** 低血量狂暴倍率：HP 低于阈值时充能加速（绝地反击） */
+  private getRageMultiplier(c: CharacterData): number {
+    return c.hp / c.maxHp < LOW_HP_RAGE_THRESHOLD ? LOW_HP_RAGE_MULTIPLIER : 1;
+  }
+
+  /** 累加充能（带上限与可选倍率） */
+  private addCharge(c: CharacterData, amount: number, multiplier = 1) {
+    const gain = Math.floor(amount * multiplier);
+    if (gain > 0) {
+      c.ultimateCharge = Math.min(ULTIMATE_THRESHOLD, c.ultimateCharge + gain);
+    }
+  }
+
   /**
    * 执行单个技能（手动模式核心）。
    * attackerId 指定谁出手，skill 由调用方传入。
@@ -121,8 +149,10 @@ export class BattleEngine {
     const attacker = isP1 ? this.p1 : this.p2;
     const defender = isP1 ? this.p2 : this.p1;
 
-    // 回合开始：充能 + buff 递减
-    attacker.ultimateCharge = Math.min(ULTIMATE_THRESHOLD, attacker.ultimateCharge + CHARGE_PER_TURN);
+    // 回合开始：基础充能 + 速度加成 + 低血量狂暴
+    const speedBonus = Math.floor(attacker.speed * SPEED_CHARGE_FACTOR);
+    const turnCharge = BASE_CHARGE_PER_TURN + speedBonus;
+    this.addCharge(attacker, turnCharge, this.getRageMultiplier(attacker));
     this.tickBuffs(attacker);
 
     const isUlt = skill.type === 'ultimate' || skill.isUltimate;
@@ -169,9 +199,23 @@ export class BattleEngine {
       }
     }
 
-    // 受击方充能
+    // 受击方充能：按承受伤害比例 + 低血量狂暴（肉盾/反击型角色充能更快）
     if (damage && defender.hp > 0) {
-      defender.ultimateCharge = Math.min(ULTIMATE_THRESHOLD, defender.ultimateCharge + CHARGE_PER_HIT);
+      this.addCharge(defender, damage * DAMAGE_TAKEN_CHARGE_FACTOR, this.getRageMultiplier(defender));
+    }
+
+    // 攻击方额外充能：造成伤害 + 暴击 + 技能类型加成（攻击型角色充能更快）
+    if (!isUlt) {
+      if (damage) {
+        this.addCharge(attacker, damage * DAMAGE_DEALT_CHARGE_FACTOR);
+      }
+      if (isCrit) {
+        this.addCharge(attacker, CRIT_CHARGE_BONUS);
+      }
+      const typeBonus = SKILL_TYPE_CHARGE_BONUS[skill.type] || 0;
+      if (typeBonus > 0) {
+        this.addCharge(attacker, typeBonus);
+      }
     }
 
     const log: BattleEvent = {
