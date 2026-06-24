@@ -6,6 +6,8 @@ export interface UltimateType {
   imagePrompt: string;
   /** 运行时本地图片路径 */
   imageUrl: string;
+  /** 同类型备选图路径（AI 生成角色可随机使用，增加视觉多样性） */
+  alternateImageUrls?: string[];
   /** 主色调（用于边框、光晕、标题） */
   themeColor: string;
   /** 副色调（用于背景渐变、放射光） */
@@ -25,6 +27,10 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'inferno hellfire ultimate skill, massive fire tornado, burning apocalyptic sky, explosive flames, anime key visual',
     imageUrl: '/presets/ultimates/types/fire.jpg',
+    alternateImageUrls: [
+      '/presets/ultimates/characters/preset_ultimate_烈焰女王.jpg',
+      '/presets/ultimates/characters/preset_ultimate_孙悟空.jpg',
+    ],
     themeColor: '#FF4500',
     secondaryColor: '#FFD700',
   },
@@ -35,6 +41,7 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'absolute zero ice blast ultimate skill, massive crystal ice shards explosion, frozen blue wasteland, anime key visual',
     imageUrl: '/presets/ultimates/types/ice.jpg',
+    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_冰霜巨人.jpg'],
     themeColor: '#00E5FF',
     secondaryColor: '#A0E8FF',
   },
@@ -45,6 +52,10 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'shadow void ultimate skill, thousand dark blades slashing, crimson slash marks, dark energy explosion, anime key visual',
     imageUrl: '/presets/ultimates/types/shadow.jpg',
+    alternateImageUrls: [
+      '/presets/ultimates/characters/preset_ultimate_赛博武士.jpg',
+      '/presets/ultimates/characters/preset_ultimate_暗影刺客.jpg',
+    ],
     themeColor: '#BF00FF',
     secondaryColor: '#FF003C',
   },
@@ -55,6 +66,10 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'lightning storm ultimate skill, massive thunderbolt striking, electric energy explosion, stormy sky, anime key visual',
     imageUrl: '/presets/ultimates/types/lightning.jpg',
+    alternateImageUrls: [
+      '/presets/ultimates/characters/preset_ultimate_C罗.jpg',
+      '/presets/ultimates/characters/preset_ultimate_卡卡西.jpg',
+    ],
     themeColor: '#FFFF00',
     secondaryColor: '#9D00FF',
   },
@@ -65,16 +80,22 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'cosmic ultimate skill, big bang explosion, galaxies and stars swirling, purple blue cosmic energy, anime key visual',
     imageUrl: '/presets/ultimates/types/cosmic.jpg',
+    alternateImageUrls: [
+      '/presets/ultimates/characters/preset_ultimate_星辰法师.jpg',
+      '/presets/ultimates/characters/preset_ultimate_唐三.jpg',
+      '/presets/ultimates/characters/preset_ultimate_超梦.jpg',
+    ],
     themeColor: '#9D00FF',
     secondaryColor: '#00E5FF',
   },
   {
     id: 'nature',
     name: '自然狂潮',
-    description: '森林、藤蔓、生命、剧毒等自然效果',
+    description: '森林、藤蔓、生命、绿茵等自然效果',
     imagePrompt:
       'nature ultimate skill, giant ancient tree awakening, poisonous vines explosion, green life energy surge, anime key visual',
     imageUrl: '/presets/ultimates/types/nature.jpg',
+    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_梅西.jpg'],
     themeColor: '#39FF14',
     secondaryColor: '#ADFF2F',
   },
@@ -85,16 +106,21 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'mecha ultimate skill, giant robot firing all weapons, massive explosion destruction, fire smoke plasma, warzone, anime key visual',
     imageUrl: '/presets/ultimates/types/mecha.jpg',
+    alternateImageUrls: [
+      '/presets/ultimates/characters/preset_ultimate_机械暴君.jpg',
+      '/presets/ultimates/characters/preset_ultimate_钢铁侠.jpg',
+    ],
     themeColor: '#FF6B00',
     secondaryColor: '#C0C0C0',
   },
   {
     id: 'holy',
     name: '圣光裁决',
-    description: '神圣、光剑、审判、天使等光辉效果',
+    description: '神圣、光剑、审判、光之巨人等光辉效果',
     imagePrompt:
       'holy light ultimate skill, angelic judgment beam, golden sacred sword falling from sky, radiant explosion, anime key visual',
     imageUrl: '/presets/ultimates/types/holy.jpg',
+    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_奥特曼.jpg'],
     themeColor: '#FFD700',
     secondaryColor: '#FFFFFF',
   },

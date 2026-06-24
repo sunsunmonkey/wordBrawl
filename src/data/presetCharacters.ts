@@ -1,5 +1,5 @@
 import { CharacterData, Skill } from '../store/useGameStore';
-import { ULTIMATE_TYPES, getUltimateTypeById } from './ultimateTypes';
+import { ULTIMATE_TYPES } from './ultimateTypes';
 
 /**
  * 构造 pollinations 头像 URL（与 ai.ts 中逻辑保持一致，但使用固定 seed 保证预设角色头像稳定）
@@ -28,6 +28,8 @@ interface PresetCharacterDef {
   avatarSeed: number;
   /** 大招视觉类型 ID */
   ultimateType: string;
+  /** 专属大招图英文提示词 */
+  ultimateImagePrompt: string;
   skills: Skill[];
 }
 
@@ -41,6 +43,7 @@ const presetDefs: PresetCharacterDef[] = [
     imagePrompt: 'cyberpunk samurai with neon cyan katana, glowing oni mask, futuristic armor',
     avatarSeed: 101,
     ultimateType: 'shadow',
+    ultimateImagePrompt: 'cyberpunk samurai unleashing amaterasu cyan flame katana slash, thousand blade reflections, dark void, anime key visual',
     skills: [
       { name: '拔刀斩', description: '快速拔刀的一击，刀光如电', damageMultiplier: 1.0, type: 'attack' },
       { name: '居合·烈', description: '居合术的极致，一瞬间的拔刀重斩', damageMultiplier: 1.6, type: 'attack' },
@@ -64,6 +67,7 @@ const presetDefs: PresetCharacterDef[] = [
     imagePrompt: 'cosmic mage with starry purple cloak, glowing galaxy energy in hands, arcane symbols',
     avatarSeed: 202,
     ultimateType: 'cosmic',
+    ultimateImagePrompt: 'cosmic mage creating big bang explosion, galaxies and stars swirling, purple blue stellar energy, anime key visual',
     skills: [
       { name: '星辰术', description: '凝聚星光化为法弹', damageMultiplier: 1.0, type: 'attack' },
       { name: '超新星', description: '引爆恒星碎屑', damageMultiplier: 1.7, type: 'attack' },
@@ -87,6 +91,7 @@ const presetDefs: PresetCharacterDef[] = [
     imagePrompt: 'giant mecha robot with heavy dark armor, red glowing eyes, industrial cyberpunk design',
     avatarSeed: 303,
     ultimateType: 'mecha',
+    ultimateImagePrompt: 'giant mecha robot firing all weapons, missile swarm, plasma cannons, city destruction, warzone, anime key visual',
     skills: [
       { name: '液压重拳', description: '机械臂重击', damageMultiplier: 1.0, type: 'attack' },
       { name: '等离子炮', description: '发射等离子能量束', damageMultiplier: 1.5, type: 'attack' },
@@ -110,6 +115,7 @@ const presetDefs: PresetCharacterDef[] = [
     imagePrompt: 'dark ninja assassin with glowing red eyes, black shadow cloak, dual glowing daggers',
     avatarSeed: 404,
     ultimateType: 'shadow',
+    ultimateImagePrompt: 'dark ninja assassin creating thousand shadow blade slashes, crimson slash marks, black mist explosion, anime key visual',
     skills: [
       { name: '暗影刃', description: '淬毒匕首突刺', damageMultiplier: 1.0, type: 'attack' },
       { name: '致命背刺', description: '绕后背刺要害', damageMultiplier: 1.8, type: 'attack' },
@@ -133,6 +139,7 @@ const presetDefs: PresetCharacterDef[] = [
     imagePrompt: 'fire queen with crown of flames, flowing red and orange hair, blazing dress, golden eyes',
     avatarSeed: 505,
     ultimateType: 'fire',
+    ultimateImagePrompt: 'fire queen summoning inferno apocalypse, phoenix wings spread, lava erupting, burning sky, anime key visual',
     skills: [
       { name: '火球术', description: '抛射烈焰球', damageMultiplier: 1.0, type: 'attack' },
       { name: '烈焰风暴', description: '召唤火焰旋风', damageMultiplier: 1.6, type: 'attack' },
@@ -156,6 +163,7 @@ const presetDefs: PresetCharacterDef[] = [
     imagePrompt: 'ice giant warrior with crystal blue armor, frozen massive hammer, glowing frost aura',
     avatarSeed: 606,
     ultimateType: 'ice',
+    ultimateImagePrompt: 'ice giant warrior unleashing absolute zero blast, massive crystal ice shards explosion, frozen blue wasteland, anime key visual',
     skills: [
       { name: '冰锤击', description: '冰晶巨锤砸下', damageMultiplier: 1.0, type: 'attack' },
       { name: '寒冰裂破', description: '冰刺从地底迸发', damageMultiplier: 1.5, type: 'attack' },
@@ -170,21 +178,214 @@ const presetDefs: PresetCharacterDef[] = [
       },
     ],
   },
+  {
+    name: '唐三',
+    hp: 240,
+    attack: 34,
+    defense: 16,
+    speed: 50,
+    imagePrompt: 'Tang San from Soul Land, young warrior with blue silver grass aura, sea god trident, elegant white and blue robes, glowing cyan eyes, anime style',
+    avatarSeed: 707,
+    ultimateType: 'cosmic',
+    ultimateImagePrompt: 'Tang San as Sea God wielding golden trident, golden blue wave rings, divine ocean energy explosion, anime key visual',
+    skills: [
+      { name: '蓝银缠绕', description: '蓝银皇藤蔓破土而出，束缚对手', damageMultiplier: 1.0, type: 'attack' },
+      { name: '昊天锤', description: '召唤昊天锤重击，力破千军', damageMultiplier: 1.6, type: 'attack' },
+      { name: '玄天功', description: '运转玄天功，战意暴涨', damageMultiplier: 0, type: 'buff', buffPercent: 35, buffTurns: 3 },
+      { name: '紫极魔瞳', description: '紫极魔瞳洞悉破绽，削弱对手防御', damageMultiplier: 0, type: 'debuff', buffPercent: 30, buffTurns: 2 },
+      {
+        name: '海神·无定风波',
+        description: '海神三叉戟划出金色光环，天地失色，万物在神威中归于寂静',
+        damageMultiplier: 3.2,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: '孙悟空',
+    hp: 260,
+    attack: 36,
+    defense: 14,
+    speed: 70,
+    imagePrompt: 'Sun Wukong the Monkey King, golden fur, fiery eyes, holding Ruyi Jingu Bang staff, red and gold armor, clouds under feet, anime style',
+    avatarSeed: 808,
+    ultimateType: 'fire',
+    ultimateImagePrompt: 'Sun Wukong giant form holding massive Ruyi Jingu Bang, golden fire aura, clouds breaking apart, mountain shattering, anime key visual',
+    skills: [
+      { name: '金箍棒', description: '如意金箍棒伸缩自如，横扫千军', damageMultiplier: 1.0, type: 'attack' },
+      { name: '七十二变', description: '化身万千，虚实难辨的连击', damageMultiplier: 1.5, type: 'attack' },
+      { name: '火眼金睛', description: '识破虚妄，攻击力大幅提升', damageMultiplier: 0, type: 'buff', buffPercent: 40, buffTurns: 2 },
+      { name: '筋斗云', description: '腾云驾雾，让对手难以命中', damageMultiplier: 0, type: 'debuff', buffPercent: 30, buffTurns: 2 },
+      {
+        name: '法天象地',
+        description: '身躯暴涨万丈，金箍棒化作擎天巨柱，一棒碎裂山河',
+        damageMultiplier: 3.4,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: '奥特曼',
+    hp: 300,
+    attack: 28,
+    defense: 20,
+    speed: 55,
+    imagePrompt: 'Ultraman, silver and red armored giant hero, glowing color timer, heroic pose, cosmic background, anime style',
+    avatarSeed: 909,
+    ultimateType: 'holy',
+    ultimateImagePrompt: 'Ultraman firing brilliant silver blue spacium beam, glowing heroic pose, cosmic light explosion, anime key visual',
+    skills: [
+      { name: '斯派修姆光线', description: '双臂交叉释放经典光束', damageMultiplier: 1.0, type: 'attack' },
+      { name: '奥特飞踢', description: '从高空俯冲的爆裂飞踢', damageMultiplier: 1.6, type: 'attack' },
+      { name: '光之护盾', description: '展开光墙提升防御', damageMultiplier: 0, type: 'buff', buffPercent: 40, buffTurns: 2 },
+      { name: '奥特念力', description: '以念力压制对手，削弱其攻击', damageMultiplier: 0, type: 'debuff', buffPercent: 30, buffTurns: 2 },
+      {
+        name: '闪耀·斯派修姆光线',
+        description: '全身光芒汇聚于双臂，释放出净化一切的终极光束，黑暗无所遁形',
+        damageMultiplier: 3.0,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: '钢铁侠',
+    hp: 320,
+    attack: 30,
+    defense: 22,
+    speed: 60,
+    imagePrompt: 'Iron Man in advanced red and gold nanotech armor, arc reactor glowing, repulsor hands, flying pose, dark tech background, anime style',
+    avatarSeed: 1010,
+    ultimateType: 'mecha',
+    ultimateImagePrompt: 'Iron Man Hulkbuster armor unleashing all weapons, red gold missiles and repulsors, massive explosion, warzone, anime key visual',
+    skills: [
+      { name: '掌心炮', description: '掌心的电弧脉冲炮齐射', damageMultiplier: 1.0, type: 'attack' },
+      { name: '集束炸弹', description: '发射微型导弹火力覆盖', damageMultiplier: 1.5, type: 'attack' },
+      { name: '能量护盾', description: '展开纳米能量场防御', damageMultiplier: 0, type: 'buff', buffPercent: 35, buffTurns: 3 },
+      { name: '电磁干扰', description: '释放 EMP 扰乱对手系统', damageMultiplier: 0, type: 'debuff', buffPercent: 30, buffTurns: 2 },
+      {
+        name: '反浩克装甲·最终协议',
+        description: '调用重型装甲，全身武器库全开，以钢铁洪流终结战斗',
+        damageMultiplier: 3.2,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: '梅西',
+    hp: 200,
+    attack: 26,
+    defense: 12,
+    speed: 85,
+    imagePrompt: 'Lionel Messi as an anime champion, wearing Argentina blue and white striped jersey, golden football aura, dribbling pose, stadium lights, anime style',
+    avatarSeed: 1111,
+    ultimateType: 'nature',
+    ultimateImagePrompt: 'Lionel Messi scoring legendary goal on green football field, golden ball trail, stadium lights explosion, anime key visual',
+    skills: [
+      { name: '盘带突破', description: '低重心连续变向晃过对手', damageMultiplier: 1.0, type: 'attack' },
+      { name: '弧线任意球', description: '划出完美弧线直挂死角', damageMultiplier: 1.6, type: 'attack' },
+      { name: '上帝视野', description: '洞察全场，传球与进攻如有神助', damageMultiplier: 0, type: 'buff', buffPercent: 35, buffTurns: 3 },
+      { name: '贴身盯防', description: '压迫式防守让对手难以施展', damageMultiplier: 0, type: 'debuff', buffPercent: 25, buffTurns: 3 },
+      {
+        name: '世纪进球·上帝之手',
+        description: '在绿茵场上演神迹连过五人，以一记不可思议的射门刻入传奇',
+        damageMultiplier: 3.0,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: 'C罗',
+    hp: 220,
+    attack: 32,
+    defense: 14,
+    speed: 75,
+    imagePrompt: 'Cristiano Ronaldo as an anime ace, Portugal red and green jersey, muscular physique, mid-air bicycle kick pose, golden energy, stadium background, anime style',
+    avatarSeed: 1212,
+    ultimateType: 'lightning',
+    ultimateImagePrompt: 'Cristiano Ronaldo bicycle kick mid air, golden lightning trail, roaring stadium crowd, anime key visual',
+    skills: [
+      { name: '电梯球', description: '飘忽不定的电梯任意球', damageMultiplier: 1.0, type: 'attack' },
+      { name: '暴力头球', description: '弹跳惊人，头球轰门', damageMultiplier: 1.7, type: 'attack' },
+      { name: '钢铁意志', description: '永不言弃的斗志激发潜能', damageMultiplier: 0, type: 'buff', buffPercent: 40, buffTurns: 2 },
+      { name: '踩单车迷惑', description: '花式动作晃晕对手防线', damageMultiplier: 0, type: 'debuff', buffPercent: 30, buffTurns: 2 },
+      {
+        name: 'SIUUU·惊天倒钩',
+        description: '腾空而起完成逆天倒钩，金色闪电划破球场，全场为之沸腾',
+        damageMultiplier: 3.3,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: '卡卡西',
+    hp: 210,
+    attack: 35,
+    defense: 12,
+    speed: 80,
+    imagePrompt: 'Kakashi Hatake, silver spiky hair, mask covering lower face, sharingan eye glowing red, lightning chakra around hand, blue flak jacket, anime style',
+    avatarSeed: 1313,
+    ultimateType: 'lightning',
+    ultimateImagePrompt: 'Kakashi using Kamui and Chidori, red sharingan spiral, lightning tearing through distorted space, anime key visual',
+    skills: [
+      { name: '手里剑', description: '高速投掷的苦无与手里剑', damageMultiplier: 1.0, type: 'attack' },
+      { name: '雷切', description: '凝聚雷电于掌心突刺', damageMultiplier: 1.6, type: 'attack' },
+      { name: '写轮眼复制', description: '看穿并复制对手动作，提升攻击', damageMultiplier: 0, type: 'buff', buffPercent: 35, buffTurns: 3 },
+      { name: '土遁·土流壁', description: '筑起土墙提升防御', damageMultiplier: 0, type: 'buff', buffPercent: 35, buffTurns: 2 },
+      {
+        name: '神威·雷切双雷震',
+        description: '左眼神威扭曲空间，右手雷切贯穿敌阵，雷光撕裂现实',
+        damageMultiplier: 3.4,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
+  {
+    name: '超梦',
+    hp: 230,
+    attack: 40,
+    defense: 10,
+    speed: 70,
+    imagePrompt: 'Mewtwo, psychic Pokemon, purple and white feline humanoid, glowing purple eyes, telekinetic aura, futuristic lab background, anime style',
+    avatarSeed: 1414,
+    ultimateType: 'cosmic',
+    ultimateImagePrompt: 'Mewtwo unleashing psychic storm, purple telekinetic energy wave, reality distortion, futuristic lab destruction, anime key visual',
+    skills: [
+      { name: '精神冲击', description: '以强大念力冲击对手精神', damageMultiplier: 1.0, type: 'attack' },
+      { name: '暗影球', description: '投掷浓缩暗影能量球', damageMultiplier: 1.6, type: 'attack' },
+      { name: '自我再生', description: '以超能力修复自身伤势', damageMultiplier: 0, type: 'heal', healPercent: 28 },
+      { name: '冥想', description: '集中精神，攻击力大幅提升', damageMultiplier: 0, type: 'buff', buffPercent: 35, buffTurns: 3 },
+      {
+        name: '精神破坏·无限精神力',
+        description: '释放全部念力扭曲现实，精神风暴席卷战场，万物在紫光中崩解',
+        damageMultiplier: 3.5,
+        type: 'ultimate',
+        isUltimate: true,
+      },
+    ],
+  },
 ];
 
 const avatarFilename = (name: string) => `preset_avatar_${name}.jpg`;
+const ultimateFilename = (name: string) => `preset_ultimate_${name}.jpg`;
 
 const toLocalAvatarPath = (name: string) => `/presets/avatars/${avatarFilename(name)}`;
+const toLocalUltimatePath = (name: string) => `/presets/ultimates/characters/${ultimateFilename(name)}`;
 
 /** 将预设定义转换为可用的 CharacterData（运行时直接使用 /presets/ 下本地图片） */
 const buildCharacter = (def: PresetCharacterDef): CharacterData => {
-  const typeInfo = getUltimateTypeById(def.ultimateType);
   const skills: Skill[] = def.skills.map((s) => {
     if (s.isUltimate || s.type === 'ultimate') {
       return {
         ...s,
         ultimateType: def.ultimateType,
-        imageUrl: typeInfo?.imageUrl,
+        imageUrl: toLocalUltimatePath(def.name),
       };
     }
     return { ...s };
@@ -216,6 +417,11 @@ export const getPresetImageDownloads = (): { url: string; filename: string; subd
       url: buildAvatarUrl(def.imagePrompt, def.avatarSeed),
       filename: avatarFilename(def.name),
       subdir: 'avatars',
+    });
+    downloads.push({
+      url: buildTypeUrl(def.ultimateImagePrompt),
+      filename: ultimateFilename(def.name),
+      subdir: 'ultimates/characters',
     });
   });
 
