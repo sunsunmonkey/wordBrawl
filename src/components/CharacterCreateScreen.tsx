@@ -1,52 +1,39 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { generateCharacter, generateCharacterImage, AIConfig } from '../utils/ai';
+import { generateCharacter, generateCharacterImage, generateUltimateImage, preloadImage, AIConfig } from '../utils/ai';
+import { presetCharacters } from '../data/presetCharacters';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Heart, Brain, Sparkles, ImageIcon } from 'lucide-react';
+import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge } from 'lucide-react';
 import { ParticleField } from './ParticleField';
 
 const LOADING_STEPS = [
   { icon: Brain, text: '正在解析灵魂数据...' },
   { icon: Zap, text: '注入战斗参数...' },
-  { icon: Sparkles, text: '生成专属技能...' },
+  { icon: Sparkles, text: '生成专属技能体系...' },
+  { icon: Flame, text: '凝聚大招能量...' },
   { icon: ImageIcon, text: '召唤实体形象...' },
-  { icon: ImageIcon, text: '渲染像素粒子，请稍候...' },
 ];
 
-const preloadImage = (url: string, timeoutMs = 25000): Promise<boolean> => {
-  return new Promise((resolve) => {
-    if (!url) return resolve(false);
-    const img = new Image();
-    let done = false;
-    const finish = (ok: boolean) => {
-      if (done) return;
-      done = true;
-      resolve(ok);
-    };
-    img.onload = () => finish(true);
-    img.onerror = () => finish(false);
-    img.src = url;
-    setTimeout(() => finish(false), timeoutMs);
-  });
-};
-
 const generateImageWithRetry = async (
-  cfg: AIConfig,
-  prompt: string,
-  onAttempt?: (attempt: number) => void,
-  maxAttempts = 3,
+  generator: (modelOverride?: string) => Promise<string>,
+  onAttempt?: (attempt: number, max: number) => void,
+  maxAttempts = 5,
 ): Promise<string | null> => {
-  for (let i = 1; i <= maxAttempts; i++) {
-    onAttempt?.(i);
+  // 模型 fallback 链：优先用指定模型，失败后尝试默认模型（不指定 model）
+  const modelChain: (string | undefined)[] = [undefined, undefined, undefined, undefined, undefined];
+  for (let i = 0; i < maxAttempts; i++) {
+    onAttempt?.(i + 1, maxAttempts);
+    const modelOverride = modelChain[i];
     try {
-      const url = await generateCharacterImage(cfg, prompt);
+      const url = await generator(modelOverride);
       if (!url) continue;
       const ok = await preloadImage(url);
       if (ok) return url;
     } catch {
       // ignore and retry
     }
-    await new Promise((r) => setTimeout(r, 600 * i));
+    // 指数退避：1s, 2s, 4s, 8s, 16s
+    await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
   }
   return null;
 };
@@ -64,6 +51,7 @@ export const CharacterCreateScreen: React.FC = () => {
   const [error, setError] = useState('');
   const [loadingStep, setLoadingStep] = useState(0);
   const [retryHint, setRetryHint] = useState<string | null>(null);
+  const [selectingPreset, setSelectingPreset] = useState<string | null>(null);
 
   const cycleLoadingSteps = () => {
     let step = 0;
@@ -84,17 +72,20 @@ export const CharacterCreateScreen: React.FC = () => {
     setRetryHint(null);
     setIsGenerating(true);
     const interval = cycleLoadingSteps();
+    const player: 1 | 2 = isPlayer1 ? 1 : 2;
 
     try {
       const charData = await generateCharacter(cfg, description);
-      const imageUrl = await generateImageWithRetry(
-        cfg,
-        charData.imagePrompt,
-        (attempt) => {
-          if (attempt > 1) setRetryHint(`头像加载失败，正在重试 (${attempt}/3)...`);
+
+      // 生成头像；大招直接使用本地预设类型图
+      const avatarUrl = await generateImageWithRetry(
+        (modelOverride) => generateCharacterImage(cfg, charData.imagePrompt, player, modelOverride),
+        (attempt, max) => {
+          if (attempt > 1) setRetryHint(`头像生成中，第 ${attempt}/${max} 次尝试...`);
         },
       );
-      if (imageUrl) charData.imageUrl = imageUrl;
+
+      if (avatarUrl) charData.imageUrl = avatarUrl;
 
       if (isPlayer1) {
         setPlayer1(charData);
@@ -110,6 +101,55 @@ export const CharacterCreateScreen: React.FC = () => {
       clearInterval(interval);
       setIsGenerating(false);
       setRetryHint(null);
+    }
+  };
+
+  // 选择预设角色：跳过 LLM 生成，仅预加载已预生成的图片
+  const handleSelectPreset = async (preset: typeof presetCharacters[number]) => {
+    setSelectingPreset(preset.name);
+    setError('');
+
+    try {
+      // 并行预加载头像和大招图片，确保进入下一阶段时图片已就绪
+      const ultimateSkill = preset.skills.find((s) => s.isUltimate || s.type === 'ultimate');
+      await Promise.all([
+        preset.imageUrl ? preloadImage(preset.imageUrl, 30000) : Promise.resolve(false),
+        ultimateSkill?.imageUrl ? preloadImage(ultimateSkill.imageUrl, 30000) : Promise.resolve(false),
+      ]);
+
+      // 深拷贝一份，重置运行时状态，避免污染预设数据
+      const charData: typeof preset = JSON.parse(JSON.stringify(preset));
+      charData.hp = charData.maxHp;
+      charData.ultimateCharge = 0;
+      charData.attackBuff = 0;
+      charData.defenseBuff = 0;
+      charData.buffTurnsLeft = 0;
+
+      if (isPlayer1) {
+        setPlayer1(charData);
+        setPhase('PLAYER2_CREATE');
+      } else {
+        setPlayer2(charData);
+        setPhase('BATTLE_ARENA');
+      }
+    } catch {
+      // 即使预加载失败也继续，图片会在后续阶段懒加载
+      const charData: typeof preset = JSON.parse(JSON.stringify(preset));
+      charData.hp = charData.maxHp;
+      charData.ultimateCharge = 0;
+      charData.attackBuff = 0;
+      charData.defenseBuff = 0;
+      charData.buffTurnsLeft = 0;
+
+      if (isPlayer1) {
+        setPlayer1(charData);
+        setPhase('PLAYER2_CREATE');
+      } else {
+        setPlayer2(charData);
+        setPhase('BATTLE_ARENA');
+      }
+    } finally {
+      setSelectingPreset(null);
     }
   };
 
@@ -244,32 +284,111 @@ export const CharacterCreateScreen: React.FC = () => {
         </div>
 
         {!isPlayer1 && player1 && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
             className="mt-8 pt-6 border-t border-[#45A29E]/20"
           >
-            <p className="text-xs text-[#8a8d91] mb-2 tracking-wider">▸ 已就绪的对手</p>
-            <div className="flex items-center gap-4 bg-[#0B0C10]/80 p-3 rounded border border-[#66FCF1]/40 relative overflow-hidden">
+            <p className="text-sm text-[#8a8d91] mb-3 tracking-wider">▸ 已就绪的对手</p>
+            <div className="flex items-center gap-5 bg-[#0B0C10]/80 p-4 rounded-lg border-2 border-[#66FCF1]/50 relative overflow-hidden">
               {player1.imageUrl ? (
-                <img src={player1.imageUrl} alt="P1" className="w-14 h-14 rounded object-cover border-2 border-[#66FCF1]" />
+                <img src={player1.imageUrl} alt="P1" className="w-20 h-20 rounded-lg object-cover border-2 border-[#66FCF1]" />
               ) : (
-                <div className="w-14 h-14 bg-[#1F2833] rounded border-2 border-[#66FCF1] flex items-center justify-center text-xl font-black text-[#66FCF1] font-display">
+                <div className="w-20 h-20 bg-[#1F2833] rounded-lg border-2 border-[#66FCF1] flex items-center justify-center text-2xl font-black text-[#66FCF1] font-display">
                   {player1.name?.[0] || 'P'}
                 </div>
               )}
               <div className="flex-1">
-                <div className="font-bold text-[#66FCF1] font-display">{player1.name}</div>
-                <div className="flex gap-3 text-xs text-[#8a8d91] mt-1">
-                  <span className="flex items-center gap-1"><Heart size={12} className="text-pink-400"/> {player1.hp}</span>
-                  <span className="flex items-center gap-1"><Zap size={12} className="text-yellow-400"/> {player1.attack}</span>
+                <div className="text-lg font-bold text-[#66FCF1] font-display">{player1.name}</div>
+                <div className="flex gap-4 text-sm text-[#8a8d91] mt-2">
+                  <span className="flex items-center gap-1"><Heart size={14} className="text-pink-400"/> {player1.hp}</span>
+                  <span className="flex items-center gap-1"><Zap size={14} className="text-yellow-400"/> {player1.attack}</span>
                 </div>
               </div>
-              <div className="text-[10px] text-[#66FCF1] tracking-wider animate-pulse">READY</div>
+              <div className="text-xs text-[#66FCF1] tracking-wider animate-pulse">READY</div>
             </div>
           </motion.div>
         )}
+
+        {/* 角色市场：预设角色，可直接选择跳过生成 */}
+        <div className="mt-8 pt-6 border-t" style={{ borderColor: `rgba(${themeColorHex}, 0.2)` }}>
+          <div className="flex items-center gap-2 mb-3">
+            <Store size={14} style={{ color: themeColor }} />
+            <h3 className="text-xs font-bold tracking-wider" style={{ color: themeColor }}>
+              角色市场 · PRESET CHARACTERS
+            </h3>
+            <span className="text-[9px] text-[#8a8d91] ml-auto">一键选择 · 免生成</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {presetCharacters.map((preset) => {
+              const isSelecting = selectingPreset === preset.name;
+              const isDisabled = isGenerating || !!selectingPreset;
+              return (
+                <motion.button
+                  key={preset.name}
+                  onClick={() => handleSelectPreset(preset)}
+                  disabled={isDisabled}
+                  whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
+                  whileTap={!isDisabled ? { scale: 0.97 } : {}}
+                  className="relative group text-left rounded-lg overflow-hidden border-2 transition-all disabled:opacity-50"
+                  style={{
+                    borderColor: `rgba(${themeColorHex}, 0.3)`,
+                    backgroundColor: 'rgba(11, 12, 16, 0.8)',
+                  }}
+                >
+                  {/* 头像 */}
+                  <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
+                    {preset.imageUrl ? (
+                      <img
+                        src={preset.imageUrl}
+                        alt={preset.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xl font-black font-display" style={{ color: themeColor }}>
+                        {preset.name[0]}
+                      </div>
+                    )}
+                    {/* 选中加载遮罩 */}
+                    {isSelecting && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          className="w-5 h-5 border-2 border-transparent rounded-full"
+                          style={{ borderTopColor: themeColor }}
+                        />
+                      </div>
+                    )}
+                    {/* 名称条 */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
+                      <div className="text-[10px] font-bold font-display truncate" style={{ color: themeColor }}>
+                        {preset.name}
+                      </div>
+                    </div>
+                  </div>
+                  {/* 数值 */}
+                  <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
+                    <span className="flex items-center gap-1 text-[#C5C6C7]">
+                      <Heart size={8} className="text-pink-400" /> {preset.hp}
+                    </span>
+                    <span className="flex items-center gap-1 text-[#C5C6C7]">
+                      <Zap size={8} className="text-yellow-400" /> {preset.attack}
+                    </span>
+                    <span className="flex items-center gap-1 text-[#C5C6C7]">
+                      <Shield size={8} className="text-blue-400" /> {preset.defense}
+                    </span>
+                    <span className="flex items-center gap-1 text-[#C5C6C7]">
+                      <Gauge size={8} className="text-green-400" /> {preset.speed}
+                    </span>
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
       </motion.div>
     </div>
   );
