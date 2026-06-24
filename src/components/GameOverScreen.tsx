@@ -65,10 +65,11 @@ export const GameOverScreen: React.FC = () => {
         <div className="flex items-center justify-center gap-6 mb-8 w-full">
           {/* Loser (small, dim) */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.6, x: -30 }}
+            initial={{ opacity: 0, scale: 0.6, x: winner === 'player1' ? 30 : -30 }}
             animate={{ opacity: 0.55, scale: 1, x: 0 }}
             transition={{ delay: 0.4 }}
             className="flex flex-col items-center"
+            style={{ order: winner === 'player1' ? 2 : 0 }}
           >
             <div
               className="w-20 h-20 md:w-24 md:h-24 rounded-lg overflow-hidden border-2 grayscale"
@@ -92,14 +93,15 @@ export const GameOverScreen: React.FC = () => {
           </motion.div>
 
           {/* VS */}
-          <div className="text-2xl font-black font-display text-[#8a8d91]">VS</div>
+          <div className="text-2xl font-black font-display text-[#8a8d91]" style={{ order: 1 }}>VS</div>
 
           {/* Winner (large, glow) */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.6, x: 30 }}
+            initial={{ opacity: 0, scale: 0.6, x: winner === 'player1' ? -30 : 30 }}
             animate={{ opacity: 1, scale: 1, x: 0 }}
             transition={{ delay: 0.6, type: 'spring' }}
             className="flex flex-col items-center"
+            style={{ order: winner === 'player1' ? 0 : 2 }}
           >
             <div className="relative">
               <motion.div
