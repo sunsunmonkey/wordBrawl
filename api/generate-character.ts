@@ -142,9 +142,9 @@ const normalizeCharacter = (value: unknown) => {
 };
 
 const getLimit = (): number => {
-  const raw = process.env.FREE_DAILY_LIMIT ?? process.env.DAILY_FREE_LIMIT ?? '5';
+  const raw = process.env.FREE_DAILY_LIMIT ?? process.env.DAILY_FREE_LIMIT ?? '10';
   const limit = Number(raw);
-  if (!Number.isFinite(limit)) return 5;
+  if (!Number.isFinite(limit)) return 10;
   return Math.max(0, Math.floor(limit));
 };
 

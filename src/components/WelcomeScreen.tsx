@@ -21,8 +21,17 @@ interface FreeUsageStatus {
 }
 
 export const WelcomeScreen: React.FC = () => {
-  const { apiKey, baseUrl, model, apiMode, setApiKey, setBaseUrl, setModel, setApiMode, setPhase } =
-    useGameStore();
+  const {
+    apiKey,
+    baseUrl,
+    model,
+    apiMode,
+    setApiKey,
+    setBaseUrl,
+    setModel,
+    setApiMode,
+    setPhase,
+  } = useGameStore();
   const [inputKey, setInputKey] = useState(apiKey);
   const [inputBaseUrl, setInputBaseUrl] = useState(baseUrl);
   const [inputModel, setInputModel] = useState(model);
@@ -43,7 +52,7 @@ export const WelcomeScreen: React.FC = () => {
     const loadUsage = async () => {
       setIsUsageLoading(true);
       try {
-        const response = await fetch('/api/generate-character');
+        const response = await fetch("/api/generate-character");
         const payload = await response.json();
         if (!cancelled && response.ok && payload?.usage) {
           setFreeUsage(payload.usage);
@@ -63,23 +72,23 @@ export const WelcomeScreen: React.FC = () => {
   }, []);
 
   const freeUsageLabel = freeUsage?.unlimited
-    ? '♾️'
+    ? "♾️"
     : freeUsage
       ? `${freeUsage.remaining}/${freeUsage.limit}`
       : isUsageLoading
-        ? '...'
-        : '--';
+        ? "..."
+        : "--";
 
   const handleStart = () => {
     const k = inputKey.trim();
     const u = inputBaseUrl.trim();
     const m = inputModel.trim();
-    if (apiMode === 'custom' && (!k || !u || !m)) {
+    if (apiMode === "custom" && (!k || !u || !m)) {
       setError("请完整填写 API Key、Base URL 与 Model");
       return;
     }
     setError("");
-    if (apiMode === 'custom') {
+    if (apiMode === "custom") {
       setApiKey(k);
       setBaseUrl(u);
       setModel(m);
@@ -118,14 +127,18 @@ export const WelcomeScreen: React.FC = () => {
       </div>
       <div className="absolute top-6 right-6 text-xs text-[#FF003C]/60 z-10 text-right">
         <div className="flex items-center justify-end gap-2">
-          {apiMode === 'free'
+          {apiMode === "free"
             ? "FREE TRIAL READY"
             : apiKey && baseUrl && model
               ? "CONFIG READY"
               : "CONFIG REQUIRED"}
         </div>
         <div className="text-[10px] text-[#8a8d91]/60 mt-1">
-          {apiMode === 'free' ? "server powered" : model ? model.slice(0, 22) : "— no model —"}
+          {apiMode === "free"
+            ? "server powered"
+            : model
+              ? model.slice(0, 22)
+              : "— no model —"}
         </div>
       </div>
 
@@ -186,32 +199,42 @@ export const WelcomeScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setApiMode('free');
-                  setError('');
+                  setApiMode("free");
+                  setError("");
                 }}
                 className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
-                  apiMode === 'free'
-                    ? 'border-[#66FCF1] bg-[#66FCF1]/10 text-[#66FCF1]'
-                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#66FCF1]/50'
+                  apiMode === "free"
+                    ? "border-[#66FCF1] bg-[#66FCF1]/10 text-[#66FCF1]"
+                    : "border-[#45A29E]/30 text-[#8a8d91] hover:border-[#66FCF1]/50"
                 }`}
-                style={apiMode === 'free' ? { boxShadow: '0 0 12px rgba(102,252,241,0.4)' } : {}}
+                style={
+                  apiMode === "free"
+                    ? { boxShadow: "0 0 12px rgba(102,252,241,0.4)" }
+                    : {}
+                }
               >
                 <Gift size={20} />
                 <span className="text-xs font-bold tracking-wider">FREE</span>
-                <span className="text-[9px] opacity-70">每日体验 ({freeUsageLabel})</span>
+                <span className="text-[9px] opacity-70">
+                  每日生存体验 ({freeUsageLabel})
+                </span>
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setApiMode('custom');
-                  setError('');
+                  setApiMode("custom");
+                  setError("");
                 }}
                 className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
-                  apiMode === 'custom'
-                    ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]'
-                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#FFD700]/50'
+                  apiMode === "custom"
+                    ? "border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]"
+                    : "border-[#45A29E]/30 text-[#8a8d91] hover:border-[#FFD700]/50"
                 }`}
-                style={apiMode === 'custom' ? { boxShadow: '0 0 12px rgba(255,215,0,0.4)' } : {}}
+                style={
+                  apiMode === "custom"
+                    ? { boxShadow: "0 0 12px rgba(255,215,0,0.4)" }
+                    : {}
+                }
               >
                 <Key size={20} />
                 <span className="text-xs font-bold tracking-wider">CUSTOM</span>
@@ -220,7 +243,7 @@ export const WelcomeScreen: React.FC = () => {
             </div>
           </div>
 
-          {apiMode === 'custom' && (
+          {apiMode === "custom" && (
             <>
               <div className="mb-4">
                 <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
@@ -263,7 +286,8 @@ export const WelcomeScreen: React.FC = () => {
                   className={inputBaseClass}
                 />
                 <p className="text-xs text-[#8a8d91] mt-2 leading-relaxed">
-                  <span className="text-[#66FCF1]">▸</span> 请使用 OpenAI api 格式
+                  <span className="text-[#66FCF1]">▸</span> 请使用 OpenAI api
+                  格式
                 </p>
               </div>
             </>
