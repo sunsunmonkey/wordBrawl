@@ -43,12 +43,12 @@ const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 
 技能体系要求（必须包含 4-5 个技能）：
 1. 一个普通攻击（type="attack"，damageMultiplier 1.0）
-2. 一个强力攻击技能（type="attack"，damageMultiplier 1.3-1.8）
+2. 一个强力攻击技能（type="attack"，damageMultiplier 1.6-2.8）
 3. 一个治疗或增益技能（type="heal" 或 "buff"）
-   - heal: healPercent 15-35（按 maxHp 百分比回血）
-   - buff: buffPercent 20-50（攻击或防御提升百分比），buffTurns 2-3
-4. 一个减益技能（type="debuff"，buffPercent 20-40 削弱对方，buffTurns 2-3）
-5. 一个终极技能/大招（type="ultimate"，isUltimate=true，damageMultiplier 2.5-4.0）
+   - heal: healPercent 18-55（按 maxHp 百分比回血）
+   - buff: buffPercent 25-95（攻击或防御提升百分比），buffTurns 2-4
+4. 一个减益技能（type="debuff"，buffPercent 25-80 削弱对方，buffTurns 2-4）
+5. 一个终极技能/大招（type="ultimate"，isUltimate=true，damageMultiplier 4.0-7.5）
    - 大招必须有 description 字段：详细描述释放时的华丽特效
    - 大招必须有 ultimateType 字段：从以下类型中挑选一个最贴合角色主题的 ID
      可选类型：${ULTIMATE_TYPE_IDS.join(', ')}
@@ -58,20 +58,20 @@ JSON 结构如下：
 {
   "name": "角色名称（根据描述提取或生成一个响亮的名字）",
   "hp": 200,
-  "attack": 25,
-  "defense": 15,
+  "attack": 45,
+  "defense": 25,
   "speed": 50,
   "skills": [
     { "name": "普通攻击", "description": "基础攻击", "damageMultiplier": 1.0, "type": "attack" },
-    { "name": "专属攻击技能名", "description": "技能描述", "damageMultiplier": 1.5, "type": "attack" },
-    { "name": "治疗技能名", "description": "技能描述", "damageMultiplier": 0, "type": "heal", "healPercent": 25 },
-    { "name": "增益技能名", "description": "技能描述", "damageMultiplier": 0, "type": "buff", "buffPercent": 30, "buffTurns": 2 },
-    { "name": "减益技能名", "description": "技能描述", "damageMultiplier": 0.5, "type": "debuff", "buffPercent": 25, "buffTurns": 2 },
-    { "name": "大招名称（要霸气）", "description": "详细的华丽特效描述", "damageMultiplier": 3.0, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
+    { "name": "专属攻击技能名", "description": "技能描述", "damageMultiplier": 2.2, "type": "attack" },
+    { "name": "治疗技能名", "description": "技能描述", "damageMultiplier": 0, "type": "heal", "healPercent": 35 },
+    { "name": "增益技能名", "description": "技能描述", "damageMultiplier": 0, "type": "buff", "buffPercent": 60, "buffTurns": 3 },
+    { "name": "减益技能名", "description": "技能描述", "damageMultiplier": 0.8, "type": "debuff", "buffPercent": 45, "buffTurns": 3 },
+    { "name": "大招名称（要霸气）", "description": "详细的华丽特效描述", "damageMultiplier": 5.5, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
   ],
   "imagePrompt": "用于生成头像的英文提示词，pixel art 或 cyberpunk 风格"
 }
-数值范围要求：hp 100-500，attack 10-50，defense 5-30，speed 1-100。
+数值范围要求：hp 120-900，attack 20-140，defense 5-85，speed 1-140。请根据角色设定拉开差距，不要所有角色都给中庸数值；玻璃大炮、重装坦克、极速刺客、低速 Boss 都可以很极端。
 技能名称和描述要紧扣用户输入的角色主题，要有创意、有画面感、有中二气息。`;
 
 const stripJsonFences = (raw: string): string => {
@@ -87,6 +87,12 @@ const clamp = (value: unknown, min: number, max: number, fallback: number): numb
   return Math.min(max, Math.max(min, Math.round(numeric)));
 };
 
+const clampNumber = (value: unknown, min: number, max: number, fallback: number): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, numeric));
+};
+
 const asRecord = (value: unknown): Record<string, unknown> => {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 };
@@ -99,16 +105,16 @@ const getHeader = (headers: Record<string, HeaderValue> | undefined, name: strin
 
 const normalizeCharacter = (value: unknown) => {
   const data = asRecord(value);
-  const hp = clamp(data.hp, 100, 500, 200);
+  const hp = clamp(data.hp, 120, 900, 260);
   const skills = Array.isArray(data.skills) ? data.skills : [];
 
   return {
     name: String(data.name || '无名斗士').slice(0, 24),
     hp,
     maxHp: hp,
-    attack: clamp(data.attack, 10, 50, 25),
-    defense: clamp(data.defense, 5, 30, 15),
-    speed: clamp(data.speed, 1, 100, 50),
+    attack: clamp(data.attack, 20, 140, 45),
+    defense: clamp(data.defense, 5, 85, 25),
+    speed: clamp(data.speed, 1, 140, 55),
     imagePrompt: String(data.imagePrompt || 'cyberpunk game character portrait').slice(0, 240),
     skills: skills.slice(0, 6).map((skillValue, index: number) => {
       const skill = asRecord(skillValue);
@@ -125,13 +131,13 @@ const normalizeCharacter = (value: unknown) => {
       return {
         name: String(skill.name || `技能 ${index + 1}`).slice(0, 32),
         description: String(skill.description || '').slice(0, 240),
-        damageMultiplier: Number(skill.damageMultiplier) || (isUltimate ? 3 : 1),
+        damageMultiplier: clampNumber(skill.damageMultiplier, 0, isUltimate ? 8 : 3.2, isUltimate ? 5.5 : 1),
         type,
         isUltimate,
         ultimateType,
-        healPercent: skill.healPercent ? clamp(skill.healPercent, 1, 60, 25) : undefined,
-        buffPercent: skill.buffPercent ? clamp(skill.buffPercent, 1, 80, 30) : undefined,
-        buffTurns: skill.buffTurns ? clamp(skill.buffTurns, 1, 5, 2) : undefined,
+        healPercent: skill.healPercent ? clamp(skill.healPercent, 1, 70, 35) : undefined,
+        buffPercent: skill.buffPercent ? clamp(skill.buffPercent, 1, 120, 45) : undefined,
+        buffTurns: skill.buffTurns ? clamp(skill.buffTurns, 1, 6, 3) : undefined,
       };
     }),
     ultimateCharge: 0,
