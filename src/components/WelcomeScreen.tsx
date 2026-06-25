@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import {
   Key,
   Play,
-  Terminal,
   Server,
   Cpu,
   Zap,
@@ -153,15 +152,25 @@ export const WelcomeScreen: React.FC = () => {
       >
         <div className="text-center relative">
           <motion.div
-            animate={{ rotate: [0, 5, -5, 0], scale: [1, 1.1, 1] }}
-            transition={{ duration: 4, repeat: Infinity }}
-            className="flex justify-center mb-4 float-up"
+            animate={{ rotate: [0, 3, -3, 0], scale: [1, 1.05, 1] }}
+            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+            className="flex justify-center mb-6"
           >
-            <Terminal
-              size={56}
-              className="text-[#66FCF1]"
-              style={{ filter: "drop-shadow(0 0 12px #66FCF1)" }}
-            />
+            <div className="relative">
+              <img
+                src="/logo.png"
+                alt="Word Brawl"
+                className="w-40 h-40 md:w-52 md:h-52 object-contain drop-shadow-[0_0_20px_rgba(102,252,241,0.6)]"
+              />
+              <motion.div
+                className="absolute inset-0 rounded-full"
+                animate={{ opacity: [0.3, 0.7, 0.3] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                style={{
+                  background: 'radial-gradient(circle, rgba(102,252,241,0.2) 0%, transparent 70%)',
+                }}
+              />
+            </div>
           </motion.div>
           <h1
             data-text="言出法随"
