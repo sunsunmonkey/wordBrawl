@@ -34,6 +34,18 @@ type BattleState = {
   chargeMultiplier: number;
 };
 
+type UnderdogProfile = {
+  intensity: number;
+  label: string;
+  description: string;
+};
+
+const EVEN_UNDERDOG_PROFILE: UnderdogProfile = {
+  intensity: 0,
+  label: '势均力敌',
+  description: '双方纸面实力接近，胜负主要看临场状态和技能选择',
+};
+
 const BATTLE_STATES: BattleState[] = [
   {
     name: '神挡杀神',
@@ -121,6 +133,54 @@ const pickBattleState = (): BattleState => {
   return BATTLE_STATES[BATTLE_STATES.length - 1];
 };
 
+const getBestSkillMultiplier = (c: CharacterData, type: 'attack' | 'ultimate'): number => {
+  const skills = c.skills.filter((s) => type === 'ultimate' ? s.type === 'ultimate' || s.isUltimate : s.type === 'attack');
+  return Math.max(0, ...skills.map((s) => s.damageMultiplier || 0));
+};
+
+const getBestSupportValue = (c: CharacterData): number => {
+  return Math.max(0, ...c.skills.map((s) => Math.max(s.healPercent || 0, s.buffPercent || 0)));
+};
+
+const estimateCombatPower = (c: CharacterData): number => {
+  return (
+    c.maxHp * 0.12 +
+    c.attack * 3.2 +
+    c.defense * 2.4 +
+    c.speed * 1.45 +
+    getBestSkillMultiplier(c, 'attack') * 22 +
+    getBestSkillMultiplier(c, 'ultimate') * 14 +
+    getBestSupportValue(c) * 0.55 +
+    (c.critBonus || 0) * 1.8
+  );
+};
+
+const makeUnderdogProfiles = (p1Power: number, p2Power: number): { p1: UnderdogProfile; p2: UnderdogProfile } => {
+  const stronger = Math.max(p1Power, p2Power);
+  const weaker = Math.min(p1Power, p2Power);
+  if (stronger <= 0) return { p1: EVEN_UNDERDOG_PROFILE, p2: EVEN_UNDERDOG_PROFILE };
+
+  const gap = (stronger - weaker) / stronger;
+  if (gap < 0.12) return { p1: EVEN_UNDERDOG_PROFILE, p2: EVEN_UNDERDOG_PROFILE };
+
+  const intensity = clamp((gap - 0.12) / 0.38, 0.15, 1);
+  const profile: UnderdogProfile = intensity > 0.68
+    ? {
+      intensity,
+      label: '以下克上',
+      description: '纸面明显劣势，但拥有更高的求生、充能和爆冷一击机会',
+    }
+    : {
+      intensity,
+      label: '逆风剧本',
+      description: '纸面略处下风，越挨打越容易攒出关键反击',
+    };
+
+  return p1Power < p2Power
+    ? { p1: profile, p2: EVEN_UNDERDOG_PROFILE }
+    : { p1: EVEN_UNDERDOG_PROFILE, p2: profile };
+};
+
 export interface SkillResult {
   log: BattleEvent;
   damage?: number;
@@ -140,6 +200,12 @@ export class BattleEngine {
   private logs: BattleEvent[] = [];
   private readonly p1BattleState: BattleState;
   private readonly p2BattleState: BattleState;
+  private readonly p1Power: number;
+  private readonly p2Power: number;
+  private readonly p1Underdog: UnderdogProfile;
+  private readonly p2Underdog: UnderdogProfile;
+  private p1ClutchUsed = false;
+  private p2ClutchUsed = false;
   // 每个引擎实例的唯一 id 序列，避免 Date.now() 在同步循环中产生重复 key
   private static instanceCounter: number = 0;
   private readonly instanceId: number;
@@ -150,6 +216,11 @@ export class BattleEngine {
     this.instanceId = ++BattleEngine.instanceCounter;
     this.p1BattleState = pickBattleState();
     this.p2BattleState = pickBattleState();
+    this.p1Power = estimateCombatPower(this.p1);
+    this.p2Power = estimateCombatPower(this.p2);
+    const underdogs = makeUnderdogProfiles(this.p1Power, this.p2Power);
+    this.p1Underdog = underdogs.p1;
+    this.p2Underdog = underdogs.p2;
     // 重置充能与 buff
     this.p1.ultimateCharge = 0;
     this.p2.ultimateCharge = 0;
@@ -163,6 +234,22 @@ export class BattleEngine {
 
   private getBattleState(c: CharacterData): BattleState {
     return c === this.p1 ? this.p1BattleState : this.p2BattleState;
+  }
+
+  private getUnderdogProfile(c: CharacterData): UnderdogProfile {
+    return c === this.p1 ? this.p1Underdog : this.p2Underdog;
+  }
+
+  private isClutchUsed(c: CharacterData): boolean {
+    return c === this.p1 ? this.p1ClutchUsed : this.p2ClutchUsed;
+  }
+
+  private markClutchUsed(c: CharacterData) {
+    if (c === this.p1) {
+      this.p1ClutchUsed = true;
+    } else {
+      this.p2ClutchUsed = true;
+    }
   }
 
   /** 获取当前双方状态快照（用于 UI 渲染） */
@@ -190,6 +277,7 @@ export class BattleEngine {
   /** 智能选择技能（自动模式用） */
   chooseSkill(attacker: CharacterData, defender: CharacterData): Skill {
     const ult = this.findUltimate(attacker);
+    const underdog = this.getUnderdogProfile(attacker);
     // 大招就绪：优先释放
     if (ult && attacker.ultimateCharge >= ULTIMATE_THRESHOLD) {
       return ult;
@@ -205,10 +293,11 @@ export class BattleEngine {
     const supportSkills = attacker.skills.filter(
       (s) => s.type === 'buff' || s.type === 'debuff',
     );
-    if (supportSkills.length && Math.random() < 0.3) {
+    if (supportSkills.length && Math.random() < 0.3 + underdog.intensity * 0.18) {
       const buff = supportSkills.find((s) => s.type === 'buff');
-      if (buff && attacker.buffTurnsLeft === 0 && Math.random() < 0.5) return buff;
       const debuff = supportSkills.find((s) => s.type === 'debuff');
+      if (underdog.intensity > 0 && debuff && defender.buffTurnsLeft === 0 && Math.random() < 0.65) return debuff;
+      if (buff && attacker.buffTurnsLeft === 0 && Math.random() < 0.5) return buff;
       if (debuff && defender.buffTurnsLeft === 0 && Math.random() < 0.5) return debuff;
     }
 
@@ -216,7 +305,7 @@ export class BattleEngine {
     const attackSkills = attacker.skills.filter(
       (s) => s.type === 'attack' && s.damageMultiplier > 1.2,
     );
-    if (attackSkills.length && Math.random() < 0.5) {
+    if (attackSkills.length && Math.random() < 0.5 + underdog.intensity * 0.12) {
       return attackSkills[Math.floor(Math.random() * attackSkills.length)];
     }
 
@@ -243,7 +332,8 @@ export class BattleEngine {
 
   /** 累加充能（带上限与可选倍率） */
   private addCharge(c: CharacterData, amount: number, multiplier = 1) {
-    const gain = Math.floor(amount * multiplier * this.getBattleState(c).chargeMultiplier);
+    const underdogChargeMultiplier = 1 + this.getUnderdogProfile(c).intensity * 0.38;
+    const gain = Math.floor(amount * multiplier * this.getBattleState(c).chargeMultiplier * underdogChargeMultiplier);
     if (gain > 0) {
       c.ultimateCharge = Math.min(ULTIMATE_THRESHOLD, c.ultimateCharge + gain);
     }
@@ -251,26 +341,59 @@ export class BattleEngine {
 
   private rollDamageMultiplier(attacker: CharacterData, defender: CharacterData, isUlt: boolean): number {
     const state = this.getBattleState(attacker);
+    const underdog = this.getUnderdogProfile(attacker);
     const statGap = clamp((attacker.attack - defender.defense) / 180, -0.25, 0.4);
-    const swing = state.damageSwing + (isUlt ? 0.18 : 0);
-    const min = Math.max(0.28, 0.82 - swing * 0.75);
-    const max = 1.32 + swing + statGap;
+    const swing = state.damageSwing + (isUlt ? 0.18 : 0) + underdog.intensity * 0.18;
+    const min = Math.max(0.28, 0.82 - swing * 0.75 + underdog.intensity * 0.05);
+    const max = 1.32 + swing + statGap + underdog.intensity * 0.22;
     return min + Math.random() * Math.max(0.05, max - min);
   }
 
   private rollFinisher(attacker: CharacterData, defender: CharacterData, skill: Skill, isUlt: boolean, isCrit: boolean): boolean {
     const state = this.getBattleState(attacker);
+    const underdog = this.getUnderdogProfile(attacker);
     const skillBonus = Math.max(0, skill.damageMultiplier - 1) * 0.012;
     const critBonus = isCrit ? 0.025 : 0;
     const ultBonus = isUlt ? 0.035 : 0;
     const desperateBonus = attacker.hp / attacker.maxHp < LOW_HP_RAGE_THRESHOLD ? 0.018 : 0;
+    const underdogBonus = underdog.intensity * (0.025 + (attacker.hp / attacker.maxHp < 0.45 ? 0.035 : 0) + (isUlt ? 0.02 : 0));
     const weaponBonus = (attacker.critBonus || 0) / 1000;
-    const chance = clamp(state.executeChance + skillBonus + critBonus + ultBonus + desperateBonus + weaponBonus, 0, 0.16);
+    const chance = clamp(state.executeChance + skillBonus + critBonus + ultBonus + desperateBonus + underdogBonus + weaponBonus, 0, underdog.intensity > 0 ? 0.24 : 0.16);
     return Math.random() < chance;
   }
 
   private formatStateSummary(): string {
-    return `临场状态：【${this.p1.name}】${this.p1BattleState.name}（${this.p1BattleState.description}）；【${this.p2.name}】${this.p2BattleState.name}（${this.p2BattleState.description}）。`;
+    const underdogText = this.p1Underdog.intensity > 0 || this.p2Underdog.intensity > 0
+      ? ` 爆冷机制：【${this.p1.name}】${this.p1Underdog.label}；【${this.p2.name}】${this.p2Underdog.label}。`
+      : '';
+    return `临场状态：【${this.p1.name}】${this.p1BattleState.name}（${this.p1BattleState.description}）；【${this.p2.name}】${this.p2BattleState.name}（${this.p2BattleState.description}）。${underdogText}`;
+  }
+
+  private maybeApplyUnderdogClutch(defender: CharacterData, attacker: CharacterData, incomingDamage: number, isUlt: boolean, isFinisher: boolean): { damage: number; suffix: string } {
+    const underdog = this.getUnderdogProfile(defender);
+    if (underdog.intensity <= 0 || this.isClutchUsed(defender) || incomingDamage < defender.hp) {
+      return { damage: incomingDamage, suffix: '' };
+    }
+
+    const lowHpBonus = defender.hp / defender.maxHp < 0.3 ? 0.08 : 0;
+    const overkillBonus = incomingDamage > defender.hp * 1.8 ? 0.05 : 0;
+    const chance = clamp(0.14 + underdog.intensity * 0.22 + lowHpBonus + overkillBonus + (isUlt ? 0.04 : 0) - (isFinisher ? 0.04 : 0), 0, 0.42);
+    this.markClutchUsed(defender);
+
+    if (Math.random() >= chance) {
+      return { damage: incomingDamage, suffix: '' };
+    }
+
+    const clutchDamage = Math.max(0, defender.hp - 1);
+    defender.attackBuff = Math.max(defender.attackBuff, Math.floor(28 + underdog.intensity * 32));
+    defender.buffTurnsLeft = Math.max(defender.buffTurnsLeft, 2);
+    this.addCharge(defender, 38 + underdog.intensity * 36);
+    this.addCharge(attacker, 10);
+
+    return {
+      damage: clutchDamage,
+      suffix: `【${defender.name}】触发${underdog.label}，极限锁血并获得反击窗口！`,
+    };
   }
 
   /**
@@ -321,9 +444,11 @@ export class BattleEngine {
       if (isFinisher) {
         actualDmg = Math.max(actualDmg, defender.hp);
       }
+      const clutch = this.maybeApplyUnderdogClutch(defender, attacker, actualDmg, false, isFinisher);
+      actualDmg = clutch.damage;
       defender.hp = Math.max(0, defender.hp - actualDmg);
       damage = actualDmg;
-      logMessage = `【${attacker.name}】施放【${skill.name}】削弱对手 ${debuffAmount}%，并造成 ${actualDmg} 点伤害！${isFinisher ? '天命一击，直接击穿胜负线！' : ''}`;
+      logMessage = `【${attacker.name}】施放【${skill.name}】削弱对手 ${debuffAmount}%，并造成 ${actualDmg} 点伤害！${isFinisher ? '天命一击，直接击穿胜负线！' : ''}${clutch.suffix}`;
     } else {
       // attack / ultimate
       const baseDamage = this.getEffectiveAttack(attacker) * skill.damageMultiplier;
@@ -339,14 +464,16 @@ export class BattleEngine {
       if (isFinisher) {
         finalDamage = Math.max(finalDamage, defender.hp);
       }
+      const clutch = this.maybeApplyUnderdogClutch(defender, attacker, finalDamage, isUlt, isFinisher);
+      finalDamage = clutch.damage;
       defender.hp = Math.max(0, defender.hp - finalDamage);
       damage = finalDamage;
 
       if (isUlt) {
-        logMessage = `【${attacker.name}】爆气释放大招【${skill.name}】！${skill.description} 对【${defender.name}】造成毁灭性 ${finalDamage} 点伤害！${isFinisher ? '天命一击，一招定胜负！' : ''}`;
+        logMessage = `【${attacker.name}】爆气释放大招【${skill.name}】！${skill.description} 对【${defender.name}】造成毁灭性 ${finalDamage} 点伤害！${isFinisher ? '天命一击，一招定胜负！' : ''}${clutch.suffix}`;
         attacker.ultimateCharge = 0;
       } else {
-        logMessage = `【${attacker.name}】使出【${skill.name}】！${isCrit ? '触发暴击，' : ''}对【${defender.name}】造成 ${finalDamage} 点伤害。${isFinisher ? '天命一击，瞬间清场！' : ''}`;
+        logMessage = `【${attacker.name}】使出【${skill.name}】！${isCrit ? '触发暴击，' : ''}对【${defender.name}】造成 ${finalDamage} 点伤害。${isFinisher ? '天命一击，瞬间清场！' : ''}${clutch.suffix}`;
       }
     }
 
