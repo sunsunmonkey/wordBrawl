@@ -216,7 +216,7 @@ export const WelcomeScreen: React.FC = () => {
                 <Gift size={20} />
                 <span className="text-xs font-bold tracking-wider">FREE</span>
                 <span className="text-[9px] opacity-70">
-                  每日生存体验 ({freeUsageLabel})
+                  每日生成体验 ({freeUsageLabel})
                 </span>
               </button>
               <button

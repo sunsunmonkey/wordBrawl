@@ -7,6 +7,12 @@
 - 免费体验：前端调用 `/api/generate-character`，服务端使用 Vercel 环境变量里的 Key，不会暴露给浏览器。
 - 自带 API：用户在页面中填写 OpenAI 兼容的 `Base URL`、`Model` 和 `API Key`，继续走浏览器直连。
 
+本地开发时，`pnpm dev` 会把 `/api` 代理到远程 Vercel 接口，默认目标是 `https://word-brawl.vercel.app`。如果要换远程地址，在 `.env.local` 配置：
+
+```bash
+VITE_FREE_API_BASE_URL=https://your-vercel-domain.vercel.app
+```
+
 部署到 Vercel 后，在 Project Settings -> Environment Variables 填：
 
 ```bash
