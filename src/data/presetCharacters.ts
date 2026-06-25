@@ -2,10 +2,10 @@ import { CharacterData, Skill } from '../store/useGameStore';
 import { ULTIMATE_TYPES } from './ultimateTypes';
 
 /**
- * 构造 pollinations 头像 URL（与 ai.ts 中逻辑保持一致，但使用固定 seed 保证预设角色头像稳定）
- * 仅用于 scripts/download-presets.js 拉取图片；运行时直接使用 /presets/ 下本地图片。
+ * 构造 Pollinations 头像 URL。
+ * 仅用于下载预设图片；运行时直接使用 /presets/ 下本地图片。
  */
-export const buildAvatarUrl = (prompt: string, seed: number, model = 'flux'): string => {
+export const buildAvatarUrl = (prompt: string, seed: number, model = 'sana'): string => {
   const enriched = `${prompt}, neon cyberpunk character portrait, glowing rim light, dark background, anime style`;
   const base = `https://image.pollinations.ai/prompt/${encodeURIComponent(enriched)}`;
   const params = new URLSearchParams({
@@ -445,7 +445,7 @@ function buildTypeUrl(prompt: string): string {
     height: '360',
     seed: String(seed),
     nologo: 'true',
-    model: 'flux',
+    model: 'sana',
   });
   return `${base}?${params.toString()}`;
 }
@@ -461,3 +461,107 @@ function hashStringToSeed(str: string): number {
 
 /** 预设角色市场：图片已预下载到 public/presets/，选择后可直接使用，无需调用 LLM */
 export const presetCharacters: CharacterData[] = presetDefs.map(buildCharacter);
+
+const fallbackAvatarDefs = [
+  {
+    id: 'holy_guardian',
+    types: ['holy'],
+    keywords: ['holy', 'light', 'guardian', 'hero', 'angel', 'gate', 'sacred', '神圣', '光', '英雄', '守护', '守门', '守卫', '天阙'],
+  },
+  {
+    id: 'shadow_blade',
+    types: ['shadow'],
+    keywords: ['shadow', 'dark', 'ninja', 'assassin', 'dagger', 'blade', '暗影', '刺客', '忍者', '黑暗', '匕首', '刀'],
+  },
+  {
+    id: 'fire_champion',
+    types: ['fire'],
+    keywords: ['fire', 'flame', 'inferno', 'phoenix', 'burn', 'lava', '火', '烈焰', '炎', '凤凰', '熔岩'],
+  },
+  {
+    id: 'ice_titan',
+    types: ['ice'],
+    keywords: ['ice', 'frost', 'snow', 'crystal', 'giant', '冰', '霜', '雪', '寒', '巨人', '水晶'],
+  },
+  {
+    id: 'mecha_sentinel',
+    types: ['mecha'],
+    keywords: ['mecha', 'robot', 'cyber', 'machine', 'armor', 'cannon', '机甲', '机械', '机器人', '装甲', '炮', '哨兵'],
+  },
+  {
+    id: 'cosmic_oracle',
+    types: ['cosmic'],
+    keywords: ['cosmic', 'star', 'galaxy', 'mage', 'wizard', 'magic', 'arcane', '星', '宇宙', '银河', '法师', '魔法'],
+  },
+  {
+    id: 'nature_ranger',
+    types: ['nature'],
+    keywords: ['nature', 'forest', 'wood', 'vine', 'poison', 'ranger', '自然', '森林', '藤蔓', '毒', '弓', '游侠'],
+  },
+  {
+    id: 'lightning_knight',
+    types: ['lightning'],
+    keywords: ['lightning', 'thunder', 'electric', 'storm', 'knight', '雷', '闪电', '电', '风暴', '骑士'],
+  },
+  {
+    id: 'immortal_superhero',
+    types: ['holy', 'cosmic'],
+    keywords: [
+      'superhero',
+      'immortal',
+      'sage',
+      'celestial',
+      'divine',
+      'xianxia',
+      '超人',
+      '仙人',
+      '神仙',
+      '修仙',
+      '天人',
+      '仙侠',
+      '飞升',
+      '法相',
+    ],
+  },
+];
+
+const fallbackSeed = (value: string): number => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 33 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+};
+
+export const getFallbackAvatarUrl = (input: {
+  name?: string;
+  imagePrompt?: string;
+  description?: string;
+  ultimateType?: string;
+  player?: 1 | 2;
+}): string => {
+  const text = `${input.name || ''} ${input.imagePrompt || ''} ${input.description || ''}`.toLowerCase();
+  const seed = fallbackSeed(`${input.player || 1}:${text}:${input.ultimateType || ''}`);
+
+  let bestId = fallbackAvatarDefs[seed % fallbackAvatarDefs.length].id;
+  let bestScore = -1;
+
+  fallbackAvatarDefs.forEach((def, index) => {
+    let score = 0;
+
+    if (input.ultimateType && def.types.includes(input.ultimateType)) score += 80;
+
+    def.keywords.forEach((keyword) => {
+      if (text.includes(keyword.toLowerCase())) score += 14;
+    });
+
+    score += ((seed + index * 17) % 7) / 10;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = def.id;
+    }
+  });
+
+  return `/presets/fallback-avatars/fallback_avatar_${bestId}.jpg`;
+};

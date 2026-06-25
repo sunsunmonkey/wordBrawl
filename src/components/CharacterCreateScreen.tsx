@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { generateCharacter, generateCharacterImage, preloadImage, AIConfig } from '../utils/ai';
-import { presetCharacters } from '../data/presetCharacters';
+import { generateCharacter, generateCharacterImage, preloadImage, probeImage, AIConfig } from '../utils/ai';
+import { getFallbackAvatarUrl, presetCharacters } from '../data/presetCharacters';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown } from 'lucide-react';
 import { ParticleField } from './ParticleField';
@@ -14,26 +14,14 @@ const LOADING_STEPS = [
   { icon: ImageIcon, text: '召唤实体形象...' },
 ];
 
-const generateImageWithRetry = async (
-  generator: (modelOverride?: string) => Promise<string>,
-  onAttempt?: (attempt: number, max: number) => void,
-  maxAttempts = 5,
-): Promise<string | null> => {
-  // 模型 fallback 链：优先用指定模型，失败后尝试默认模型（不指定 model）
-  const modelChain: (string | undefined)[] = [undefined, undefined, undefined, undefined, undefined];
-  for (let i = 0; i < maxAttempts; i++) {
-    onAttempt?.(i + 1, maxAttempts);
-    const modelOverride = modelChain[i];
-    try {
-      const url = await generator(modelOverride);
-      if (!url) continue;
-      const ok = await preloadImage(url);
-      if (ok) return url;
-    } catch {
-      // ignore and retry
-    }
-    // 指数退避：1s, 2s, 4s, 8s, 16s
-    await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
+const tryLoadRemoteAvatar = async (generator: () => Promise<string>): Promise<string | null> => {
+  try {
+    const url = await generator();
+    if (!url) return null;
+    const result = await probeImage(url, 10000);
+    if (result.ok) return url;
+  } catch {
+    // Local fallback stays in place.
   }
   return null;
 };
@@ -50,7 +38,7 @@ export const CharacterCreateScreen: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
   const [loadingStep, setLoadingStep] = useState(0);
-  const [retryHint, setRetryHint] = useState<string | null>(null);
+  const [avatarHint, setAvatarHint] = useState<string | null>(null);
   const [selectingPreset, setSelectingPreset] = useState<string | null>(null);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
 
@@ -70,23 +58,25 @@ export const CharacterCreateScreen: React.FC = () => {
       return;
     }
     setError('');
-    setRetryHint(null);
+    setAvatarHint(null);
     setIsGenerating(true);
     const interval = cycleLoadingSteps();
     const player: 1 | 2 = isPlayer1 ? 1 : 2;
 
     try {
       const charData = await generateCharacter(cfg, description);
+      const ultimateSkill = charData.skills.find((s) => s.isUltimate || s.type === 'ultimate');
+      const fallbackAvatarUrl = getFallbackAvatarUrl({
+        name: charData.name,
+        imagePrompt: charData.imagePrompt,
+        description,
+        ultimateType: ultimateSkill?.ultimateType,
+        player,
+      });
 
-      // 生成头像；大招直接使用本地预设类型图
-      const avatarUrl = await generateImageWithRetry(
-        (modelOverride) => generateCharacterImage(cfg, charData.imagePrompt, player, modelOverride),
-        (attempt, max) => {
-          if (attempt > 1) setRetryHint(`头像生成中，第 ${attempt}/${max} 次尝试...`);
-        },
-      );
-
-      if (avatarUrl) charData.imageUrl = avatarUrl;
+      setAvatarHint('正在尝试生成头像...');
+      const avatarUrl = await tryLoadRemoteAvatar(() => generateCharacterImage(cfg, charData.imagePrompt, player));
+      charData.imageUrl = avatarUrl || fallbackAvatarUrl;
 
       if (isPlayer1) {
         setPlayer1(charData);
@@ -101,7 +91,7 @@ export const CharacterCreateScreen: React.FC = () => {
     } finally {
       clearInterval(interval);
       setIsGenerating(false);
-      setRetryHint(null);
+      setAvatarHint(null);
     }
   };
 
@@ -329,14 +319,14 @@ export const CharacterCreateScreen: React.FC = () => {
             {isGenerating ? (
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={retryHint || loadingStep}
+                  key={avatarHint || loadingStep}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   className="flex items-center gap-2"
                 >
                   <StepIcon className="animate-spin" size={18} />
-                  {retryHint || LOADING_STEPS[loadingStep].text}
+                  {avatarHint || LOADING_STEPS[loadingStep].text}
                 </motion.div>
               </AnimatePresence>
             ) : (
