@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { generateCharacter, generateCharacterImage, generateUltimateImage, preloadImage, AIConfig } from '../utils/ai';
+import { generateCharacter, generateCharacterImage, preloadImage, AIConfig } from '../utils/ai';
 import { presetCharacters } from '../data/presetCharacters';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown } from 'lucide-react';
@@ -39,8 +39,8 @@ const generateImageWithRetry = async (
 };
 
 export const CharacterCreateScreen: React.FC = () => {
-  const { phase, apiKey, baseUrl, model, setPlayer1, setPlayer2, setPhase, player1 } = useGameStore();
-  const cfg: AIConfig = { apiKey, baseUrl, model };
+  const { phase, apiKey, baseUrl, model, apiMode, setPlayer1, setPlayer2, setPhase, player1 } = useGameStore();
+  const cfg: AIConfig = { apiKey, baseUrl, model, apiMode };
   const isPlayer1 = phase === 'PLAYER1_CREATE';
   const playerName = isPlayer1 ? 'PLAYER 1' : 'PLAYER 2';
   const themeColor = isPlayer1 ? '#66FCF1' : '#FF003C';
@@ -96,8 +96,8 @@ export const CharacterCreateScreen: React.FC = () => {
         setPlayer2(charData);
         setPhase('BATTLE_ARENA');
       }
-    } catch (err: any) {
-      setError(err?.message || '生成失败，请检查 API Key 或网络连接');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '生成失败，请检查 API Key 或网络连接');
     } finally {
       clearInterval(interval);
       setIsGenerating(false);
