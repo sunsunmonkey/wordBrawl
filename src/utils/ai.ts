@@ -170,49 +170,108 @@ JSON 结构如下：
   return normalizeCharacterData(data);
 };
 
-// ============ 图片生成：双 API + 限流 + 可靠性增强 ============
+// ============ 图片生成：Pollinations + 限流 + 可靠性增强 ============
 
 /** 限流器：确保两次请求间至少间隔 minIntervalMs */
 class RateLimiter {
   private lastCall = 0;
   constructor(private minIntervalMs: number) {}
-  async wait() {
+  async wait(maxWaitMs = Number.POSITIVE_INFINITY): Promise<boolean> {
     const now = Date.now();
     const elapsed = now - this.lastCall;
     if (elapsed < this.minIntervalMs) {
-      await new Promise((r) => setTimeout(r, this.minIntervalMs - elapsed));
+      const waitMs = this.minIntervalMs - elapsed;
+      if (waitMs > maxWaitMs) return false;
+      await new Promise((r) => setTimeout(r, waitMs));
     }
     this.lastCall = Date.now();
+    return true;
   }
 }
 
-// 全局限流器，避免并发请求触发 pollinations 的频率限制
-const globalLimiter = new RateLimiter(1200);
+// Pollinations anonymous image generation is queue-limited per IP. Keep starts conservative.
+const globalLimiter = new RateLimiter(16_000);
+
+export interface ImageLoadResult {
+  ok: boolean;
+  status?: number;
+  rateLimited?: boolean;
+  retryAfterMs?: number;
+}
+
+const parseRetryAfterMs = (value: string | null): number | undefined => {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  return undefined;
+};
+
+const loadViaImageElement = (url: string, timeoutMs: number): Promise<ImageLoadResult> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    let done = false;
+    const finish = (result: ImageLoadResult) => {
+      if (done) return;
+      done = true;
+      img.onload = null;
+      img.onerror = null;
+      resolve(result);
+    };
+    img.onload = () => {
+      finish({ ok: img.naturalWidth > 0 && img.naturalHeight > 0 });
+    };
+    img.onerror = () => finish({ ok: false });
+    img.src = url;
+    setTimeout(() => finish({ ok: false }), timeoutMs);
+  });
+};
+
+export const probeImage = async (url: string, timeoutMs = 30000): Promise<ImageLoadResult> => {
+  if (!url) return { ok: false };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'image/*,*/*;q=0.8' },
+      cache: 'default',
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return {
+        ok: false,
+        status: response.status,
+        rateLimited: response.status === 429,
+        retryAfterMs,
+      };
+    }
+
+    const blob = await response.blob();
+    return {
+      ok: contentType.startsWith('image/') && blob.size > 0,
+      status: response.status,
+      retryAfterMs,
+    };
+  } catch {
+    return loadViaImageElement(url, timeoutMs);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 /**
  * 预加载图片，校验是否真的可访问且有效。
  * 关键：检查 naturalWidth > 0，因为空响应也会触发 onload。
  */
 export const preloadImage = (url: string, timeoutMs = 30000): Promise<boolean> => {
-  return new Promise((resolve) => {
-    if (!url) return resolve(false);
-    const img = new Image();
-    let done = false;
-    const finish = (ok: boolean) => {
-      if (done) return;
-      done = true;
-      img.onload = null;
-      img.onerror = null;
-      resolve(ok);
-    };
-    img.onload = () => {
-      // 必须检查 naturalWidth，空图片/损坏图片 naturalWidth 为 0
-      finish(img.naturalWidth > 0 && img.naturalHeight > 0);
-    };
-    img.onerror = () => finish(false);
-    img.src = url;
-    setTimeout(() => finish(false), timeoutMs);
-  });
+  return probeImage(url, timeoutMs).then((result) => result.ok);
 };
 
 /** 构造 pollinations URL */
@@ -234,9 +293,18 @@ const buildPollinationsUrl = (
   return `${base}?${params.toString()}`;
 };
 
+const hashSeed = (value: string): number => {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash) % 1_000_000;
+};
+
 /**
  * 生成角色头像
- * P1 使用 flux 模型，P2 使用 turbo 模型
+ * 使用当前可用且更快的 sana 模型；seed 按 prompt/player 固定，便于缓存复用。
  */
 export const generateCharacterImage = async (
   _cfg: AIConfig,
@@ -247,10 +315,11 @@ export const generateCharacterImage = async (
   if (!prompt) return '';
   const cleaned = prompt.slice(0, 200);
   const enriched = `${cleaned}, neon cyberpunk character portrait, glowing rim light, dark background, anime style`;
-  const seed = Math.floor(Math.random() * 1_000_000);
-  const model = modelOverride ?? (player === 1 ? 'flux' : 'turbo');
-  await globalLimiter.wait();
-  return buildPollinationsUrl(enriched, 384, 384, seed, model);
+  const seed = hashSeed(`${player}:${cleaned}`);
+  const model = modelOverride === '' ? undefined : modelOverride ?? 'sana';
+  const canStartRemoteRequest = await globalLimiter.wait(16_000);
+  if (!canStartRemoteRequest) return '';
+  return buildPollinationsUrl(enriched, 256, 256, seed, model);
 };
 
 /**
