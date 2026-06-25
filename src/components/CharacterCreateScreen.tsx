@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
+import { resetCharacterRuntimeState, useRosterStore } from '../store/useRosterStore';
 import { generateCharacter, generateCharacterImage, preloadImage, probeImage, AIConfig } from '../utils/ai';
+import { cacheImageUrlAsDataUrl } from '../utils/localImage';
 import { getFallbackAvatarUrl, presetCharacters } from '../data/presetCharacters';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown } from 'lucide-react';
+import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown, UsersRound, Trash2 } from 'lucide-react';
 import { ParticleField } from './ParticleField';
 
 const LOADING_STEPS = [
@@ -28,6 +30,7 @@ const tryLoadRemoteAvatar = async (generator: () => Promise<string>): Promise<st
 
 export const CharacterCreateScreen: React.FC = () => {
   const { phase, apiKey, baseUrl, model, apiMode, setPlayer1, setPlayer2, setPhase, player1 } = useGameStore();
+  const { roster, recruitCharacter, removeCharacter } = useRosterStore();
   const cfg: AIConfig = { apiKey, baseUrl, model, apiMode };
   const isPlayer1 = phase === 'PLAYER1_CREATE';
   const playerName = isPlayer1 ? 'PLAYER 1' : 'PLAYER 2';
@@ -40,7 +43,9 @@ export const CharacterCreateScreen: React.FC = () => {
   const [loadingStep, setLoadingStep] = useState(0);
   const [avatarHint, setAvatarHint] = useState<string | null>(null);
   const [selectingPreset, setSelectingPreset] = useState<string | null>(null);
+  const [selectingRoster, setSelectingRoster] = useState<string | null>(null);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
+  const [isRosterOpen, setIsRosterOpen] = useState(true);
 
   const cycleLoadingSteps = () => {
     let step = 0;
@@ -78,6 +83,14 @@ export const CharacterCreateScreen: React.FC = () => {
       const avatarUrl = await tryLoadRemoteAvatar(() => generateCharacterImage(cfg, charData.imagePrompt, player));
       charData.imageUrl = avatarUrl || fallbackAvatarUrl;
 
+      setAvatarHint('收入麾下档案库...');
+      const rosterChar = {
+        ...charData,
+        imageUrl: await cacheImageUrlAsDataUrl(charData.imageUrl),
+      };
+      recruitCharacter(rosterChar, description.trim());
+      charData.imageUrl = rosterChar.imageUrl;
+
       if (isPlayer1) {
         setPlayer1(charData);
         setPhase('PLAYER2_CREATE');
@@ -92,6 +105,29 @@ export const CharacterCreateScreen: React.FC = () => {
       clearInterval(interval);
       setIsGenerating(false);
       setAvatarHint(null);
+    }
+  };
+
+  const handleSelectRosterCharacter = async (saved: typeof roster[number]) => {
+    setSelectingRoster(saved.rosterId);
+    setError('');
+
+    try {
+      if (saved.imageUrl) {
+        await preloadImage(saved.imageUrl, 30000);
+      }
+
+      const charData = resetCharacterRuntimeState(saved);
+
+      if (isPlayer1) {
+        setPlayer1(charData);
+        setPhase('PLAYER2_CREATE');
+      } else {
+        setPlayer2(charData);
+        setPhase('BATTLE_ARENA');
+      }
+    } finally {
+      setSelectingRoster(null);
     }
   };
 
@@ -149,6 +185,83 @@ export const CharacterCreateScreen: React.FC = () => {
   const featuredNames = new Set(['唐三', '孙悟空', '奥特曼', '钢铁侠', '梅西']);
   const featuredPresets = presetCharacters.filter((p) => featuredNames.has(p.name));
   const morePresets = presetCharacters.filter((p) => !featuredNames.has(p.name));
+
+  const renderRosterGrid = () => (
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+      {roster.map((saved) => {
+        const isSelecting = selectingRoster === saved.rosterId;
+        const isDisabled = isGenerating || !!selectingPreset || !!selectingRoster;
+        return (
+          <motion.div
+            key={saved.rosterId}
+            whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
+            className="relative group rounded-lg overflow-hidden border-2 transition-all bg-[#0B0C10]/80"
+            style={{ borderColor: `rgba(${themeColorHex}, 0.3)` }}
+          >
+            <button
+              type="button"
+              onClick={() => handleSelectRosterCharacter(saved)}
+              disabled={isDisabled}
+              className="w-full text-left disabled:opacity-50"
+            >
+              <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
+                {saved.imageUrl ? (
+                  <img
+                    src={saved.imageUrl}
+                    alt={saved.name}
+                    loading="lazy"
+                    className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xl font-black font-display" style={{ color: themeColor }}>
+                    {saved.name[0]}
+                  </div>
+                )}
+                {isSelecting && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                      className="w-5 h-5 border-2 border-transparent rounded-full"
+                      style={{ borderTopColor: themeColor }}
+                    />
+                  </div>
+                )}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
+                  <div className="text-[10px] font-bold font-display truncate" style={{ color: themeColor }}>
+                    {saved.name}
+                  </div>
+                </div>
+              </div>
+              <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Heart size={8} className="text-pink-400" /> {saved.maxHp}
+                </span>
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Zap size={8} className="text-yellow-400" /> {saved.attack}
+                </span>
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Shield size={8} className="text-blue-400" /> {saved.defense}
+                </span>
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Gauge size={8} className="text-green-400" /> {saved.speed}
+                </span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => removeCharacter(saved.rosterId)}
+              disabled={isDisabled}
+              aria-label={`移除 ${saved.name}`}
+              className="absolute top-1 right-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#FF003C] disabled:opacity-0"
+            >
+              <Trash2 size={12} />
+            </button>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
 
   const renderPresetGrid = (items: typeof presetCharacters) => (
     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
@@ -376,6 +489,51 @@ export const CharacterCreateScreen: React.FC = () => {
             </div>
           </motion.div>
         )}
+
+        {/* 麾下角色：本机持久化保存的已生成角色 */}
+        <div className="mt-8 pt-6 border-t" style={{ borderColor: `rgba(${themeColorHex}, 0.2)` }}>
+          <button
+            type="button"
+            onClick={() => setIsRosterOpen((v) => !v)}
+            className="w-full flex items-center gap-2 mb-3 group"
+            aria-expanded={isRosterOpen}
+          >
+            <UsersRound size={14} style={{ color: themeColor }} />
+            <h3 className="text-xs font-bold tracking-wider" style={{ color: themeColor }}>
+              我的麾下 · LOCAL ROSTER
+            </h3>
+            <span className="text-[9px] text-[#8a8d91] ml-auto">{roster.length}/24</span>
+            <motion.div
+              animate={{ rotate: isRosterOpen ? 180 : 0 }}
+              transition={{ duration: 0.25 }}
+              style={{ color: themeColor }}
+            >
+              <ChevronDown size={14} />
+            </motion.div>
+          </button>
+          <AnimatePresence initial={false}>
+            {isRosterOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                className="overflow-hidden"
+              >
+                {roster.length > 0 ? (
+                  renderRosterGrid()
+                ) : (
+                  <div
+                    className="h-24 rounded-lg border border-dashed flex items-center justify-center text-xs text-[#8a8d91]"
+                    style={{ borderColor: `rgba(${themeColorHex}, 0.25)` }}
+                  >
+                    生成角色后自动收入麾下
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* 角色市场：预设角色，可直接选择跳过生成 */}
         <div className="mt-8 pt-6 border-t" style={{ borderColor: `rgba(${themeColorHex}, 0.2)` }}>
