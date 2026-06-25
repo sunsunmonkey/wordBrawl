@@ -369,17 +369,6 @@ export const CharacterCreateScreen: React.FC = () => {
                     </div>
                   )}
                 </div>
-                {/* 角标：预设标签 */}
-                <div
-                  className="absolute top-1 right-1 px-1.5 py-0.5 rounded text-[8px] tracking-widest font-display"
-                  style={{
-                    background: 'rgba(11, 12, 16, 0.75)',
-                    color: themeColor,
-                    border: `1px solid rgba(${themeColorHex}, 0.5)`,
-                  }}
-                >
-                  PRESET
-                </div>
               </div>
               {/* 数值 */}
               <div className="p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
