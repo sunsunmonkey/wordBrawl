@@ -48,6 +48,10 @@ export interface CharacterData {
   critBonus?: number;
   /** 角色基础属性快照（用于卸下武器恢复原值） */
   baseStats?: { attack: number; defense: number; speed: number };
+  /** 生成时的原始描述文本，便于赛后收入麾下时回写 */
+  sourceDescription?: string;
+  /** 来自预设角色市场，不参与赛后收入麾下 */
+  isPreset?: boolean;
 }
 
 export interface BattleEvent {
@@ -71,7 +75,7 @@ export interface BattleEvent {
   defenderCharge?: number;
 }
 
-export type GamePhase = 'WELCOME' | 'PLAYER1_CREATE' | 'PLAYER2_CREATE' | 'BATTLE_ARENA' | 'GAME_OVER';
+export type GamePhase = 'WELCOME' | 'PLAYER1_CREATE' | 'PLAYER2_CREATE' | 'BATTLE_ARENA' | 'GAME_OVER' | 'ROSTER_VIEW';
 export type ApiMode = 'free' | 'custom';
 
 /**

@@ -5,8 +5,9 @@ import { generateCharacter, generateCharacterImage, preloadImage, probeImage, AI
 import { cacheImageUrlAsDataUrl } from '../utils/localImage';
 import { getFallbackAvatarUrl, presetCharacters } from '../data/presetCharacters';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown, UsersRound, Trash2 } from 'lucide-react';
+import { Zap, Heart, Brain, Sparkles, ImageIcon, Flame, Store, Shield, Gauge, ChevronDown, UsersRound, Trash2, Info, ArrowRight } from 'lucide-react';
 import { ParticleField } from './ParticleField';
+import { CharacterDetailModal, type DisplayCharacter } from './CharacterDetailModal';
 
 const LOADING_STEPS = [
   { icon: Brain, text: '正在解析灵魂数据...' },
@@ -30,7 +31,7 @@ const tryLoadRemoteAvatar = async (generator: () => Promise<string>): Promise<st
 
 export const CharacterCreateScreen: React.FC = () => {
   const { phase, apiKey, baseUrl, model, apiMode, setPlayer1, setPlayer2, setPhase, player1 } = useGameStore();
-  const { roster, recruitCharacter, removeCharacter } = useRosterStore();
+  const { roster, removeCharacter } = useRosterStore();
   const cfg: AIConfig = { apiKey, baseUrl, model, apiMode };
   const isPlayer1 = phase === 'PLAYER1_CREATE';
   const playerName = isPlayer1 ? 'PLAYER 1' : 'PLAYER 2';
@@ -44,8 +45,10 @@ export const CharacterCreateScreen: React.FC = () => {
   const [avatarHint, setAvatarHint] = useState<string | null>(null);
   const [selectingPreset, setSelectingPreset] = useState<string | null>(null);
   const [selectingRoster, setSelectingRoster] = useState<string | null>(null);
-  const [isMarketOpen, setIsMarketOpen] = useState(false);
+  const [isMarketOpen, setIsMarketOpen] = useState(true);
   const [isRosterOpen, setIsRosterOpen] = useState(true);
+  const [inspectingRosterId, setInspectingRosterId] = useState<string | null>(null);
+  const [inspectingPresetName, setInspectingPresetName] = useState<string | null>(null);
 
   const cycleLoadingSteps = () => {
     let step = 0;
@@ -82,14 +85,8 @@ export const CharacterCreateScreen: React.FC = () => {
       setAvatarHint('正在尝试生成头像...');
       const avatarUrl = await tryLoadRemoteAvatar(() => generateCharacterImage(cfg, charData.imagePrompt, player));
       charData.imageUrl = avatarUrl || fallbackAvatarUrl;
-
-      setAvatarHint('收入麾下档案库...');
-      const rosterChar = {
-        ...charData,
-        imageUrl: await cacheImageUrlAsDataUrl(charData.imageUrl),
-      };
-      recruitCharacter(rosterChar, description.trim());
-      charData.imageUrl = rosterChar.imageUrl;
+      charData.imageUrl = await cacheImageUrlAsDataUrl(charData.imageUrl);
+      charData.sourceDescription = description.trim();
 
       if (isPlayer1) {
         setPlayer1(charData);
@@ -151,6 +148,7 @@ export const CharacterCreateScreen: React.FC = () => {
       charData.attackBuff = 0;
       charData.defenseBuff = 0;
       charData.buffTurnsLeft = 0;
+      charData.isPreset = true;
 
       if (isPlayer1) {
         setPlayer1(charData);
@@ -167,6 +165,7 @@ export const CharacterCreateScreen: React.FC = () => {
       charData.attackBuff = 0;
       charData.defenseBuff = 0;
       charData.buffTurnsLeft = 0;
+      charData.isPreset = true;
 
       if (isPlayer1) {
         setPlayer1(charData);
@@ -187,16 +186,20 @@ export const CharacterCreateScreen: React.FC = () => {
   const morePresets = presetCharacters.filter((p) => !featuredNames.has(p.name));
 
   const renderRosterGrid = () => (
-    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
       {roster.map((saved) => {
         const isSelecting = selectingRoster === saved.rosterId;
         const isDisabled = isGenerating || !!selectingPreset || !!selectingRoster;
+        const ultimateSkill = saved.skills.find((s) => s.isUltimate || s.type === 'ultimate');
         return (
           <motion.div
             key={saved.rosterId}
-            whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
+            whileHover={!isDisabled ? { scale: 1.03, y: -2 } : {}}
             className="relative group rounded-lg overflow-hidden border-2 transition-all bg-[#0B0C10]/80"
-            style={{ borderColor: `rgba(${themeColorHex}, 0.3)` }}
+            style={{
+              borderColor: `rgba(${themeColorHex}, 0.35)`,
+              boxShadow: `0 0 0 0 rgba(${themeColorHex}, 0)`,
+            }}
           >
             <button
               type="button"
@@ -210,47 +213,83 @@ export const CharacterCreateScreen: React.FC = () => {
                     src={saved.imageUrl}
                     alt={saved.name}
                     loading="lazy"
-                    className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xl font-black font-display" style={{ color: themeColor }}>
+                  <div className="w-full h-full flex items-center justify-center text-3xl font-black font-display" style={{ color: themeColor }}>
                     {saved.name[0]}
                   </div>
                 )}
+                {/* 顶部选择提示条 */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-6 flex items-center px-2 text-[9px] tracking-widest font-display opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{
+                    background: `linear-gradient(to bottom, rgba(${themeColorHex}, 0.85), transparent)`,
+                    color: '#0B0C10',
+                  }}
+                >
+                  ▸ 出战
+                </div>
                 {isSelecting && (
                   <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                     <motion.div
                       animate={{ rotate: 360 }}
                       transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      className="w-5 h-5 border-2 border-transparent rounded-full"
+                      className="w-6 h-6 border-2 border-transparent rounded-full"
                       style={{ borderTopColor: themeColor }}
                     />
                   </div>
                 )}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
-                  <div className="text-[10px] font-bold font-display truncate" style={{ color: themeColor }}>
+                {/* 底部名字 + 大招标签 */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent p-2">
+                  <div className="text-xs font-bold font-display truncate" style={{ color: themeColor }}>
                     {saved.name}
                   </div>
+                  {ultimateSkill && (
+                    <div className="flex items-center gap-1 text-[9px] text-[#FFD700]/90 truncate mt-0.5">
+                      <Flame size={9} />
+                      <span className="truncate">{ultimateSkill.name}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
+              <div className="p-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[10px]">
                 <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Heart size={8} className="text-pink-400" /> {saved.maxHp}
+                  <Heart size={9} className="text-pink-400" /> {saved.maxHp}
                 </span>
                 <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Zap size={8} className="text-yellow-400" /> {saved.attack}
+                  <Zap size={9} className="text-yellow-400" /> {saved.attack}
                 </span>
                 <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Shield size={8} className="text-blue-400" /> {saved.defense}
+                  <Shield size={9} className="text-blue-400" /> {saved.defense}
                 </span>
                 <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Gauge size={8} className="text-green-400" /> {saved.speed}
+                  <Gauge size={9} className="text-green-400" /> {saved.speed}
                 </span>
               </div>
             </button>
+            {/* 详情按钮 */}
             <button
               type="button"
-              onClick={() => removeCharacter(saved.rosterId)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setInspectingRosterId(saved.rosterId);
+              }}
+              disabled={isDisabled}
+              aria-label={`查看 ${saved.name} 详情`}
+              className="absolute top-1 left-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#66FCF1] disabled:opacity-0"
+            >
+              <Info size={12} />
+            </button>
+            {/* 删除按钮 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`确定要将 ${saved.name} 移出麾下吗？`)) {
+                  removeCharacter(saved.rosterId);
+                }
+              }}
               disabled={isDisabled}
               aria-label={`移除 ${saved.name}`}
               className="absolute top-1 right-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#FF003C] disabled:opacity-0"
@@ -264,71 +303,114 @@ export const CharacterCreateScreen: React.FC = () => {
   );
 
   const renderPresetGrid = (items: typeof presetCharacters) => (
-    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
       {items.map((preset) => {
         const isSelecting = selectingPreset === preset.name;
-        const isDisabled = isGenerating || !!selectingPreset;
+        const isDisabled = isGenerating || !!selectingPreset || !!selectingRoster;
+        const ultimateSkill = preset.skills?.find((s) => s.isUltimate || s.type === 'ultimate');
         return (
-          <motion.button
+          <motion.div
             key={preset.name}
-            onClick={() => handleSelectPreset(preset)}
-            disabled={isDisabled}
-            whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
-            whileTap={!isDisabled ? { scale: 0.97 } : {}}
-            className="relative group text-left rounded-lg overflow-hidden border-2 transition-all disabled:opacity-50"
+            whileHover={!isDisabled ? { scale: 1.03, y: -2 } : {}}
+            className="relative group rounded-lg overflow-hidden border-2 transition-all bg-[#0B0C10]/80"
             style={{
-              borderColor: `rgba(${themeColorHex}, 0.3)`,
-              backgroundColor: 'rgba(11, 12, 16, 0.8)',
+              borderColor: `rgba(${themeColorHex}, 0.35)`,
             }}
           >
-            {/* 头像 */}
-            <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
-              {preset.imageUrl ? (
-                <img
-                  src={preset.imageUrl}
-                  alt={preset.name}
-                  loading="lazy"
-                  className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-xl font-black font-display" style={{ color: themeColor }}>
-                  {preset.name[0]}
-                </div>
-              )}
-              {/* 选中加载遮罩 */}
-              {isSelecting && (
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                    className="w-5 h-5 border-2 border-transparent rounded-full"
-                    style={{ borderTopColor: themeColor }}
+            <button
+              type="button"
+              onClick={() => handleSelectPreset(preset)}
+              disabled={isDisabled}
+              className="w-full text-left disabled:opacity-50"
+            >
+              <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
+                {preset.imageUrl ? (
+                  <img
+                    src={preset.imageUrl}
+                    alt={preset.name}
+                    loading="lazy"
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                   />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-3xl font-black font-display" style={{ color: themeColor }}>
+                    {preset.name[0]}
+                  </div>
+                )}
+                {/* hover 顶部出战提示 */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-6 flex items-center px-2 text-[9px] tracking-widest font-display opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{
+                    background: `linear-gradient(to bottom, rgba(${themeColorHex}, 0.85), transparent)`,
+                    color: '#0B0C10',
+                  }}
+                >
+                  ▸ 出战
                 </div>
-              )}
-              {/* 名称条 */}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
-                <div className="text-[10px] font-bold font-display truncate" style={{ color: themeColor }}>
-                  {preset.name}
+                {/* 选中加载遮罩 */}
+                {isSelecting && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                      className="w-6 h-6 border-2 border-transparent rounded-full"
+                      style={{ borderTopColor: themeColor }}
+                    />
+                  </div>
+                )}
+                {/* 名称 + 大招 */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent p-2">
+                  <div className="text-xs font-bold font-display truncate" style={{ color: themeColor }}>
+                    {preset.name}
+                  </div>
+                  {ultimateSkill && (
+                    <div className="flex items-center gap-1 text-[9px] text-[#FFD700]/90 truncate mt-0.5">
+                      <Flame size={9} />
+                      <span className="truncate">{ultimateSkill.name}</span>
+                    </div>
+                  )}
+                </div>
+                {/* 角标：预设标签 */}
+                <div
+                  className="absolute top-1 right-1 px-1.5 py-0.5 rounded text-[8px] tracking-widest font-display"
+                  style={{
+                    background: 'rgba(11, 12, 16, 0.75)',
+                    color: themeColor,
+                    border: `1px solid rgba(${themeColorHex}, 0.5)`,
+                  }}
+                >
+                  PRESET
                 </div>
               </div>
-            </div>
-            {/* 数值 */}
-            <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
-              <span className="flex items-center gap-1 text-[#C5C6C7]">
-                <Heart size={8} className="text-pink-400" /> {preset.hp}
-              </span>
-              <span className="flex items-center gap-1 text-[#C5C6C7]">
-                <Zap size={8} className="text-yellow-400" /> {preset.attack}
-              </span>
-              <span className="flex items-center gap-1 text-[#C5C6C7]">
-                <Shield size={8} className="text-blue-400" /> {preset.defense}
-              </span>
-              <span className="flex items-center gap-1 text-[#C5C6C7]">
-                <Gauge size={8} className="text-green-400" /> {preset.speed}
-              </span>
-            </div>
-          </motion.button>
+              {/* 数值 */}
+              <div className="p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]">
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Heart size={8} className="text-pink-400" /> {preset.hp}
+                </span>
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Zap size={8} className="text-yellow-400" /> {preset.attack}
+                </span>
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Shield size={8} className="text-blue-400" /> {preset.defense}
+                </span>
+                <span className="flex items-center gap-1 text-[#C5C6C7]">
+                  <Gauge size={8} className="text-green-400" /> {preset.speed}
+                </span>
+              </div>
+            </button>
+            {/* 详情按钮 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setInspectingPresetName(preset.name);
+              }}
+              disabled={isDisabled}
+              aria-label={`查看 ${preset.name} 详情`}
+              className="absolute top-1 left-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#66FCF1] disabled:opacity-0"
+            >
+              <Info size={12} />
+            </button>
+          </motion.div>
         );
       })}
     </div>
@@ -492,25 +574,52 @@ export const CharacterCreateScreen: React.FC = () => {
 
         {/* 麾下角色：本机持久化保存的已生成角色 */}
         <div className="mt-8 pt-6 border-t" style={{ borderColor: `rgba(${themeColorHex}, 0.2)` }}>
-          <button
-            type="button"
-            onClick={() => setIsRosterOpen((v) => !v)}
-            className="w-full flex items-center gap-2 mb-3 group"
-            aria-expanded={isRosterOpen}
-          >
-            <UsersRound size={14} style={{ color: themeColor }} />
-            <h3 className="text-xs font-bold tracking-wider" style={{ color: themeColor }}>
-              我的麾下 · LOCAL ROSTER
-            </h3>
-            <span className="text-[9px] text-[#8a8d91] ml-auto">{roster.length}/24</span>
-            <motion.div
-              animate={{ rotate: isRosterOpen ? 180 : 0 }}
-              transition={{ duration: 0.25 }}
-              style={{ color: themeColor }}
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setIsRosterOpen((v) => !v)}
+              className="flex items-center gap-2 group flex-1 min-w-0"
+              aria-expanded={isRosterOpen}
             >
-              <ChevronDown size={14} />
-            </motion.div>
-          </button>
+              <UsersRound size={14} style={{ color: themeColor }} />
+              <h3 className="text-xs font-bold tracking-wider" style={{ color: themeColor }}>
+                我的麾下 · LOCAL ROSTER
+              </h3>
+              <span className="text-[9px] text-[#8a8d91]">{roster.length}/24</span>
+              <motion.div
+                animate={{ rotate: isRosterOpen ? 180 : 0 }}
+                transition={{ duration: 0.25 }}
+                style={{ color: themeColor }}
+              >
+                <ChevronDown size={14} />
+              </motion.div>
+            </button>
+            {roster.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setPhase('ROSTER_VIEW')}
+                className="flex items-center gap-1 text-[10px] tracking-wider px-2 py-1 rounded border transition-all hover:bg-[#66FCF1]/10"
+                style={{ color: themeColor, borderColor: `rgba(${themeColorHex}, 0.4)` }}
+              >
+                查看全部
+                <ArrowRight size={10} />
+              </button>
+            )}
+          </div>
+          {isRosterOpen && roster.length > 0 && (
+            <div className="text-[10px] text-[#8a8d91] mb-2 flex items-center gap-3 flex-wrap">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: themeColor }} />
+                点击卡片直接出战
+              </span>
+              <span className="flex items-center gap-1">
+                <Info size={10} /> 查看详情
+              </span>
+              <span className="flex items-center gap-1">
+                <Trash2 size={10} /> 移出麾下
+              </span>
+            </div>
+          )}
           <AnimatePresence initial={false}>
             {isRosterOpen && (
               <motion.div
@@ -527,7 +636,7 @@ export const CharacterCreateScreen: React.FC = () => {
                     className="h-24 rounded-lg border border-dashed flex items-center justify-center text-xs text-[#8a8d91]"
                     style={{ borderColor: `rgba(${themeColorHex}, 0.25)` }}
                   >
-                    生成角色后自动收入麾下
+                    比赛结束后可在结算界面手动收入麾下
                   </div>
                 )}
               </motion.div>
@@ -547,7 +656,7 @@ export const CharacterCreateScreen: React.FC = () => {
             <h3 className="text-xs font-bold tracking-wider" style={{ color: themeColor }}>
               角色市场 · PRESET CHARACTERS
             </h3>
-            <span className="text-[9px] text-[#8a8d91] ml-auto">一键选择 · 免生成</span>
+            <span className="text-[9px] text-[#8a8d91] ml-auto">一键选择 · 无需生成 · 不消耗生成次数</span>
             <motion.div
               animate={{ rotate: isMarketOpen ? 180 : 0 }}
               transition={{ duration: 0.25 }}
@@ -577,6 +686,50 @@ export const CharacterCreateScreen: React.FC = () => {
           </AnimatePresence>
         </div>
       </motion.div>
+
+      <AnimatePresence>
+        {(() => {
+          const inspecting = inspectingRosterId
+            ? roster.find((r) => r.rosterId === inspectingRosterId)
+            : null;
+          if (!inspecting) return null;
+          return (
+            <CharacterDetailModal
+              key={inspecting.rosterId}
+              character={inspecting}
+              themeColor={themeColor}
+              onClose={() => setInspectingRosterId(null)}
+              onRemove={() => {
+                removeCharacter(inspecting.rosterId);
+                setInspectingRosterId(null);
+              }}
+            />
+          );
+        })()}
+        {(() => {
+          const preset = inspectingPresetName
+            ? presetCharacters.find((p) => p.name === inspectingPresetName)
+            : null;
+          if (!preset) return null;
+          const displayChar: DisplayCharacter = {
+            name: preset.name,
+            imageUrl: preset.imageUrl,
+            maxHp: preset.maxHp,
+            attack: preset.attack,
+            defense: preset.defense,
+            speed: preset.speed,
+            skills: preset.skills,
+          };
+          return (
+            <CharacterDetailModal
+              key={`preset-${preset.name}`}
+              character={displayChar}
+              themeColor={themeColor}
+              onClose={() => setInspectingPresetName(null)}
+            />
+          );
+        })()}
+      </AnimatePresence>
     </div>
   );
 };
