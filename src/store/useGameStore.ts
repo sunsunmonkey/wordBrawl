@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Weapon } from '../data/weapons';
 
 export type SkillType = 'attack' | 'heal' | 'buff' | 'debuff' | 'ultimate';
 
@@ -41,6 +42,12 @@ export interface CharacterData {
   defenseBuff: number;
   /** buff 剩余回合 */
   buffTurnsLeft: number;
+  /** 装备的武器（进入战斗前随机抽取） */
+  weapon?: Weapon;
+  /** 武器额外暴击率加成（百分比） */
+  critBonus?: number;
+  /** 角色基础属性快照（用于卸下武器恢复原值） */
+  baseStats?: { attack: number; defense: number; speed: number };
 }
 
 export interface BattleEvent {
@@ -65,14 +72,35 @@ export interface BattleEvent {
 }
 
 export type GamePhase = 'WELCOME' | 'PLAYER1_CREATE' | 'PLAYER2_CREATE' | 'BATTLE_ARENA' | 'GAME_OVER';
-export type BattleMode = 'auto' | 'manual';
+export type ApiMode = 'free' | 'custom';
+
+/**
+ * 装备武器：以角色的 baseStats 为基线，叠加 weapon 的属性加成。
+ * 重复装备会先回到基础属性再叠加新武器，避免数值无限累积。
+ */
+const equipWeapon = (char: CharacterData, weapon: Weapon): CharacterData => {
+  const base = char.baseStats ?? {
+    attack: char.attack,
+    defense: char.defense,
+    speed: char.speed,
+  };
+  return {
+    ...char,
+    baseStats: base,
+    attack: base.attack + (weapon.attackBonus || 0),
+    defense: base.defense,
+    speed: Math.max(1, base.speed + (weapon.speedBonus || 0)),
+    critBonus: weapon.critBonus || 0,
+    weapon,
+  };
+};
 
 interface GameStore {
   apiKey: string;
   baseUrl: string;
   model: string;
+  apiMode: ApiMode;
   phase: GamePhase;
-  battleMode: BattleMode;
   player1: CharacterData | null;
   player2: CharacterData | null;
   battleLogs: BattleEvent[];
@@ -82,7 +110,7 @@ interface GameStore {
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setModel: (model: string) => void;
-  setBattleMode: (mode: BattleMode) => void;
+  setApiMode: (mode: ApiMode) => void;
   setPhase: (phase: GamePhase) => void;
   setPlayer1: (char: CharacterData) => void;
   setPlayer2: (char: CharacterData) => void;
@@ -90,6 +118,8 @@ interface GameStore {
   updatePlayer2Hp: (hp: number) => void;
   updatePlayer1UltimateCharge: (charge: number) => void;
   updatePlayer2UltimateCharge: (charge: number) => void;
+  equipPlayer1Weapon: (weapon: Weapon) => void;
+  equipPlayer2Weapon: (weapon: Weapon) => void;
   addBattleLog: (log: BattleEvent) => void;
   setWinner: (winner: 'player1' | 'player2') => void;
   resetGame: () => void;
@@ -101,8 +131,8 @@ export const useGameStore = create<GameStore>()(
       apiKey: '',
       baseUrl: '',
       model: '',
+      apiMode: 'free',
       phase: 'WELCOME',
-      battleMode: 'auto',
       player1: null,
       player2: null,
       battleLogs: [],
@@ -112,7 +142,7 @@ export const useGameStore = create<GameStore>()(
       setApiKey: (key) => set({ apiKey: key }),
       setBaseUrl: (url) => set({ baseUrl: url }),
       setModel: (model) => set({ model }),
-      setBattleMode: (mode) => set({ battleMode: mode }),
+      setApiMode: (mode) => set({ apiMode: mode }),
       setPhase: (phase) => set({ phase }),
       setPlayer1: (char) => set({ player1: char }),
       setPlayer2: (char) => set({ player2: char }),
@@ -120,6 +150,8 @@ export const useGameStore = create<GameStore>()(
       updatePlayer2Hp: (hp) => set((state) => ({ player2: state.player2 ? { ...state.player2, hp } : null })),
       updatePlayer1UltimateCharge: (charge) => set((state) => ({ player1: state.player1 ? { ...state.player1, ultimateCharge: charge } : null })),
       updatePlayer2UltimateCharge: (charge) => set((state) => ({ player2: state.player2 ? { ...state.player2, ultimateCharge: charge } : null })),
+      equipPlayer1Weapon: (weapon) => set((state) => ({ player1: state.player1 ? equipWeapon(state.player1, weapon) : null })),
+      equipPlayer2Weapon: (weapon) => set((state) => ({ player2: state.player2 ? equipWeapon(state.player2, weapon) : null })),
       addBattleLog: (log) => set((state) => ({
         battleLogs: [...state.battleLogs, log],
         currentTurn: Math.max(state.currentTurn, log.turn),
@@ -140,6 +172,7 @@ export const useGameStore = create<GameStore>()(
         apiKey: state.apiKey,
         baseUrl: state.baseUrl,
         model: state.model,
+        apiMode: state.apiMode,
       }),
     },
   ),

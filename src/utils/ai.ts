@@ -2,10 +2,13 @@ import OpenAI from 'openai';
 import { CharacterData, Skill } from '../store/useGameStore';
 import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from '../data/ultimateTypes';
 
+export type AIProviderMode = 'free' | 'custom';
+
 export interface AIConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  apiMode?: AIProviderMode;
 }
 
 const buildClient = (cfg: AIConfig) => {
@@ -23,7 +26,81 @@ const stripJsonFences = (raw: string): string => {
   return trimmed;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+};
+
+const normalizeCharacterData = (value: unknown): CharacterData => {
+  const data = asRecord(value);
+  const rawSkills = Array.isArray(data.skills) ? data.skills : [];
+  const skills: Skill[] = rawSkills.map((rawSkill): Skill => {
+    const s = asRecord(rawSkill);
+    const rawType = String(s.type || 'attack');
+    const type = (['attack', 'heal', 'buff', 'debuff', 'ultimate'].includes(rawType) ? rawType : 'attack') as Skill['type'];
+    const isUltimate = Boolean(s.isUltimate) || type === 'ultimate';
+    const requestedUltimateType = String(s.ultimateType || '');
+    const ultimateType = isUltimate
+      ? ULTIMATE_TYPE_IDS.includes(requestedUltimateType)
+        ? requestedUltimateType
+        : ULTIMATE_TYPE_IDS[0]
+      : undefined;
+
+    return {
+      name: String(s.name || '未命名技能'),
+      description: String(s.description || ''),
+      damageMultiplier: Number(s.damageMultiplier) || 1.0,
+      type,
+      isUltimate,
+      imagePrompt: s.imagePrompt ? String(s.imagePrompt) : undefined,
+      imageUrl: isUltimate ? getUltimateTypeById(ultimateType)?.imageUrl : s.imageUrl ? String(s.imageUrl) : undefined,
+      ultimateType,
+      healPercent: s.healPercent ? Number(s.healPercent) : undefined,
+      buffPercent: s.buffPercent ? Number(s.buffPercent) : undefined,
+      buffTurns: s.buffTurns ? Number(s.buffTurns) : undefined,
+    };
+  });
+
+  return {
+    ...data,
+    name: String(data.name || '未命名角色'),
+    hp: Number(data.hp) || 200,
+    maxHp: Number(data.maxHp || data.hp) || 200,
+    attack: Number(data.attack) || 25,
+    defense: Number(data.defense) || 15,
+    speed: Number(data.speed) || 50,
+    imagePrompt: String(data.imagePrompt || 'cyberpunk game character portrait'),
+    skills,
+    ultimateCharge: 0,
+    attackBuff: 0,
+    defenseBuff: 0,
+    buffTurnsLeft: 0,
+  };
+};
+
+const generateCharacterWithFreeTrial = async (description: string): Promise<CharacterData> => {
+  const response = await fetch('/api/generate-character', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+
+  const payload = asRecord(await response.json().catch(() => ({})));
+  if (!response.ok) {
+    throw new Error(String(payload.error || '免费体验接口暂时不可用，请稍后再试'));
+  }
+
+  if (!payload.character) {
+    throw new Error('免费体验接口返回内容异常');
+  }
+
+  return normalizeCharacterData(payload.character);
+};
+
 export const generateCharacter = async (cfg: AIConfig, description: string): Promise<CharacterData> => {
+  if ((cfg.apiMode || 'custom') === 'free') {
+    return generateCharacterWithFreeTrial(description);
+  }
+
   if (!cfg.apiKey) throw new Error('请先填写 API Key');
   if (!cfg.baseUrl) throw new Error('请先填写 Base URL');
   if (!cfg.model) throw new Error('请先填写 Model');
@@ -81,49 +158,16 @@ JSON 结构如下：
 
   const cleaned = stripJsonFences(content);
 
-  let data;
+  let data: unknown;
   try {
     data = JSON.parse(cleaned);
-  } catch (err) {
+  } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('AI 返回的内容不是合法的 JSON：' + cleaned.slice(0, 100));
     data = JSON.parse(match[0]);
   }
 
-  // 规范化技能数据，确保 type 字段存在
-  const skills: Skill[] = (data.skills || []).map((s: any): Skill => {
-    const type = (s.type as Skill['type']) || 'attack';
-    const isUltimate = Boolean(s.isUltimate) || type === 'ultimate';
-    const ultimateType = isUltimate
-      ? ULTIMATE_TYPE_IDS.includes(s.ultimateType)
-        ? s.ultimateType
-        : ULTIMATE_TYPE_IDS[0]
-      : undefined;
-
-    return {
-      name: s.name || '未命名技能',
-      description: s.description || '',
-      damageMultiplier: Number(s.damageMultiplier) || 1.0,
-      type,
-      isUltimate,
-      imagePrompt: s.imagePrompt,
-      imageUrl: isUltimate ? getUltimateTypeById(ultimateType)?.imageUrl : s.imageUrl,
-      ultimateType,
-      healPercent: s.healPercent ? Number(s.healPercent) : undefined,
-      buffPercent: s.buffPercent ? Number(s.buffPercent) : undefined,
-      buffTurns: s.buffTurns ? Number(s.buffTurns) : undefined,
-    };
-  });
-
-  return {
-    ...data,
-    maxHp: data.hp,
-    skills,
-    ultimateCharge: 0,
-    attackBuff: 0,
-    defenseBuff: 0,
-    buffTurnsLeft: 0,
-  };
+  return normalizeCharacterData(data);
 };
 
 // ============ 图片生成：双 API + 限流 + 可靠性增强 ============
@@ -219,6 +263,8 @@ export const generateUltimateImage = async (
   _player?: 1 | 2,
   _modelOverride?: string,
 ): Promise<string> => {
+  void _player;
+  void _modelOverride;
   const type = getUltimateTypeById(ultimateType) ?? getUltimateTypeById(ULTIMATE_TYPE_IDS[0]);
   if (!type) return '';
   const pool = [type.imageUrl, ...(type.alternateImageUrls || [])];

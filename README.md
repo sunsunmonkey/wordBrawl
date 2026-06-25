@@ -1,5 +1,24 @@
 # React + TypeScript + Vite
 
+## Vercel 免费体验接口
+
+项目提供两种 AI 使用方式：
+
+- 免费体验：前端调用 `/api/generate-character`，服务端使用 Vercel 环境变量里的 Key，不会暴露给浏览器。
+- 自带 API：用户在页面中填写 OpenAI 兼容的 `Base URL`、`Model` 和 `API Key`，继续走浏览器直连。
+
+部署到 Vercel 后，在 Project Settings -> Environment Variables 填：
+
+```bash
+AI_API_KEY=sk-your-server-key
+AI_BASE_URL=https://api.openai.com/v1
+AI_MODEL=gpt-4o-mini
+FREE_DAILY_LIMIT=5
+FREE_USAGE_TIMEZONE=Asia/Shanghai
+```
+
+`FREE_DAILY_LIMIT` 默认为 `5`，改成其它数字即可调整每天体验次数；设为 `0` 表示不限制。
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

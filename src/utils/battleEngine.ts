@@ -186,7 +186,9 @@ export class BattleEngine {
       // attack / ultimate
       const baseDamage = this.getEffectiveAttack(attacker) * skill.damageMultiplier;
       const actualDamage = Math.max(1, Math.floor(baseDamage * (100 / (100 + this.getEffectiveDefense(defender)))));
-      isCrit = Math.random() < (isUlt ? 0.35 : 0.15);
+      const critBonus = (attacker.critBonus || 0) / 100;
+      const baseCrit = isUlt ? 0.35 : 0.15;
+      isCrit = Math.random() < Math.min(0.95, baseCrit + critBonus);
       const finalDamage = isCrit ? Math.floor(actualDamage * (isUlt ? 2.0 : 1.5)) : actualDamage;
       defender.hp = Math.max(0, defender.hp - finalDamage);
       damage = finalDamage;

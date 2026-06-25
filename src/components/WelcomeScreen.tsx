@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useGameStore, BattleMode } from "../store/useGameStore";
+import { useGameStore } from "../store/useGameStore";
 import { motion } from "framer-motion";
 import {
   Key,
@@ -9,18 +9,26 @@ import {
   Cpu,
   Zap,
   AlertTriangle,
-  Bot,
-  Hand,
+  Gift,
 } from "lucide-react";
 import { ParticleField } from "./ParticleField";
 
+interface FreeUsageStatus {
+  limit: number;
+  used: number;
+  remaining: number | null;
+  unlimited: boolean;
+}
+
 export const WelcomeScreen: React.FC = () => {
-  const { apiKey, baseUrl, model, battleMode, setApiKey, setBaseUrl, setModel, setBattleMode, setPhase } =
+  const { apiKey, baseUrl, model, apiMode, setApiKey, setBaseUrl, setModel, setApiMode, setPhase } =
     useGameStore();
   const [inputKey, setInputKey] = useState(apiKey);
   const [inputBaseUrl, setInputBaseUrl] = useState(baseUrl);
   const [inputModel, setInputModel] = useState(model);
   const [error, setError] = useState("");
+  const [freeUsage, setFreeUsage] = useState<FreeUsageStatus | null>(null);
+  const [isUsageLoading, setIsUsageLoading] = useState(true);
 
   // 同步持久化的配置到输入框（处理 hydrate 时序问题）
   useEffect(() => {
@@ -29,18 +37,53 @@ export const WelcomeScreen: React.FC = () => {
     setInputModel(model);
   }, [apiKey, baseUrl, model]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadUsage = async () => {
+      setIsUsageLoading(true);
+      try {
+        const response = await fetch('/api/generate-character');
+        const payload = await response.json();
+        if (!cancelled && response.ok && payload?.usage) {
+          setFreeUsage(payload.usage);
+        }
+      } catch {
+        if (!cancelled) setFreeUsage(null);
+      } finally {
+        if (!cancelled) setIsUsageLoading(false);
+      }
+    };
+
+    loadUsage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const freeUsageLabel = freeUsage?.unlimited
+    ? '♾️'
+    : freeUsage
+      ? `${freeUsage.remaining}/${freeUsage.limit}`
+      : isUsageLoading
+        ? '...'
+        : '--';
+
   const handleStart = () => {
     const k = inputKey.trim();
     const u = inputBaseUrl.trim();
     const m = inputModel.trim();
-    if (!k || !u || !m) {
+    if (apiMode === 'custom' && (!k || !u || !m)) {
       setError("请完整填写 API Key、Base URL 与 Model");
       return;
     }
     setError("");
-    setApiKey(k);
-    setBaseUrl(u);
-    setModel(m);
+    if (apiMode === 'custom') {
+      setApiKey(k);
+      setBaseUrl(u);
+      setModel(m);
+    }
     setPhase("PLAYER1_CREATE");
   };
 
@@ -75,10 +118,14 @@ export const WelcomeScreen: React.FC = () => {
       </div>
       <div className="absolute top-6 right-6 text-xs text-[#FF003C]/60 z-10 text-right">
         <div className="flex items-center justify-end gap-2">
-          {apiKey && baseUrl && model ? "CONFIG READY" : "CONFIG REQUIRED"}
+          {apiMode === 'free'
+            ? "FREE TRIAL READY"
+            : apiKey && baseUrl && model
+              ? "CONFIG READY"
+              : "CONFIG REQUIRED"}
         </div>
         <div className="text-[10px] text-[#8a8d91]/60 mt-1">
-          {model ? model.slice(0, 22) : "— no model —"}
+          {apiMode === 'free' ? "server powered" : model ? model.slice(0, 22) : "— no model —"}
         </div>
       </div>
 
@@ -132,95 +179,101 @@ export const WelcomeScreen: React.FC = () => {
         >
           <div className="mb-4">
             <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
-              <Server size={14} />
-              BASE URL
+              <Zap size={14} />
+              AI MODE
             </label>
-            <input
-              type="text"
-              value={inputBaseUrl}
-              onChange={(e) => setInputBaseUrl(e.target.value)}
-              placeholder=""
-              className={inputBaseClass}
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setApiMode('free');
+                  setError('');
+                }}
+                className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
+                  apiMode === 'free'
+                    ? 'border-[#66FCF1] bg-[#66FCF1]/10 text-[#66FCF1]'
+                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#66FCF1]/50'
+                }`}
+                style={apiMode === 'free' ? { boxShadow: '0 0 12px rgba(102,252,241,0.4)' } : {}}
+              >
+                <Gift size={20} />
+                <span className="text-xs font-bold tracking-wider">FREE</span>
+                <span className="text-[9px] opacity-70">每日体验 ({freeUsageLabel})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApiMode('custom');
+                  setError('');
+                }}
+                className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
+                  apiMode === 'custom'
+                    ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]'
+                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#FFD700]/50'
+                }`}
+                style={apiMode === 'custom' ? { boxShadow: '0 0 12px rgba(255,215,0,0.4)' } : {}}
+              >
+                <Key size={20} />
+                <span className="text-xs font-bold tracking-wider">CUSTOM</span>
+                <span className="text-[9px] opacity-70">自带 API</span>
+              </button>
+            </div>
           </div>
 
-          <div className="mb-4">
-            <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
-              <Cpu size={14} />
-              MODEL
-            </label>
-            <input
-              type="text"
-              value={inputModel}
-              onChange={(e) => setInputModel(e.target.value)}
-              placeholder=""
-              className={inputBaseClass}
-            />
-          </div>
+          {apiMode === 'custom' && (
+            <>
+              <div className="mb-4">
+                <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
+                  <Server size={14} />
+                  BASE URL
+                </label>
+                <input
+                  type="text"
+                  value={inputBaseUrl}
+                  onChange={(e) => setInputBaseUrl(e.target.value)}
+                  placeholder=""
+                  className={inputBaseClass}
+                />
+              </div>
 
-          <div className="mb-4">
-            <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
-              <Key size={14} />
-              API KEY
-            </label>
-            <input
-              type="password"
-              value={inputKey}
-              onChange={(e) => setInputKey(e.target.value)}
-              placeholder="sk-..."
-              className={inputBaseClass}
-            />
-            <p className="text-xs text-[#8a8d91] mt-2 leading-relaxed">
-              <span className="text-[#66FCF1]">▸</span> 请使用 OpenAI api 格式
-            </p>
-          </div>
+              <div className="mb-4">
+                <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
+                  <Cpu size={14} />
+                  MODEL
+                </label>
+                <input
+                  type="text"
+                  value={inputModel}
+                  onChange={(e) => setInputModel(e.target.value)}
+                  placeholder=""
+                  className={inputBaseClass}
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
+                  <Key size={14} />
+                  API KEY
+                </label>
+                <input
+                  type="password"
+                  value={inputKey}
+                  onChange={(e) => setInputKey(e.target.value)}
+                  placeholder="sk-..."
+                  className={inputBaseClass}
+                />
+                <p className="text-xs text-[#8a8d91] mt-2 leading-relaxed">
+                  <span className="text-[#66FCF1]">▸</span> 请使用 OpenAI api 格式
+                </p>
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="mb-4 p-2.5 bg-red-900/30 border border-red-500/50 text-red-400 rounded text-xs flex items-center gap-2">
               <AlertTriangle size={14} /> {error}
             </div>
           )}
-
-          {/* 战斗模式选择 */}
-          <div className="mb-4">
-            <label className="flex items-center gap-2 text-xs text-[#66FCF1] mb-2 font-semibold tracking-wider">
-              <Zap size={14} />
-              BATTLE MODE
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setBattleMode('auto')}
-                className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
-                  battleMode === 'auto'
-                    ? 'border-[#66FCF1] bg-[#66FCF1]/10 text-[#66FCF1]'
-                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#66FCF1]/50'
-                }`}
-                style={battleMode === 'auto' ? { boxShadow: '0 0 12px rgba(102,252,241,0.4)' } : {}}
-              >
-                <Bot size={20} />
-                <span className="text-xs font-bold tracking-wider">AUTO</span>
-                <span className="text-[9px] opacity-70">AI 自动对战</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBattleMode('manual')}
-                className={`relative flex flex-col items-center gap-1 p-3 rounded border-2 transition-all ${
-                  battleMode === 'manual'
-                    ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]'
-                    : 'border-[#45A29E]/30 text-[#8a8d91] hover:border-[#FFD700]/50'
-                }`}
-                style={battleMode === 'manual' ? { boxShadow: '0 0 12px rgba(255,215,0,0.4)' } : {}}
-              >
-                <Hand size={20} />
-                <span className="text-xs font-bold tracking-wider">MANUAL</span>
-                <span className="text-[9px] opacity-70">手动选技能</span>
-              </button>
-            </div>
-            <p className="text-[10px] text-[#8a8d91] mt-2 leading-relaxed">
-              <span className="text-[#66FCF1]">▸</span> {battleMode === 'auto' ? 'AI 自动模拟整场战斗' : 'P1 先选技能 → P2 再选技能，轮流出手'}
-            </p>
-          </div>
 
           <motion.button
             onClick={handleStart}
@@ -236,7 +289,7 @@ export const WelcomeScreen: React.FC = () => {
       </motion.div>
 
       <div className="absolute bottom-4 left-0 right-0 text-center text-[10px] text-[#8a8d91]/50 z-10 tracking-widest">
-        ▼ NEURAL COMBAT ENGINE ▼ BRING YOUR OWN KEY ▼
+        ▼ NEURAL COMBAT ENGINE ▼ FREE TRIAL / BRING YOUR OWN KEY ▼
       </div>
     </div>
   );
