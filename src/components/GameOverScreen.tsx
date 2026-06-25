@@ -1,13 +1,23 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
+import { useRosterStore } from '../store/useRosterStore';
 import { motion } from 'framer-motion';
-import { Trophy, RotateCcw, Skull, Crown } from 'lucide-react';
+import { Trophy, RotateCcw, Skull, Crown, UserPlus, Check, Sparkles, Zap, Heart } from 'lucide-react';
 import { ParticleField } from './ParticleField';
 
 export const GameOverScreen: React.FC = () => {
   const { winner, player1, player2, resetGame } = useGameStore();
+  const { roster, recruitCharacter } = useRosterStore();
   const [winnerImgFailed, setWinnerImgFailed] = useState(false);
   const [loserImgFailed, setLoserImgFailed] = useState(false);
+  const [recruitedKeys, setRecruitedKeys] = useState<Set<'p1' | 'p2'>>(new Set());
+
+  const isAlreadyInRoster = useMemo(() => {
+    return (name: string | undefined) => {
+      if (!name) return false;
+      return roster.some((r) => r.name === name);
+    };
+  }, [roster]);
 
   if (!winner || !player1 || !player2) {
     return (
@@ -152,8 +162,153 @@ export const GameOverScreen: React.FC = () => {
         >
           {winnerData.name}
         </h2>
-        <div className="text-xs text-[#8a8d91] mb-8 tracking-widest">
+        <div className="text-xs text-[#8a8d91] mb-6 tracking-widest">
           残余生命 {winnerData.hp} / {winnerData.maxHp}
+        </div>
+
+        {/* 收入麾下 · 左 P1(蓝) / 右 P2(红) */}
+        <div className="w-full mb-6">
+          <div className="flex items-center justify-center gap-2 text-[10px] text-[#8a8d91] tracking-[0.3em] mb-3">
+            <span className="h-px flex-1 bg-gradient-to-r from-transparent via-[#45A29E]/60 to-transparent" />
+            <Sparkles size={10} className="text-[#FFD700]" />
+            <span>RECRUIT · 收入麾下</span>
+            <Sparkles size={10} className="text-[#FFD700]" />
+            <span className="h-px flex-1 bg-gradient-to-l from-transparent via-[#45A29E]/60 to-transparent" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { key: 'p1' as const, data: player1, color: '#66FCF1', rgb: '102, 252, 241', label: 'PLAYER 1' },
+              { key: 'p2' as const, data: player2, color: '#FF003C', rgb: '255, 0, 60', label: 'PLAYER 2' },
+            ]).map(({ key, data, color, rgb, label }, idx) => {
+              const isRecruited = recruitedKeys.has(key);
+              const alreadyOwned = isAlreadyInRoster(data.name);
+              const isPreset = !!data.isPreset;
+              const disabled = isRecruited || alreadyOwned || isPreset;
+              return (
+                <motion.button
+                  key={key}
+                  type="button"
+                  initial={{ opacity: 0, y: 24, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: 0.9 + idx * 0.12, type: 'spring', bounce: 0.4 }}
+                  whileHover={disabled ? {} : { y: -3, scale: 1.02 }}
+                  whileTap={disabled ? {} : { scale: 0.97 }}
+                  onClick={() => {
+                    if (disabled) return;
+                    recruitCharacter(data, data.sourceDescription);
+                    setRecruitedKeys((prev) => new Set(prev).add(key));
+                  }}
+                  disabled={disabled}
+                  className="group relative flex flex-col overflow-hidden rounded-lg border-2 bg-[#0B0C10]/85 backdrop-blur-sm transition-all disabled:cursor-default"
+                  style={{
+                    borderColor: disabled ? `${color}55` : color,
+                    boxShadow: disabled ? 'none' : `0 0 18px rgba(${rgb}, 0.45), inset 0 0 18px rgba(${rgb}, 0.08)`,
+                  }}
+                >
+                  {/* 扫描线条流光（hover 时显示） */}
+                  {!disabled && (
+                    <motion.div
+                      className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                      animate={{ x: ['-120%', '120%'] }}
+                      transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
+                      style={{
+                        background: `linear-gradient(90deg, transparent, rgba(${rgb}, 0.35), transparent)`,
+                      }}
+                    />
+                  )}
+
+                  {/* 顶部条：玩家标签 */}
+                  <div
+                    className="relative flex items-center justify-between px-2.5 py-1 text-[9px] font-display tracking-[0.3em]"
+                    style={{
+                      background: `linear-gradient(90deg, rgba(${rgb}, 0.25), transparent)`,
+                      color,
+                    }}
+                  >
+                    <span>{label}</span>
+                    <span className="opacity-70">{key === 'p1' ? '◤ BLUE' : 'RED ◥'}</span>
+                  </div>
+
+                  {/* 主体：头像 + 名字 + 状态 */}
+                  <div className="flex items-center gap-3 p-3 relative">
+                    <div className="relative flex-shrink-0">
+                      <motion.div
+                        animate={disabled ? {} : { rotate: 360 }}
+                        transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
+                        className="absolute -inset-1 rounded-md border border-dashed pointer-events-none"
+                        style={{ borderColor: `${color}66` }}
+                      />
+                      <div
+                        className="w-14 h-14 rounded-md overflow-hidden border-2 bg-[#1F2833]"
+                        style={{
+                          borderColor: color,
+                          boxShadow: `0 0 12px rgba(${rgb}, 0.5)`,
+                          filter: disabled ? 'grayscale(0.4)' : 'none',
+                        }}
+                      >
+                        {data.imageUrl ? (
+                          <img src={data.imageUrl} alt={data.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-2xl font-black font-display" style={{ color }}>
+                            {data.name?.[0] || '?'}
+                          </div>
+                        )}
+                      </div>
+                      {/* 角标：胜者 trophy / 败者 skull */}
+                      {key === (winner === 'player1' ? 'p1' : 'p2') ? (
+                        <Trophy
+                          size={14}
+                          className="absolute -top-1 -right-1"
+                          style={{ color: '#FFD700', filter: 'drop-shadow(0 0 6px #FFD700)' }}
+                        />
+                      ) : (
+                        <Skull size={12} className="absolute -top-1 -right-1 text-[#8a8d91]" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <div
+                        className="text-sm font-bold font-display truncate"
+                        style={{ color, textShadow: disabled ? 'none' : `0 0 6px ${color}` }}
+                      >
+                        {data.name}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[9px] text-[#8a8d91] mt-0.5">
+                        <Heart size={9} className="text-pink-400" /> {data.maxHp}
+                        <Zap size={9} className="text-yellow-400 ml-1" /> {data.attack}
+                      </div>
+                      <div
+                        className="mt-1 inline-flex items-center gap-1 text-[9px] font-display tracking-wider px-1.5 py-0.5 rounded"
+                        style={{
+                          background: disabled ? '#0B0C10' : `rgba(${rgb}, 0.18)`,
+                          color: disabled ? '#8a8d91' : color,
+                          border: `1px solid ${disabled ? '#3a3d42' : color}`,
+                        }}
+                      >
+                        {disabled ? <Check size={10} /> : <UserPlus size={10} />}
+                        {isPreset ? '预设角色' : alreadyOwned ? '已在麾下' : isRecruited ? '已收入' : '收入麾下'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 收入成功的发光闪光 */}
+                  {isRecruited && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: [0, 0.8, 0] }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        background: `radial-gradient(circle at center, rgba(${rgb}, 0.6) 0%, transparent 70%)`,
+                      }}
+                    />
+                  )}
+                </motion.button>
+              );
+            })}
+          </div>
+          <div className="text-[9px] text-[#8a8d91] mt-2 text-center tracking-wider">
+            收入后可在主菜单 · 我的麾下中查看详情
+          </div>
         </div>
 
         <button

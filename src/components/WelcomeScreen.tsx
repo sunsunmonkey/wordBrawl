@@ -10,8 +10,10 @@ import {
   Zap,
   AlertTriangle,
   Gift,
+  UsersRound,
 } from "lucide-react";
 import { ParticleField } from "./ParticleField";
+import { useRosterStore } from "../store/useRosterStore";
 
 interface FreeUsageStatus {
   limit: number;
@@ -38,6 +40,7 @@ export const WelcomeScreen: React.FC = () => {
   const [error, setError] = useState("");
   const [freeUsage, setFreeUsage] = useState<FreeUsageStatus | null>(null);
   const [isUsageLoading, setIsUsageLoading] = useState(true);
+  const rosterCount = useRosterStore((s) => s.roster.length);
 
   // 同步持久化的配置到输入框（处理 hydrate 时序问题）
   useEffect(() => {
@@ -309,6 +312,16 @@ export const WelcomeScreen: React.FC = () => {
             <Play size={20} className="group-hover:fill-current" />
             START DUEL
           </motion.button>
+
+          <button
+            type="button"
+            onClick={() => setPhase('ROSTER_VIEW')}
+            className="mt-3 w-full flex items-center justify-center gap-2 bg-[#0B0C10]/60 border border-[#45A29E]/40 text-[#8a8d91] hover:text-[#66FCF1] hover:border-[#66FCF1]/60 py-2.5 px-4 rounded text-xs font-display tracking-[0.3em] transition-all"
+          >
+            <UsersRound size={14} />
+            我的麾下
+            <span className="text-[10px] opacity-70">({rosterCount})</span>
+          </button>
         </motion.div>
       </motion.div>
 

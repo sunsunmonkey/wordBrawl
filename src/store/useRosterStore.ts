@@ -5,7 +5,6 @@ import type { CharacterData } from './useGameStore';
 export interface RosterCharacter extends CharacterData {
   rosterId: string;
   recruitedAt: number;
-  sourceDescription?: string;
 }
 
 const MAX_ROSTER_SIZE = 24;
@@ -14,7 +13,7 @@ const cloneCharacter = (char: CharacterData): CharacterData => JSON.parse(JSON.s
 
 export const resetCharacterRuntimeState = (char: CharacterData): CharacterData => {
   const copy = cloneCharacter(char);
-  const { rosterId: _rosterId, recruitedAt: _recruitedAt, sourceDescription: _sourceDescription, ...character } = copy as CharacterData & Partial<RosterCharacter>;
+  const { rosterId: _rosterId, recruitedAt: _recruitedAt, ...character } = copy as CharacterData & Partial<RosterCharacter>;
   return {
     ...character,
     hp: character.maxHp,
@@ -43,9 +42,9 @@ export const useRosterStore = create<RosterStore>()(
       recruitCharacter: (char, sourceDescription) => set((state) => {
         const recruited: RosterCharacter = {
           ...resetCharacterRuntimeState(char),
+          sourceDescription: sourceDescription ?? char.sourceDescription,
           rosterId: makeRosterId(),
           recruitedAt: Date.now(),
-          sourceDescription,
         };
 
         return {
