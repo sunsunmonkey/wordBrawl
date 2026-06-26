@@ -31,7 +31,7 @@ const tryLoadRemoteAvatar = async (generator: () => Promise<string>): Promise<st
 
 export const CharacterCreateScreen: React.FC = () => {
   const { phase, apiKey, baseUrl, model, apiMode, setPlayer1, setPlayer2, setPhase, player1 } = useGameStore();
-  const { roster, removeCharacter } = useRosterStore();
+  const { roster, removeCharacter, recruitCharacter } = useRosterStore();
   const cfg: AIConfig = { apiKey, baseUrl, model, apiMode };
   const isPlayer1 = phase === 'PLAYER1_CREATE';
   const playerName = isPlayer1 ? 'PLAYER 1' : 'PLAYER 2';
@@ -174,6 +174,42 @@ export const CharacterCreateScreen: React.FC = () => {
         setPlayer2(charData);
         setPhase('BATTLE_ARENA');
       }
+    } finally {
+      setSelectingPreset(null);
+    }
+  };
+
+  // 把预设角色"派出修炼分身"：deep-clone 一份，移除 isPreset，加入麾下，跳转九层塔
+  const handleDispatchTrainee = async (preset: typeof presetCharacters[number]) => {
+    setSelectingPreset(preset.name);
+    setError('');
+    try {
+      const ultimateSkill = preset.skills.find((s) => s.isUltimate || s.type === 'ultimate');
+      await Promise.all([
+        preset.imageUrl ? preloadImage(preset.imageUrl, 30000) : Promise.resolve(false),
+        ultimateSkill?.imageUrl ? preloadImage(ultimateSkill.imageUrl, 30000) : Promise.resolve(false),
+      ]);
+      const clone: typeof preset = JSON.parse(JSON.stringify(preset));
+      clone.hp = clone.maxHp;
+      clone.ultimateCharge = 0;
+      clone.attackBuff = 0;
+      clone.defenseBuff = 0;
+      clone.buffTurnsLeft = 0;
+      clone.isPreset = false;
+      clone.sourceDescription = `${preset.name} · 修炼分身`;
+      recruitCharacter(clone, clone.sourceDescription);
+      setPhase('TOWER_HUB');
+    } catch {
+      const clone: typeof preset = JSON.parse(JSON.stringify(preset));
+      clone.hp = clone.maxHp;
+      clone.ultimateCharge = 0;
+      clone.attackBuff = 0;
+      clone.defenseBuff = 0;
+      clone.buffTurnsLeft = 0;
+      clone.isPreset = false;
+      clone.sourceDescription = `${preset.name} · 修炼分身`;
+      recruitCharacter(clone, clone.sourceDescription);
+      setPhase('TOWER_HUB');
     } finally {
       setSelectingPreset(null);
     }
@@ -398,6 +434,20 @@ export const CharacterCreateScreen: React.FC = () => {
               className="absolute top-1 left-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#66FCF1] disabled:opacity-0"
             >
               <Info size={12} />
+            </button>
+            {/* 派出修炼分身 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDispatchTrainee(preset);
+              }}
+              disabled={isDisabled}
+              aria-label={`派出 ${preset.name} 修炼分身`}
+              title="派出修炼分身 · 加入麾下并前往九层塔"
+              className="absolute top-1 right-1 px-1.5 h-6 rounded bg-black/65 text-[10px] tracking-widest font-display text-[#FFD700] flex items-center gap-1 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-0"
+            >
+              <Sparkles size={10} /> 修炼
             </button>
           </motion.div>
         );

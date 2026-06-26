@@ -75,8 +75,18 @@ export interface BattleEvent {
   defenderCharge?: number;
 }
 
-export type GamePhase = 'WELCOME' | 'PLAYER1_CREATE' | 'PLAYER2_CREATE' | 'BATTLE_ARENA' | 'GAME_OVER' | 'ROSTER_VIEW';
+export type GamePhase =
+  | 'WELCOME'
+  | 'MODE_SELECT'
+  | 'PLAYER1_CREATE'
+  | 'PLAYER2_CREATE'
+  | 'BATTLE_ARENA'
+  | 'GAME_OVER'
+  | 'ROSTER_VIEW'
+  | 'TOWER_HUB'
+  | 'TOWER_RESULT';
 export type ApiMode = 'free' | 'custom';
+export type BattleMode = 'pvp' | 'pve_tower';
 
 /**
  * 装备武器：以角色的 baseStats 为基线，叠加 weapon 的属性加成。
@@ -110,6 +120,12 @@ interface GameStore {
   battleLogs: BattleEvent[];
   currentTurn: number;
   winner: 'player1' | 'player2' | null;
+  /** 当前战斗模式：PVP 或 九层塔 PVE */
+  battleMode: BattleMode;
+  /** PVE 当前挑战的塔层号 1-9 */
+  towerLayer: number;
+  /** PVE 出战的麾下角色 rosterId */
+  towerRosterId: string | null;
 
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
@@ -126,6 +142,9 @@ interface GameStore {
   equipPlayer2Weapon: (weapon: Weapon) => void;
   addBattleLog: (log: BattleEvent) => void;
   setWinner: (winner: 'player1' | 'player2') => void;
+  setBattleMode: (mode: BattleMode) => void;
+  setTowerLayer: (layer: number) => void;
+  setTowerRosterId: (rosterId: string | null) => void;
   resetGame: () => void;
 }
 
@@ -142,6 +161,9 @@ export const useGameStore = create<GameStore>()(
       battleLogs: [],
       currentTurn: 0,
       winner: null,
+      battleMode: 'pvp',
+      towerLayer: 1,
+      towerRosterId: null,
 
       setApiKey: (key) => set({ apiKey: key }),
       setBaseUrl: (url) => set({ baseUrl: url }),
@@ -160,7 +182,13 @@ export const useGameStore = create<GameStore>()(
         battleLogs: [...state.battleLogs, log],
         currentTurn: Math.max(state.currentTurn, log.turn),
       })),
-      setWinner: (winner) => set({ winner, phase: 'GAME_OVER' }),
+      setWinner: (winner) => set((state) => ({
+        winner,
+        phase: state.battleMode === 'pve_tower' ? 'TOWER_RESULT' : 'GAME_OVER',
+      })),
+      setBattleMode: (mode) => set({ battleMode: mode }),
+      setTowerLayer: (layer) => set({ towerLayer: layer }),
+      setTowerRosterId: (rosterId) => set({ towerRosterId: rosterId }),
       resetGame: () => set({
         phase: 'PLAYER1_CREATE',
         player1: null,
@@ -168,6 +196,9 @@ export const useGameStore = create<GameStore>()(
         battleLogs: [],
         currentTurn: 0,
         winner: null,
+        battleMode: 'pvp',
+        towerLayer: 1,
+        towerRosterId: null,
       }),
     }),
     {

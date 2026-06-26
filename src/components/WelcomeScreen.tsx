@@ -95,7 +95,7 @@ export const WelcomeScreen: React.FC = () => {
       setBaseUrl(u);
       setModel(m);
     }
-    setPhase("PLAYER1_CREATE");
+    setPhase("MODE_SELECT");
   };
 
   const inputBaseClass =
@@ -319,7 +319,7 @@ export const WelcomeScreen: React.FC = () => {
             style={{ boxShadow: "0 0 12px rgba(102, 252, 241, 0.5)" }}
           >
             <Play size={20} className="group-hover:fill-current" />
-            START DUEL
+            ENTER ARENA
           </motion.button>
 
           <button
