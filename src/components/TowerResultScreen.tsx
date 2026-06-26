@@ -36,7 +36,8 @@ import {
   requestSkillCandidates,
   requestEvolve,
 } from '../utils/towerAnalysis';
-import { generateCharacterImage } from '../utils/ai';
+import { generateCharacterImage, generateEvolutionImage } from '../utils/ai';
+import { cacheImageUrlAsDataUrl } from '../utils/localImage';
 import { EvolutionAnimation } from './EvolutionAnimation';
 
 type Stage = 'idle' | 'analyzing' | 'analysis_done' | 'choose_skill' | 'evolving' | 'evolution_done' | 'finished';
@@ -236,11 +237,25 @@ export const TowerResultScreen: React.FC = () => {
       let newImage = char.imageUrl;
       try {
         if (evo.imagePrompt) {
-          newImage = (await generateCharacterImage(
-            { apiKey, baseUrl, model, apiMode },
-            evo.imagePrompt,
-            1,
-          )) || char.imageUrl;
+          const remote = await generateEvolutionImage(evo.imagePrompt, {
+            seedSalt: `${char.rosterId}:${stageNum}`,
+          });
+          if (remote) {
+            // 把成功 probe 过的远程图缓存为 dataURL，避免后续 <img> 再去请求 pollinations 失败
+            const cached = await cacheImageUrlAsDataUrl(remote);
+            newImage = cached || remote;
+          } else {
+            // 远程多次失败：旧 generator 兜底再试一次，最差保留旧头像
+            const fallback = await generateCharacterImage(
+              { apiKey, baseUrl, model, apiMode },
+              evo.imagePrompt,
+              1,
+            );
+            if (fallback) {
+              const cached = await cacheImageUrlAsDataUrl(fallback);
+              newImage = cached || fallback || char.imageUrl;
+            }
+          }
         }
       } catch (err) {
         console.warn('evolve image failed', err);

@@ -32,7 +32,16 @@ export const EvolutionAnimation: React.FC<Props> = ({
   onFinish,
 }) => {
   const [phase, setPhase] = useState<AnimPhase>('charge');
+  const [newImageFailed, setNewImageFailed] = useState(false);
   const theme = STAGE_THEME[stage];
+
+  // 新图变了：重置失败标记
+  useEffect(() => {
+    setNewImageFailed(false);
+  }, [newImageUrl]);
+
+  // 实际渲染的新图：如果加载失败，回退旧图（避免 broken icon）
+  const renderedNewImage = newImageFailed ? oldImageUrl ?? null : newImageUrl;
 
   // 在新图未就绪前持续 charge；图就绪后立刻往后推进
   useEffect(() => {
@@ -193,7 +202,7 @@ export const EvolutionAnimation: React.FC<Props> = ({
             />
           )}
 
-          {showNew && newImageUrl && (
+          {showNew && renderedNewImage && (
             <motion.div
               key="new-avatar"
               className="absolute inset-0 rounded-full overflow-hidden"
@@ -205,7 +214,12 @@ export const EvolutionAnimation: React.FC<Props> = ({
               animate={{ scale: 1, opacity: 1, rotate: 0, filter: 'brightness(1)' }}
               transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
             >
-              <img src={newImageUrl} alt="new-form" className="w-full h-full object-cover" />
+              <img
+                src={renderedNewImage}
+                alt="new-form"
+                className="w-full h-full object-cover"
+                onError={() => setNewImageFailed(true)}
+              />
               {/* 持续金光晕 */}
               <motion.div
                 className="absolute inset-0 pointer-events-none"
