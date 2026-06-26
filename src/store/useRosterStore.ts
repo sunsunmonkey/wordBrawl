@@ -103,17 +103,32 @@ const ensureGrowthFields = (char: Partial<RosterCharacter> & CharacterData & { r
       }
     : defaults.analysis;
 
+  const recruitedAt = char.recruitedAt ?? Date.now();
+  let formHistory = Array.isArray(char.formHistory) ? char.formHistory : defaults.formHistory;
+  // 自动补一条初始形态（stage 0）：仅当 formHistory 里还没有 stage 0 时
+  const hasInitial = formHistory.some((f) => f.stage === 0);
+  if (!hasInitial) {
+    const initialEntry: FormHistoryEntry = {
+      stage: 0,
+      imageUrl: char.imageUrl,
+      imagePrompt: char.imagePrompt ?? '',
+      lore: char.sourceDescription,
+      createdAt: recruitedAt,
+    };
+    formHistory = [initialEntry, ...formHistory];
+  }
+
   return {
     ...(char as CharacterData),
     rosterId: char.rosterId ?? makeRosterId(),
-    recruitedAt: char.recruitedAt ?? Date.now(),
+    recruitedAt,
     level: typeof char.level === 'number' && char.level > 0 ? char.level : defaults.level,
     xp: typeof char.xp === 'number' && char.xp >= 0 ? char.xp : defaults.xp,
     evolutionStage:
       typeof char.evolutionStage === 'number' && char.evolutionStage >= 0 && char.evolutionStage <= 3
         ? (char.evolutionStage as EvolutionStage)
         : defaults.evolutionStage,
-    formHistory: Array.isArray(char.formHistory) ? char.formHistory : defaults.formHistory,
+    formHistory,
     tower,
     analysis,
   };
@@ -215,7 +230,7 @@ export const useRosterStore = create<RosterStore>()(
     }),
     {
       name: 'word-brawl-roster',
-      version: 2,
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return { roster: [] } as { roster: RosterCharacter[] };
@@ -224,7 +239,7 @@ export const useRosterStore = create<RosterStore>()(
         if (!Array.isArray(state.roster)) {
           return { roster: [] } as { roster: RosterCharacter[] };
         }
-        if (version < 2) {
+        if (version < 3) {
           return {
             roster: state.roster.map((entry) =>
               ensureGrowthFields(entry as Partial<RosterCharacter> & CharacterData),

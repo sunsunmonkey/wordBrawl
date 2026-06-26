@@ -344,6 +344,52 @@ export const generateCharacterImage = async (
 };
 
 /**
+ * 进化形象专用：连续尝试多个模型 + 多个 seed，确保图片真的能被加载。
+ * - 优先 sana（最快），失败再回退 flux / 默认
+ * - 每次尝试都 probeImage 校验，确保返回的 URL 是真实可用的图片
+ * - 全部失败返回空串，调用方需要 fallback 到旧头像
+ */
+export const generateEvolutionImage = async (
+  prompt: string,
+  options?: {
+    seedSalt?: string;
+    width?: number;
+    height?: number;
+    onAttempt?: (info: { attempt: number; total: number; model?: string }) => void;
+  },
+): Promise<string> => {
+  if (!prompt) return '';
+  const width = options?.width ?? 384;
+  const height = options?.height ?? 384;
+  const cleaned = prompt.slice(0, 220);
+  const enriched = `${cleaned}, ascended evolution form, radiant aura, divine glow, ultra detailed anime key visual, cinematic lighting`;
+
+  const seedSalt = options?.seedSalt ?? String(Date.now());
+  const attempts = [
+    { model: 'sana' as string | undefined, seedKey: `${seedSalt}:s1` },
+    { model: 'flux' as string | undefined, seedKey: `${seedSalt}:s2` },
+    { model: 'sana' as string | undefined, seedKey: `${seedSalt}:s3` },
+    { model: undefined as string | undefined, seedKey: `${seedSalt}:s4` },
+  ];
+
+  for (let i = 0; i < attempts.length; i++) {
+    const { model, seedKey } = attempts[i];
+    options?.onAttempt?.({ attempt: i + 1, total: attempts.length, model });
+    const canStart = await globalLimiter.wait(20_000);
+    if (!canStart) continue;
+    const seed = hashSeed(seedKey);
+    const url = buildPollinationsUrl(enriched, width, height, seed, model);
+    const probe = await probeImage(url, 45_000);
+    if (probe.ok) return url;
+    if (probe.rateLimited && probe.retryAfterMs && probe.retryAfterMs > 0) {
+      await new Promise((r) => setTimeout(r, Math.min(probe.retryAfterMs!, 8_000)));
+    }
+  }
+
+  return '';
+};
+
+/**
  * 生成大招图片：根据 ultimateType 从该类型的图片池中随机挑选一张本地预设图
  * 不再调用远程图片 API，避免大招生成的不确定性与等待时间
  */
