@@ -5,6 +5,7 @@ import { useGameStore } from '../store/useGameStore';
 import { useRosterStore } from '../store/useRosterStore';
 import { CharacterDetailModal } from './CharacterDetailModal';
 import { ParticleField } from './ParticleField';
+import { evolutionStars } from '../utils/towerProgress';
 
 export const RosterScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
@@ -30,7 +31,7 @@ export const RosterScreen: React.FC = () => {
         <div className="flex items-center gap-3 mb-6">
           <button
             type="button"
-            onClick={() => setPhase('WELCOME')}
+            onClick={() => setPhase('MODE_SELECT')}
             className="flex items-center gap-1 text-xs text-[#8a8d91] hover:text-[#66FCF1] transition-colors"
           >
             <ArrowLeft size={14} /> 返回
@@ -80,7 +81,7 @@ export const RosterScreen: React.FC = () => {
                   className="relative group text-left rounded-lg overflow-hidden border-2 bg-[#0B0C10]/80 transition-all"
                   style={{ borderColor: `rgba(${themeRgb}, 0.4)` }}
                 >
-                  <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
+                    <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
                     {char.imageUrl ? (
                       <img
                         src={char.imageUrl}
@@ -91,6 +92,14 @@ export const RosterScreen: React.FC = () => {
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-3xl font-black font-display" style={{ color: themeColor }}>
                         {char.name[0]}
+                      </div>
+                    )}
+                    <div className="absolute top-1 right-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
+                      Lv.{char.level}
+                    </div>
+                    {char.evolutionStage > 0 && (
+                      <div className="absolute top-1 left-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
+                        {'★'.repeat(evolutionStars(char.evolutionStage))}
                       </div>
                     )}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 to-transparent p-2">

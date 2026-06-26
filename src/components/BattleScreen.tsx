@@ -8,6 +8,8 @@ import { getUltimateTypeById } from '../data/ultimateTypes';
 import { RARITY_COLOR, RARITY_LABEL, TYPE_LABEL, type Weapon } from '../data/weapons';
 import { rollWeapon } from '../utils/weaponRandom';
 import { WeaponRollOverlay } from './WeaponRollOverlay';
+import { summarizeBattle } from '../utils/towerAnalysis';
+import { useTowerStore } from '../store/useTowerStore';
 
 interface PopupDamage {
   id: string;
@@ -920,7 +922,7 @@ const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({ overlay }
 };
 
 export const BattleScreen: React.FC = () => {
-  const { player1, player2, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, equipPlayer1Weapon, equipPlayer2Weapon, addBattleLog, battleLogs, setWinner } = useGameStore();
+  const { player1, player2, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, equipPlayer1Weapon, equipPlayer2Weapon, addBattleLog, battleLogs, setWinner, battleMode } = useGameStore();
   const [isBattling, setIsBattling] = useState(false);
   const [hitSide, setHitSide] = useState<'left' | 'right' | null>(null);
   const [attackerSide, setAttackerSide] = useState<'left' | 'right' | null>(null);
@@ -1077,7 +1079,7 @@ export const BattleScreen: React.FC = () => {
     if (!player1 || !player2) return;
     // 已完成抽取，或玩家已经持有武器，跳过
     if (weaponInitRef.current) return;
-    if (player1.weapon && player2.weapon) {
+    if (player1.weapon && (battleMode === 'pve_tower' || player2.weapon)) {
       weaponInitRef.current = true;
       setWeaponPhase('done');
       return;
@@ -1094,12 +1096,18 @@ export const BattleScreen: React.FC = () => {
       target: 'player1',
     });
     setWeaponPhase('p1');
-  }, [player1, player2, equipPlayer1Weapon]);
+  }, [player1, player2, equipPlayer1Weapon, battleMode]);
 
   /** 武器揭晓后用户点击继续：根据当前阶段切换到 P2 或进入战斗 */
   const handleWeaponContinue = useCallback(() => {
     if (!player2) return;
     if (weaponPhase === 'p1') {
+      // PVE 模式 Boss 不抽武器，直接进入战斗
+      if (battleMode === 'pve_tower') {
+        setWeaponRollEntry(null);
+        setWeaponPhase('done');
+        return;
+      }
       const w2 = rollWeapon();
       equipPlayer2Weapon(w2);
       setWeaponRollEntry({
@@ -1113,7 +1121,7 @@ export const BattleScreen: React.FC = () => {
       setWeaponRollEntry(null);
       setWeaponPhase('done');
     }
-  }, [weaponPhase, player2, equipPlayer2Weapon]);
+  }, [weaponPhase, player2, equipPlayer2Weapon, battleMode]);
 
   // ============ 自动模式 ============
   useEffect(() => {
@@ -1177,11 +1185,19 @@ export const BattleScreen: React.FC = () => {
       }
 
       await new Promise(resolve => setTimeout(resolve, 2000));
+      // PVE 塔战：在切到结算页前算好本场聚合摘要，写入 towerStore
+      if (battleMode === 'pve_tower' && player1 && player2) {
+        const summary = summarizeBattle(result.logs, player1, player2, result.winner === 'player1' ? 'win' : 'loss');
+        useTowerStore.setState({
+          lastSummary: summary,
+          lastResult: result.winner === 'player1' ? 'win' : 'loss',
+        });
+      }
       setWinner(result.winner);
     };
 
     startBattle();
-  }, [player1, player2, isBattling, weaponPhase, addBattleLog, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, setWinner, playLogEffects]);
+  }, [player1, player2, isBattling, weaponPhase, addBattleLog, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, setWinner, playLogEffects, battleMode]);
 
   if (!player1 || !player2) return null;
 
