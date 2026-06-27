@@ -24,6 +24,7 @@ import {
   Flame,
 } from "lucide-react";
 import { useGameStore, type Skill } from "../store/useGameStore";
+import { getUltimateTypeById } from "../data/ultimateTypes";
 import {
   useRosterStore,
   type ActiveEvolutionStage,
@@ -850,17 +851,24 @@ export const TowerResultScreen: React.FC = () => {
                       </div>
                       <div className="mt-3 grid gap-3 md:grid-cols-[140px_1fr] md:items-center">
                         <div className="aspect-video overflow-hidden rounded border border-[#FFD700]/30 bg-[#1F2833]">
-                          {evolveData.newUltimate.imageUrl ? (
-                            <img
-                              src={evolveData.newUltimate.imageUrl}
-                              alt={evolveData.newUltimate.name}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-4xl text-[#FFD700]">
-                              ☄
-                            </div>
-                          )}
+                          {(() => {
+                            const ultImage =
+                              evolveData.newUltimate.imageUrl ||
+                              getUltimateTypeById(
+                                evolveData.newUltimate.ultimateType || "",
+                              )?.imageUrl;
+                            return ultImage ? (
+                              <img
+                                src={ultImage}
+                                alt={evolveData.newUltimate.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-4xl text-[#FFD700]">
+                                ☄
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div>
                           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
@@ -927,7 +935,11 @@ export const TowerResultScreen: React.FC = () => {
             oldImageUrl={evolvingFromImage}
             newImageUrl={evolvedImageUrl}
             ultimate={evolveData?.newUltimate}
-            ultimateImageUrl={evolveData?.newUltimate?.imageUrl}
+            ultimateImageUrl={
+              evolveData?.newUltimate?.imageUrl ||
+              getUltimateTypeById(evolveData?.newUltimate?.ultimateType || "")
+                ?.imageUrl
+            }
             stage={evolveEvent}
             characterName={rosterChar.name}
             readyToReveal={evolutionReadyToReveal}

@@ -366,7 +366,6 @@ const buildEvolvedUltimate = (ultimate: Skill, stage: ActiveEvolutionStage): Ski
     damageMultiplier: Math.max(ultimate.damageMultiplier || 0, EVOLUTION_ULT_MULTIPLIER[stage]),
     type: 'ultimate',
     isUltimate: true,
-    imageUrl: undefined,
   };
 };
 
