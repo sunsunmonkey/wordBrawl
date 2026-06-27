@@ -283,7 +283,6 @@ export const ModeSelectScreen: React.FC = () => {
               onClick={startPvP}
               icon={<Swords size={30} />}
               title="切磋 PVP"
-              subtitle="非主线"
               accent="#FF003C"
               description="用已有/预设角色打一场娱乐对战，不作为养成主入口。"
             />
