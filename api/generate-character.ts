@@ -11,7 +11,7 @@ import {
   stripJsonFences,
   type ApiRequest,
   type ApiResponse,
-} from './_shared';
+} from './_shared.ts';
 
 const ULTIMATE_TYPE_IDS = [
   'fire',
@@ -164,6 +164,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
+  const chargedUsage = await consumeUsage(req);
+
   try {
     const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -186,13 +188,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       console.error('AI upstream error', upstreamResponse.status, upstreamPayload?.error || upstreamPayload);
       sendJson(res, 502, {
         error: upstreamPayload?.error?.message || '大模型接口调用失败，请检查服务端模型配置',
+        usage: chargedUsage,
       });
       return;
     }
 
     const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
     if (!rawContent) {
-      sendJson(res, 502, { error: '大模型返回内容为空' });
+      sendJson(res, 502, { error: '大模型返回内容为空', usage: chargedUsage });
       return;
     }
 
@@ -203,20 +206,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     } catch {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) {
-        sendJson(res, 502, { error: '大模型返回的内容不是合法 JSON' });
+        sendJson(res, 502, { error: '大模型返回的内容不是合法 JSON', usage: chargedUsage });
         return;
       }
       parsed = JSON.parse(match[0]);
     }
 
-    const nextUsage = await consumeUsage(req);
     sendJson(res, 200, {
       ok: true,
       character: normalizeCharacter(parsed),
-      usage: nextUsage,
+      usage: chargedUsage,
     });
   } catch (error) {
     console.error('generate-character failed', error);
-    sendJson(res, 500, { error: '角色生成失败，请稍后再试' });
+    sendJson(res, 500, { error: '角色生成失败，请稍后再试', usage: chargedUsage });
   }
 }
