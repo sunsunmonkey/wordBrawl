@@ -230,6 +230,15 @@ export const ModeSelectScreen: React.FC = () => {
           imageUrl,
           imagePrompt: prompt || current.imagePrompt,
           evolutionLock: undefined,
+          pendingEvolutionReplay: {
+            stage,
+            oldImageUrl: current.imageUrl,
+            newImageUrl: imageUrl,
+            imagePrompt: prompt,
+            lore: localEvo.lore,
+            newUltimate: localEvo.newUltimate,
+            createdAt: Date.now(),
+          },
           formHistory,
         };
       });

@@ -28,6 +28,16 @@ export interface RecruitLock {
   error?: string;
 }
 
+export interface EvolutionReplay {
+  stage: ActiveEvolutionStage;
+  oldImageUrl?: string;
+  newImageUrl: string;
+  imagePrompt: string;
+  lore?: string;
+  newUltimate?: Skill;
+  createdAt: number;
+}
+
 export type TowerRunResult = "win" | "loss";
 
 export interface TowerRunRecord {
@@ -53,6 +63,8 @@ export interface RosterCharacter extends CharacterData {
   evolutionLock?: EvolutionLock;
   /** 角色后台生成中或生成失败，暂时禁止出战/训练使用 */
   recruitLock?: RecruitLock;
+  /** 进化图已后台就绪，下一次出战前补播一次进化动画 */
+  pendingEvolutionReplay?: EvolutionReplay;
   formHistory: FormHistoryEntry[];
   tower: {
     highestCleared: number;
@@ -80,6 +92,7 @@ export const resetCharacterRuntimeState = (
   delete partial.recruitedAt;
   delete partial.evolutionLock;
   delete partial.recruitLock;
+  delete partial.pendingEvolutionReplay;
   return {
     ...partial,
     hp: partial.maxHp,
@@ -237,6 +250,32 @@ const ensureGrowthFields = (
           : undefined,
     };
   }
+  const rawReplay = char.pendingEvolutionReplay;
+  const pendingEvolutionReplay =
+    rawReplay &&
+    typeof rawReplay === "object" &&
+    typeof rawReplay.stage === "number" &&
+    rawReplay.stage >= 1 &&
+    rawReplay.stage <= 6 &&
+    typeof rawReplay.newImageUrl === "string" &&
+    typeof rawReplay.imagePrompt === "string" &&
+    typeof rawReplay.createdAt === "number"
+      ? ({
+          stage: rawReplay.stage as ActiveEvolutionStage,
+          oldImageUrl:
+            typeof rawReplay.oldImageUrl === "string"
+              ? rawReplay.oldImageUrl
+              : undefined,
+          newImageUrl: rawReplay.newImageUrl,
+          imagePrompt: rawReplay.imagePrompt,
+          lore: typeof rawReplay.lore === "string" ? rawReplay.lore : undefined,
+          newUltimate:
+            rawReplay.newUltimate && typeof rawReplay.newUltimate === "object"
+              ? (rawReplay.newUltimate as Skill)
+              : undefined,
+          createdAt: rawReplay.createdAt,
+        } satisfies EvolutionReplay)
+      : undefined;
 
   return {
     ...(char as CharacterData),
@@ -255,6 +294,7 @@ const ensureGrowthFields = (
         : defaults.evolutionStage,
     ...(evolutionLock ? { evolutionLock } : {}),
     ...(recruitLock ? { recruitLock } : {}),
+    ...(pendingEvolutionReplay ? { pendingEvolutionReplay } : {}),
     formHistory,
     tower,
   };

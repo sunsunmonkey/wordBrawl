@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowRight,
   Castle,
   Heart,
   Zap as ZapIcon,
@@ -10,6 +11,7 @@ import {
   Sparkles,
   Sword,
   Bot,
+  Trash2,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -17,6 +19,8 @@ import {
   isRosterCharacterRecruitLocked,
   isRosterCharacterUnavailable,
   useRosterStore,
+  type EvolutionReplay,
+  type RosterCharacter,
 } from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { ParticleField } from "./ParticleField";
@@ -27,6 +31,7 @@ import {
   towerBossDefs,
 } from "../data/towerBosses";
 import {
+  EVOLUTION_STAT_BONUS,
   evolutionLabel,
   evolutionStars,
   getNextEvolutionProgress,
@@ -36,6 +41,13 @@ import {
 } from "../utils/towerProgress";
 import { resetCharacterRuntimeState } from "../store/useRosterStore";
 import { BackButton } from "./BackButton";
+import { EvolutionAnimation } from "./EvolutionAnimation";
+
+interface ReplayBattle {
+  character: RosterCharacter;
+  layer: number;
+  replay: EvolutionReplay;
+}
 
 export const TowerScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
@@ -54,6 +66,8 @@ export const TowerScreen: React.FC = () => {
   const resetPending = useTowerStore((s) => s.resetPending);
 
   const roster = useRosterStore((s) => s.roster);
+  const updateCharacter = useRosterStore((s) => s.updateCharacter);
+  const removeCharacter = useRosterStore((s) => s.removeCharacter);
   const [selectedRosterId, setSelectedRosterId] = useState<string | null>(
     () => {
       const stored =
@@ -78,24 +92,85 @@ export const TowerScreen: React.FC = () => {
       null;
     return initialChar?.tower.nextLayer ?? initialTowerLayer ?? 1;
   });
+  const [pendingReplayBattle, setPendingReplayBattle] =
+    useState<ReplayBattle | null>(null);
+  const [replayResultBattle, setReplayResultBattle] =
+    useState<ReplayBattle | null>(null);
 
-  const startChallenge = () => {
-    if (!selectedChar || selectedLocked) return;
-    const boss = getScaledTowerBoss(selectedLayer, selectedChar);
+  const beginChallenge = (char: RosterCharacter, layer: number) => {
+    const boss = getScaledTowerBoss(layer, char);
     if (!boss) return;
 
-    const player = resetCharacterRuntimeState(selectedChar);
+    const player = resetCharacterRuntimeState(char);
     setBattleMode("pve_tower");
-    setTowerLayer(selectedLayer);
-    setTowerRosterId(selectedChar.rosterId);
+    setTowerLayer(layer);
+    setTowerRosterId(char.rosterId);
     setPlayer1(player);
     setPlayer2(resetCharacterRuntimeState(boss));
     setLastSummary(null);
-    setLastRosterId(selectedChar.rosterId);
+    setLastRosterId(char.rosterId);
     setLastResult(null);
     resetPending();
     useGameStore.setState({ battleLogs: [], currentTurn: 0, winner: null });
     setPhase("BATTLE_ARENA");
+  };
+
+  const startChallenge = () => {
+    if (!selectedChar || selectedLocked) return;
+    if (selectedChar.pendingEvolutionReplay) {
+      setPendingReplayBattle({
+        character: selectedChar,
+        layer: selectedLayer,
+        replay: selectedChar.pendingEvolutionReplay,
+      });
+      return;
+    }
+    beginChallenge(selectedChar, selectedLayer);
+  };
+
+  const handleRemoveCharacter = (char: RosterCharacter) => {
+    if (!window.confirm(`确定要将 ${char.name} 移出麾下吗？`)) return;
+    const remaining = roster.filter(
+      (entry) => entry.rosterId !== char.rosterId,
+    );
+    removeCharacter(char.rosterId);
+    if (selectedRosterId === char.rosterId) {
+      const next = remaining[0] ?? null;
+      setSelectedRosterId(next?.rosterId ?? null);
+      setSelectedLayer(next?.tower.nextLayer ?? 1);
+    }
+    if (pendingReplayBattle?.character.rosterId === char.rosterId) {
+      setPendingReplayBattle(null);
+    }
+    if (replayResultBattle?.character.rosterId === char.rosterId) {
+      setReplayResultBattle(null);
+    }
+  };
+
+  const finishReplayAnimation = () => {
+    const pending = pendingReplayBattle;
+    if (!pending) return;
+    setPendingReplayBattle(null);
+    setReplayResultBattle(pending);
+  };
+
+  const continueAfterReplayResult = () => {
+    const result = replayResultBattle;
+    if (!result) return;
+    updateCharacter(result.character.rosterId, (current) => ({
+      ...current,
+      pendingEvolutionReplay: undefined,
+    }));
+    const fresh =
+      useRosterStore
+        .getState()
+        .roster.find((char) => char.rosterId === result.character.rosterId) ??
+      result.character;
+    setReplayResultBattle(null);
+    beginChallenge(
+      { ...fresh, pendingEvolutionReplay: undefined },
+      result.layer,
+    );
   };
 
   return (
@@ -185,24 +260,35 @@ export const TowerScreen: React.FC = () => {
                         ? char.recruitLock?.status === "failed"
                           ? "招募失败"
                           : "后台招募中"
-                        : evolutionLocked
-                          ? "进化更新中"
-                          : nextEvo.nextStage
-                            ? nextEvo.ready
-                              ? "进化待触发"
-                              : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
-                            : "最终形态";
+                        : char.pendingEvolutionReplay
+                          ? "进化演出待回放"
+                          : evolutionLocked
+                            ? "进化更新中"
+                            : nextEvo.nextStage
+                              ? nextEvo.ready
+                                ? "进化待触发"
+                                : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
+                              : "最终形态";
                       return (
-                        <motion.button
+                        <motion.div
                           key={char.rosterId}
-                          type="button"
                           onClick={() => {
                             setSelectedRosterId(char.rosterId);
                             setSelectedLayer(char.tower.nextLayer || 1);
                           }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") {
+                              return;
+                            }
+                            event.preventDefault();
+                            setSelectedRosterId(char.rosterId);
+                            setSelectedLayer(char.tower.nextLayer || 1);
+                          }}
+                          role="button"
+                          tabIndex={0}
                           whileHover={{ y: -2 }}
                           whileTap={{ scale: 0.97 }}
-                          className="relative text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
+                          className="group relative cursor-pointer text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
                           style={{
                             borderColor: isActive
                               ? "#FFD700"
@@ -212,6 +298,17 @@ export const TowerScreen: React.FC = () => {
                               : "none",
                           }}
                         >
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveCharacter(char);
+                            }}
+                            aria-label={`移除 ${char.name}`}
+                            className="absolute left-1.5 top-1.5 z-20 flex h-6 w-6 items-center justify-center rounded bg-black/70 text-[#8a8d91] opacity-0 transition-opacity hover:text-[#FF003C] focus:opacity-100 group-hover:opacity-100"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                           <div className="relative aspect-[4/3]">
                             {char.imageUrl ? (
                               <img
@@ -279,7 +376,7 @@ export const TowerScreen: React.FC = () => {
                               {nextEvoText}
                             </div>
                           </div>
-                        </motion.button>
+                        </motion.div>
                       );
                     })}
                   </div>
@@ -421,6 +518,228 @@ export const TowerScreen: React.FC = () => {
             </>
           )}
         </div>
+      </div>
+      <AnimatePresence>
+        {pendingReplayBattle && (
+          <EvolutionAnimation
+            key={`tower-replay-${pendingReplayBattle.character.rosterId}-${pendingReplayBattle.replay.stage}`}
+            oldImageUrl={pendingReplayBattle.replay.oldImageUrl}
+            newImageUrl={pendingReplayBattle.replay.newImageUrl}
+            ultimate={pendingReplayBattle.replay.newUltimate}
+            ultimateImageUrl={pendingReplayBattle.replay.newUltimate?.imageUrl}
+            stage={pendingReplayBattle.replay.stage}
+            characterName={pendingReplayBattle.character.name}
+            readyToReveal
+            onFinish={finishReplayAnimation}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {replayResultBattle && (
+          <EvolutionReplayResultPanel
+            battle={replayResultBattle}
+            onContinue={continueAfterReplayResult}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+interface EvolutionReplayResultPanelProps {
+  battle: ReplayBattle;
+  onContinue: () => void;
+}
+
+const beforeEvolutionStats = (character: RosterCharacter) => ({
+  maxHp: Math.max(1, character.maxHp - EVOLUTION_STAT_BONUS.maxHp),
+  attack: Math.max(1, character.attack - EVOLUTION_STAT_BONUS.attack),
+  defense: Math.max(0, character.defense - EVOLUTION_STAT_BONUS.defense),
+  speed: Math.max(1, character.speed - EVOLUTION_STAT_BONUS.speed),
+});
+
+const EvolutionReplayResultPanel: React.FC<EvolutionReplayResultPanelProps> = ({
+  battle,
+  onContinue,
+}) => {
+  const { character, replay } = battle;
+  const before = beforeEvolutionStats(character);
+  const statRows = [
+    {
+      icon: <Heart size={13} />,
+      label: "HP",
+      before: before.maxHp,
+      after: character.maxHp,
+      color: "#FF6B9D",
+    },
+    {
+      icon: <ZapIcon size={13} />,
+      label: "ATK",
+      before: before.attack,
+      after: character.attack,
+      color: "#FFD700",
+    },
+    {
+      icon: <Shield size={13} />,
+      label: "DEF",
+      before: before.defense,
+      after: character.defense,
+      color: "#66FCF1",
+    },
+    {
+      icon: <Gauge size={13} />,
+      label: "SPD",
+      before: before.speed,
+      after: character.speed,
+      color: "#7FFF9F",
+    },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-[#0B0C10]/92 p-4 backdrop-blur-md"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        className="w-full max-w-4xl overflow-hidden rounded-xl border-2 border-[#FFD700]/70 bg-[#0B0C10]/95"
+        style={{
+          boxShadow:
+            "0 0 34px rgba(255,215,0,0.36), inset 0 0 24px rgba(255,215,0,0.08)",
+        }}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-[#FFD700]/25 bg-[#FFD700]/10 px-4 py-3">
+          <div>
+            <div className="text-[10px] font-black tracking-[0.35em] text-[#FFD700]">
+              FORM EVOLUTION
+            </div>
+            <div className="mt-1 text-2xl font-black tracking-wider text-[#FFD700] font-display">
+              {evolutionLabel(replay.stage)}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-xs font-black tracking-widest text-[#FFD700]">
+            <Sparkles size={16} />
+            突破完成
+          </div>
+        </div>
+
+        <div className="p-4">
+          <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-center">
+            <EvolutionReplayPortrait
+              label="进化前"
+              imageUrl={replay.oldImageUrl}
+              fallback={character.name}
+              muted
+            />
+            <div className="hidden justify-center text-[#FFD700] md:flex">
+              <ArrowRight size={28} />
+            </div>
+            <EvolutionReplayPortrait
+              label="进化后"
+              imageUrl={replay.newImageUrl}
+              fallback={character.name}
+              featured
+            />
+          </div>
+
+          <div className="mt-4 rounded-lg border border-[#FFD700]/25 bg-[#1F2833]/50 p-4">
+            <p className="text-sm leading-relaxed text-[#C5C6C7]">
+              {replay.lore
+                ? `“${replay.lore}”`
+                : `${character.name} 的形态完成突破，战斗潜能被重新释放。`}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+              {statRows.map((stat) => (
+                <EvolutionStatChip key={stat.label} {...stat} />
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onContinue}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded border-2 border-[#FFD700] py-3 font-black tracking-[0.28em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] font-display"
+          >
+            <Sword size={16} />
+            继续挑战
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const EvolutionReplayPortrait: React.FC<{
+  label: string;
+  imageUrl?: string | null;
+  fallback: string;
+  muted?: boolean;
+  featured?: boolean;
+}> = ({ label, imageUrl, fallback, muted, featured }) => (
+  <div
+    className="relative overflow-hidden rounded-lg border bg-[#0B0C10]/70 p-3"
+    style={{
+      borderColor: featured ? "rgba(255,215,0,0.75)" : "rgba(69,162,158,0.35)",
+      boxShadow: featured ? "0 0 20px rgba(255,215,0,0.32)" : "none",
+      opacity: muted ? 0.72 : 1,
+    }}
+  >
+    <div className="mb-2 flex items-center justify-between">
+      <span className="text-[10px] font-black tracking-widest text-[#8a8d91]">
+        {label}
+      </span>
+      {featured && (
+        <span className="text-[10px] font-black tracking-widest text-[#FFD700]">
+          NEW FORM
+        </span>
+      )}
+    </div>
+    <div className="relative aspect-square overflow-hidden rounded border border-[#FFD700]/25 bg-[#1F2833]">
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={label}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-5xl font-black text-[#FFD700] font-display">
+          {fallback[0] || "?"}
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const EvolutionStatChip: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  before: number;
+  after: number;
+  color: string;
+}> = ({ icon, label, before, after, color }) => {
+  const delta = after - before;
+  return (
+    <div className="rounded border border-[#45A29E]/25 bg-[#0B0C10]/65 px-3 py-2">
+      <div className="flex items-center gap-1 text-[10px] tracking-widest text-[#8a8d91]">
+        <span style={{ color }}>{icon}</span>
+        {label}
+      </div>
+      <div className="mt-1 flex items-end justify-between gap-2">
+        <span className="text-sm font-black font-display" style={{ color }}>
+          {after}
+        </span>
+        {delta > 0 && (
+          <span className="text-[10px] font-black text-[#7FFF9F]">
+            +{delta}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 text-[10px] text-[#8a8d91]">
+        {before} → {after}
       </div>
     </div>
   );
