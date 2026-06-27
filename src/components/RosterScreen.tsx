@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Zap, Shield, Gauge, UsersRound, Sword } from 'lucide-react';
+import { Heart, Zap, Shield, Gauge, UsersRound, Sword, Trash2 } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import {
   isRosterCharacterEvolutionLocked,
@@ -20,6 +20,14 @@ export const RosterScreen: React.FC = () => {
   const themeRgb = '102, 252, 241';
 
   const selected = selectedId ? roster.find((r) => r.rosterId === selectedId) : null;
+
+  const handleRemoveCharacter = (rosterId: string, name: string) => {
+    if (!window.confirm(`确定要将 ${name} 移出麾下吗？`)) return;
+    removeCharacter(rosterId);
+    if (selectedId === rosterId) {
+      setSelectedId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center p-6 relative overflow-hidden grid-bg">
@@ -74,15 +82,32 @@ export const RosterScreen: React.FC = () => {
                 const evolutionLocked = isRosterCharacterEvolutionLocked(char);
                 const recruitLocked = isRosterCharacterRecruitLocked(char);
                 return (
-                  <motion.button
+                  <motion.div
                     key={char.rosterId}
-                    type="button"
                     onClick={() => setSelectedId(char.rosterId)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      event.preventDefault();
+                      setSelectedId(char.rosterId);
+                    }}
+                    role="button"
+                    tabIndex={0}
                     whileHover={{ scale: 1.04, y: -2 }}
                     whileTap={{ scale: 0.97 }}
-                    className="relative group text-left rounded-lg overflow-hidden border-2 bg-[#0B0C10]/80 transition-all"
+                    className="relative group cursor-pointer text-left rounded-lg overflow-hidden border-2 bg-[#0B0C10]/80 transition-all"
                     style={{ borderColor: `rgba(${themeRgb}, 0.4)` }}
                   >
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleRemoveCharacter(char.rosterId, char.name);
+                      }}
+                      aria-label={`移除 ${char.name}`}
+                      className="absolute left-1.5 top-1.5 z-20 flex h-7 w-7 items-center justify-center rounded bg-black/70 text-[#8a8d91] opacity-0 transition-opacity hover:text-[#FF003C] focus:opacity-100 group-hover:opacity-100"
+                    >
+                      <Trash2 size={13} />
+                    </button>
                     <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
                     {char.imageUrl ? (
                       <img
@@ -138,7 +163,7 @@ export const RosterScreen: React.FC = () => {
                       <Gauge size={9} className="text-green-400" /> {char.speed}
                     </span>
                   </div>
-                  </motion.button>
+                  </motion.div>
                 );
               })}
             </div>
@@ -153,8 +178,7 @@ export const RosterScreen: React.FC = () => {
             character={selected}
             onClose={() => setSelectedId(null)}
             onRemove={() => {
-              removeCharacter(selected.rosterId);
-              setSelectedId(null);
+              handleRemoveCharacter(selected.rosterId, selected.name);
             }}
           />
         )}

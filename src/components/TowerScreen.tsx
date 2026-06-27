@@ -11,7 +11,6 @@ import {
   Sparkles,
   Sword,
   Bot,
-  Trash2,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -67,7 +66,6 @@ export const TowerScreen: React.FC = () => {
 
   const roster = useRosterStore((s) => s.roster);
   const updateCharacter = useRosterStore((s) => s.updateCharacter);
-  const removeCharacter = useRosterStore((s) => s.removeCharacter);
   const [selectedRosterId, setSelectedRosterId] = useState<string | null>(
     () => {
       const stored =
@@ -126,25 +124,6 @@ export const TowerScreen: React.FC = () => {
       return;
     }
     beginChallenge(selectedChar, selectedLayer);
-  };
-
-  const handleRemoveCharacter = (char: RosterCharacter) => {
-    if (!window.confirm(`确定要将 ${char.name} 移出麾下吗？`)) return;
-    const remaining = roster.filter(
-      (entry) => entry.rosterId !== char.rosterId,
-    );
-    removeCharacter(char.rosterId);
-    if (selectedRosterId === char.rosterId) {
-      const next = remaining[0] ?? null;
-      setSelectedRosterId(next?.rosterId ?? null);
-      setSelectedLayer(next?.tower.nextLayer ?? 1);
-    }
-    if (pendingReplayBattle?.character.rosterId === char.rosterId) {
-      setPendingReplayBattle(null);
-    }
-    if (replayResultBattle?.character.rosterId === char.rosterId) {
-      setReplayResultBattle(null);
-    }
   };
 
   const finishReplayAnimation = () => {
@@ -270,25 +249,16 @@ export const TowerScreen: React.FC = () => {
                                 : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
                               : "最终形态";
                       return (
-                        <motion.div
+                        <motion.button
                           key={char.rosterId}
+                          type="button"
                           onClick={() => {
                             setSelectedRosterId(char.rosterId);
                             setSelectedLayer(char.tower.nextLayer || 1);
                           }}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ") {
-                              return;
-                            }
-                            event.preventDefault();
-                            setSelectedRosterId(char.rosterId);
-                            setSelectedLayer(char.tower.nextLayer || 1);
-                          }}
-                          role="button"
-                          tabIndex={0}
                           whileHover={{ y: -2 }}
                           whileTap={{ scale: 0.97 }}
-                          className="group relative cursor-pointer text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
+                          className="relative text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
                           style={{
                             borderColor: isActive
                               ? "#FFD700"
@@ -298,17 +268,6 @@ export const TowerScreen: React.FC = () => {
                               : "none",
                           }}
                         >
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRemoveCharacter(char);
-                            }}
-                            aria-label={`移除 ${char.name}`}
-                            className="absolute left-1.5 top-1.5 z-20 flex h-6 w-6 items-center justify-center rounded bg-black/70 text-[#8a8d91] opacity-0 transition-opacity hover:text-[#FF003C] focus:opacity-100 group-hover:opacity-100"
-                          >
-                            <Trash2 size={12} />
-                          </button>
                           <div className="relative aspect-[4/3]">
                             {char.imageUrl ? (
                               <img
@@ -376,7 +335,7 @@ export const TowerScreen: React.FC = () => {
                               {nextEvoText}
                             </div>
                           </div>
-                        </motion.div>
+                        </motion.button>
                       );
                     })}
                   </div>
