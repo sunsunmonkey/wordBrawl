@@ -16,7 +16,7 @@ function App() {
     <div className="min-h-screen bg-[#0B0C10] text-[#C5C6C7] font-mono">
       {phase === 'WELCOME' && <WelcomeScreen />}
       {phase === 'MODE_SELECT' && <ModeSelectScreen />}
-      {(phase === 'PLAYER1_CREATE' || phase === 'PLAYER2_CREATE') && <CharacterCreateScreen />}
+      {(phase === 'RECRUIT_CREATE' || phase === 'PLAYER1_CREATE' || phase === 'PLAYER2_CREATE') && <CharacterCreateScreen />}
       {phase === 'BATTLE_ARENA' && <BattleScreen />}
       {phase === 'GAME_OVER' && <GameOverScreen />}
       {phase === 'ROSTER_VIEW' && <RosterScreen />}

@@ -4,7 +4,7 @@ import { Heart, Zap, Shield, Gauge, Trash2, Sparkles, Flame, Swords, type Lucide
 import type { Skill } from '../store/useGameStore';
 import { ULTIMATE_TYPES } from '../data/ultimateTypes';
 import type { EvolutionStage, FormHistoryEntry, TowerRunRecord } from '../store/useRosterStore';
-import { evolutionLabel, evolutionStars, xpProgress } from '../utils/towerProgress';
+import { evolutionLabel, evolutionStars, getNextEvolutionProgress, levelAscensionLabel, xpProgress } from '../utils/towerProgress';
 
 export interface DisplayCharacter {
   name: string;
@@ -21,8 +21,7 @@ export interface DisplayCharacter {
   xp?: number;
   evolutionStage?: EvolutionStage;
   formHistory?: FormHistoryEntry[];
-  tower?: { highestCleared: number; nextLayer: number; runs: TowerRunRecord[] };
-  analysis?: { strengths: string[]; weaknesses: string[]; suggestedTrait: string; lastUpdatedAt: number };
+  tower?: { highestCleared: number; highestEndlessLayer?: number; nextLayer: number; runs: TowerRunRecord[] };
 }
 
 const skillTypeMeta: Record<string, { label: string; color: string; icon: LucideIcon }> = {
@@ -75,15 +74,10 @@ export const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   const xp = character.xp ?? 0;
   const stage: EvolutionStage = character.evolutionStage ?? 0;
   const xpInfo = xpProgress(level, xp);
+  const nextEvolution = getNextEvolutionProgress(level, xp, stage);
   const stars = evolutionStars(stage);
   const towerRuns: TowerRunRecord[] = (character.tower?.runs ?? []).slice().reverse().slice(0, 5);
   const formHistory: FormHistoryEntry[] = character.formHistory ?? [];
-  const analysis = character.analysis;
-  const showAnalysis =
-    !!analysis &&
-    ((analysis.strengths && analysis.strengths.length > 0) ||
-      (analysis.weaknesses && analysis.weaknesses.length > 0) ||
-      !!analysis.suggestedTrait);
 
   return (
     <motion.div
@@ -268,15 +262,18 @@ export const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                     <span className="text-2xl font-black font-display" style={{ color: themeColor }}>
                       Lv.{level}
                     </span>
+                    <span className="text-[11px] tracking-widest px-2 py-0.5 rounded border" style={{ borderColor: '#66FCF188', color: '#66FCF1' }}>
+                      {levelAscensionLabel(level)}
+                    </span>
                     <span className="text-[11px] tracking-widest px-2 py-0.5 rounded border" style={{ borderColor: `${themeColor}88`, color: themeColor }}>
                       {evolutionLabel(stage)}
                     </span>
                     <span className="text-sm" style={{ color: '#FFD700' }}>
-                      {'★'.repeat(stars)}{'☆'.repeat(3 - stars)}
+                      {'★'.repeat(stars)}{'☆'.repeat(Math.max(0, 6 - stars))}
                     </span>
                   </div>
                   <div className="text-[10px] text-[#8a8d91] tracking-widest">
-                    塔最高 · L{character.tower?.highestCleared ?? 0}
+                    塔最高 · L{character.tower?.highestEndlessLayer ?? character.tower?.highestCleared ?? 0}
                   </div>
                 </div>
                 <div className="h-2 bg-[#0B0C10] border border-[#45A29E]/30 rounded overflow-hidden">
@@ -286,47 +283,19 @@ export const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                   />
                 </div>
                 <div className="text-[10px] text-[#8a8d91] mt-1 text-right">
-                  {level >= 30 ? '已封顶' : `${xpInfo.current} / ${xpInfo.need} XP`}
+                  {xpInfo.current} / {xpInfo.need} XP
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[#8a8d91]">
+                  <span>下次进化</span>
+                  <span className="font-bold" style={{ color: themeColor }}>
+                    {nextEvolution.nextStage
+                      ? nextEvolution.ready
+                        ? `${evolutionLabel(nextEvolution.nextStage)}待触发`
+                        : `Lv.${nextEvolution.targetLevel} ${evolutionLabel(nextEvolution.nextStage)} · 还差 ${nextEvolution.xpRemaining} XP`
+                      : '最终形态'}
+                  </span>
                 </div>
               </div>
-
-              {showAnalysis && analysis && (
-                <div className="bg-[#0B0C10]/60 border rounded p-4" style={{ borderColor: `${themeColor}33` }}>
-                  <div className="text-xs font-bold tracking-wider mb-3" style={{ color: themeColor }}>
-                    ▸ AI 战斗分析
-                  </div>
-                  {analysis.strengths.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-[10px] text-[#7FFF9F] tracking-widest mb-1">优势</div>
-                      <div className="flex flex-wrap gap-1">
-                        {analysis.strengths.map((s, i) => (
-                          <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-[#7FFF9F]/10 text-[#7FFF9F] border border-[#7FFF9F]/30">
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {analysis.weaknesses.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-[10px] text-[#FF6B9D] tracking-widest mb-1">短板</div>
-                      <div className="flex flex-wrap gap-1">
-                        {analysis.weaknesses.map((s, i) => (
-                          <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-[#FF6B9D]/10 text-[#FF6B9D] border border-[#FF6B9D]/30">
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {analysis.suggestedTrait && (
-                    <div className="text-[11px] text-[#C5C6C7] leading-relaxed mt-2 border-t pt-2" style={{ borderColor: `${themeColor}22` }}>
-                      <span style={{ color: themeColor }}>建议 · </span>
-                      {analysis.suggestedTrait}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {formHistory.length > 0 && (
                 <div className="bg-[#0B0C10]/60 border rounded p-4" style={{ borderColor: `${themeColor}33` }}>

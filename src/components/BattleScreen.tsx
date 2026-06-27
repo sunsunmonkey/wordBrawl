@@ -1,15 +1,20 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useGameStore, CharacterData, BattleEvent } from '../store/useGameStore';
+import { useGameStore, CharacterData, BattleEvent, Skill } from '../store/useGameStore';
 import { BattleEngine, ULTIMATE_THRESHOLD } from '../utils/battleEngine';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Shield, Activity, Swords, Flame, Bot } from 'lucide-react';
 import { ParticleField } from './ParticleField';
 import { getUltimateTypeById } from '../data/ultimateTypes';
-import { RARITY_COLOR, RARITY_LABEL, TYPE_LABEL, type Weapon } from '../data/weapons';
-import { rollWeapon } from '../utils/weaponRandom';
-import { WeaponRollOverlay } from './WeaponRollOverlay';
 import { summarizeBattle } from '../utils/towerAnalysis';
 import { useTowerStore } from '../store/useTowerStore';
+import { useRosterStore } from '../store/useRosterStore';
+import {
+  cleanupEvolutionPrefetchCache,
+  clearEvolutionPrefetchForRoster,
+  startEvolutionPrefetch,
+} from '../utils/evolutionPrefetch';
+import { buildLocalEvolution } from '../utils/towerProgress';
+import { BackButton } from './BackButton';
 
 interface PopupDamage {
   id: string;
@@ -32,6 +37,8 @@ interface UltimateOverlay {
   charging?: boolean;
 }
 
+const isUltimateSkill = (skill: Skill): boolean => skill.type === 'ultimate' || !!skill.isUltimate;
+
 const CharacterCard: React.FC<{ 
   char: CharacterData; 
   isLeft: boolean;
@@ -39,7 +46,9 @@ const CharacterCard: React.FC<{
   isAttacking: boolean;
   isActiveTurn?: boolean;
   popups: PopupDamage[];
-}> = ({ char, isLeft, beingHit, isAttacking, isActiveTurn = false, popups }) => {
+  canUseSkills?: boolean;
+  onSkillSelect?: (skill: Skill) => void;
+}> = ({ char, isLeft, beingHit, isAttacking, isActiveTurn = false, popups, canUseSkills = false, onSkillSelect }) => {
   const hpPercent = Math.max(0, (char.hp / char.maxHp) * 100);
   const themeColor = isLeft ? '#66FCF1' : '#FF003C';
   const shadowColor = isLeft ? 'rgba(102, 252, 241, 0.6)' : 'rgba(255, 0, 60, 0.6)';
@@ -50,20 +59,32 @@ const CharacterCard: React.FC<{
   const chargePercent = Math.min(100, (char.ultimateCharge / ULTIMATE_THRESHOLD) * 100);
   const ultReady = char.ultimateCharge >= ULTIMATE_THRESHOLD;
   const ultimateSkill = char.skills.find((s) => s.isUltimate || s.type === 'ultimate');
+  const nonUltimateSkills = char.skills.filter((s) => !isUltimateSkill(s));
+  const [skillPage, setSkillPage] = useState(0);
+  const skillPageSize = 4;
+  const skillPageCount = Math.max(1, Math.ceil(nonUltimateSkills.length / skillPageSize));
+  const safeSkillPage = Math.min(skillPage, skillPageCount - 1);
+  const visibleSkills = nonUltimateSkills.slice(safeSkillPage * skillPageSize, safeSkillPage * skillPageSize + skillPageSize);
 
   return (
     <motion.div 
       animate={isAttacking ? { x: isLeft ? 30 : -30, scale: 1.05 } : { x: 0, scale: 1 }}
       transition={{ duration: 0.3, type: 'spring', stiffness: 300 }}
-      className={`flex flex-col ${isLeft ? 'items-start' : 'items-end'} w-full md:w-1/3 relative ${isActiveTurn ? 'drop-shadow-[0_0_18px_rgba(255,215,0,0.55)]' : ''}`}
+      className={`flex min-h-0 max-h-full flex-col ${isLeft ? 'items-start' : 'items-end'} w-full md:w-[31%] relative rounded-xl border-2 bg-[#0B0C10]/68 p-3 overflow-hidden ${isActiveTurn ? 'drop-shadow-[0_0_18px_rgba(255,215,0,0.55)]' : ''}`}
+      style={{
+        borderColor: isActiveTurn ? '#FFD700' : `rgba(${themeRgb},0.48)`,
+        boxShadow: isActiveTurn
+          ? '0 0 22px rgba(255,215,0,0.32), inset 0 0 24px rgba(255,215,0,0.06)'
+          : `0 0 18px rgba(${themeRgb},0.16), inset 0 0 18px rgba(${themeRgb},0.04)`,
+      }}
     >
-      <div className={`relative w-44 h-44 md:w-56 md:h-56 mb-4 ${beingHit ? 'shake' : ''}`}>
+      <div className={`relative w-40 h-40 xl:w-48 xl:h-48 mb-2 mx-auto ${beingHit ? 'shake' : ''}`}>
         {/* Glow ring */}
         <motion.div
           className="absolute inset-0 rounded-lg pulse-glow"
           style={{ 
             color: themeColor,
-            boxShadow: `0 0 20px ${shadowColor}`,
+            boxShadow: `0 0 14px ${shadowColor}`,
           }}
         />
 
@@ -149,7 +170,7 @@ const CharacterCard: React.FC<{
 
       <h3 
         data-text={char.name}
-        className="text-2xl font-black italic mb-3 font-display tracking-wider" 
+        className="text-xl xl:text-2xl font-black italic mb-2 font-display tracking-wider" 
         style={{ color: themeColor, textShadow: `0 0 12px ${themeColor}` }}
       >
         {char.name}
@@ -161,7 +182,7 @@ const CharacterCard: React.FC<{
           <span className="text-[#8a8d91]">HP</span>
           <span style={{ color: hpColor }}>{char.hp} / {char.maxHp}</span>
         </div>
-        <div className="w-full h-5 bg-[#0B0C10] border-2 rounded-sm overflow-hidden relative" style={{ borderColor: themeColor, boxShadow: `0 0 8px ${shadowColor} inset` }}>
+        <div className="w-full h-4 bg-[#0B0C10] border-2 rounded-sm overflow-hidden relative" style={{ borderColor: themeColor, boxShadow: `0 0 8px ${shadowColor} inset` }}>
           <motion.div 
             className="h-full relative"
             style={{ 
@@ -187,7 +208,7 @@ const CharacterCard: React.FC<{
 
       {/* Ultimate Charge Bar */}
       {ultimateSkill && (
-        <div className="w-full mb-4">
+        <div className="w-full mb-2">
           <div className="flex justify-between text-[10px] mb-1 font-bold tracking-wider">
             <span className="flex items-center gap-1" style={{ color: ultReady ? '#FFD700' : '#8a8d91' }}>
               <Flame size={10} className={ultReady ? 'animate-pulse' : ''} />
@@ -225,7 +246,7 @@ const CharacterCard: React.FC<{
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2 w-full text-xs font-bold bg-[#1F2833]/60 p-3 rounded border" style={{ borderColor: `rgba(${themeRgb}, 0.3)` }}>
+      <div className="grid grid-cols-3 gap-2 w-full text-xs font-bold bg-[#1F2833]/60 p-2 rounded border" style={{ borderColor: `rgba(${themeRgb}, 0.3)` }}>
         <div className="flex flex-col items-center gap-1">
           <Zap size={14} className="text-yellow-400" />
           <span className="text-yellow-400">{char.attack}{char.attackBuff !== 0 ? <span className="text-[9px] ml-0.5" style={{color: char.attackBuff > 0 ? '#22ff88' : '#FF003C'}}>{char.attackBuff > 0 ? '↑' : '↓'}{Math.abs(char.attackBuff)}%</span> : null}</span>
@@ -244,9 +265,32 @@ const CharacterCard: React.FC<{
       </div>
 
       {/* Skills preview - 块状卡片 */}
-      <div className="w-full mt-3 grid grid-cols-2 gap-2">
-        {char.skills.map((s, i) => {
-          const isUlt = s.isUltimate || s.type === 'ultimate';
+      <div className="mt-2 flex w-full items-center justify-between text-[10px] tracking-widest">
+        <span className="text-[#8a8d91]">SKILLS</span>
+        {skillPageCount > 1 && (
+          <div className="flex items-center gap-1">
+            {Array.from({ length: skillPageCount }).map((_, page) => (
+              <button
+                key={page}
+                type="button"
+                onClick={() => setSkillPage(page)}
+                className="h-5 min-w-5 rounded border px-1 font-black"
+                style={{
+                  borderColor: page === safeSkillPage ? themeColor : 'rgba(138,141,145,0.35)',
+                  color: page === safeSkillPage ? themeColor : '#8a8d91',
+                  background: page === safeSkillPage ? `rgba(${themeRgb},0.14)` : 'transparent',
+                }}
+              >
+                {page + 1}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="w-full mt-1 grid grid-cols-2 gap-2">
+        {visibleSkills.map((s, i) => {
+          const isUlt = isUltimateSkill(s);
           const typeColor = isUlt ? '#FFD700' : s.type === 'heal' ? '#22ff88' : s.type === 'buff' ? '#FFD700' : s.type === 'debuff' ? '#FF6B00' : themeColor;
           const typeLabel = isUlt ? 'ULT' : s.type === 'heal' ? '治疗' : s.type === 'buff' ? '增益' : s.type === 'debuff' ? '减益' : '攻击';
           const valueText =
@@ -255,19 +299,10 @@ const CharacterCard: React.FC<{
               : s.type === 'heal'
               ? `+${s.healPercent}%`
               : `${s.buffPercent}%`;
-          return (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className={`relative rounded-md p-2 border ${isUlt ? 'col-span-2' : ''}`}
-              style={{
-                borderColor: `${typeColor}88`,
-                background: `linear-gradient(135deg, ${typeColor}1f 0%, rgba(11,12,16,0.6) 100%)`,
-                boxShadow: isUlt ? `0 0 10px ${typeColor}66` : `0 0 4px ${typeColor}33`,
-              }}
-            >
+          const isSkillAction = !!onSkillSelect;
+          const disabled = !canUseSkills || (isUlt && char.ultimateCharge < ULTIMATE_THRESHOLD);
+          const content = (
+            <>
               <div className="flex items-center justify-between mb-1">
                 <span
                   className="text-[9px] font-black px-1.5 py-0.5 rounded tracking-wider flex items-center gap-1"
@@ -277,7 +312,9 @@ const CharacterCard: React.FC<{
                   {typeLabel}
                 </span>
                 <span className="text-[10px] font-black" style={{ color: typeColor }}>
-                  {valueText}
+                  {isUlt && isSkillAction && char.ultimateCharge < ULTIMATE_THRESHOLD
+                    ? `${Math.floor(char.ultimateCharge)}%`
+                    : valueText}
                 </span>
               </div>
               <div
@@ -286,70 +323,144 @@ const CharacterCard: React.FC<{
               >
                 {s.name}
               </div>
+              {isSkillAction && s.description && (
+                <div className="mt-1 line-clamp-2 text-[10px] leading-snug text-[#8a8d91]">
+                  {s.description}
+                </div>
+              )}
               {isUlt && (
                 <div className="absolute top-1 right-1 text-[8px] text-[#FFD700] font-bold tracking-widest opacity-80">
                   ★
                 </div>
               )}
+            </>
+          );
+
+          if (isSkillAction) {
+            return (
+              <motion.button
+                key={i}
+                type="button"
+                disabled={disabled}
+                onClick={() => onSkillSelect?.(s)}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={!disabled ? { y: -2, scale: 1.02 } : undefined}
+                whileTap={!disabled ? { scale: 0.98 } : undefined}
+                transition={{ delay: i * 0.05 }}
+                className="relative min-h-[58px] text-left rounded-md p-2 border transition-all disabled:cursor-not-allowed disabled:opacity-45"
+                style={{
+                  borderColor: disabled ? 'rgba(138,141,145,0.25)' : `${typeColor}aa`,
+                  background: disabled
+                    ? 'rgba(31,40,51,0.45)'
+                    : `linear-gradient(135deg, ${typeColor}26 0%, rgba(11,12,16,0.72) 100%)`,
+                  boxShadow: !disabled && isUlt ? `0 0 12px ${typeColor}77` : !disabled ? `0 0 5px ${typeColor}44` : 'none',
+                }}
+              >
+                {content}
+              </motion.button>
+            );
+          }
+
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="relative min-h-[58px] rounded-md p-2 border"
+              style={{
+                borderColor: `${typeColor}88`,
+                background: `linear-gradient(135deg, ${typeColor}1f 0%, rgba(11,12,16,0.6) 100%)`,
+                boxShadow: isUlt ? `0 0 10px ${typeColor}66` : `0 0 4px ${typeColor}33`,
+              }}
+            >
+              {content}
             </motion.div>
           );
         })}
       </div>
 
-      {/* 武器栏 */}
-      {char.weapon && <WeaponBar weapon={char.weapon} themeColor={themeColor} />}
-    </motion.div>
-  );
-};
+      {ultimateSkill && (
+        <div className="w-full mt-2">
+          {(() => {
+            const typeColor = '#FFD700';
+            const disabled = !canUseSkills || char.ultimateCharge < ULTIMATE_THRESHOLD;
+            const content = (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className="text-[9px] font-black px-1.5 py-0.5 rounded tracking-wider flex items-center gap-1"
+                    style={{ backgroundColor: typeColor, color: '#0B0C10' }}
+                  >
+                    <Flame size={9} />
+                    ULT
+                  </span>
+                  <span className="text-[10px] font-black" style={{ color: typeColor }}>
+                    {canUseSkills && char.ultimateCharge < ULTIMATE_THRESHOLD
+                      ? `${Math.floor(char.ultimateCharge)}%`
+                      : `×${ultimateSkill.damageMultiplier.toFixed(1)}`}
+                  </span>
+                </div>
+                <div
+                  className="text-xs font-black truncate font-display tracking-wide"
+                  style={{ color: '#FFD700', textShadow: `0 0 6px ${typeColor}` }}
+                >
+                  {ultimateSkill.name}
+                </div>
+                {onSkillSelect && ultimateSkill.description && (
+                  <div className="mt-1 line-clamp-2 text-[10px] leading-snug text-[#8a8d91]">
+                    {ultimateSkill.description}
+                  </div>
+                )}
+                <div className="absolute top-1 right-1 text-[8px] text-[#FFD700] font-bold tracking-widest opacity-80">
+                  ★
+                </div>
+              </>
+            );
 
-/** 角色卡片底部的武器小栏 */
-const WeaponBar: React.FC<{ weapon: Weapon; themeColor: string }> = ({ weapon, themeColor }) => {
-  const rarityColor = RARITY_COLOR[weapon.rarity];
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="w-full mt-3 flex items-center gap-2 p-2 rounded border"
-      style={{
-        borderColor: `${rarityColor}88`,
-        background: `linear-gradient(90deg, ${rarityColor}22, ${themeColor}11)`,
-        boxShadow: `0 0 8px ${rarityColor}44`,
-      }}
-    >
-      <div
-        className="w-10 h-10 rounded overflow-hidden border flex-shrink-0"
-        style={{ borderColor: rarityColor }}
-      >
-        <img src={weapon.imageUrl} alt={weapon.name} className="w-full h-full object-cover" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider">
-          <span
-            className="px-1 rounded text-[9px]"
-            style={{ background: rarityColor, color: '#0B0C10' }}
-          >
-            {RARITY_LABEL[weapon.rarity]}
-          </span>
-          <span className="text-[#8a8d91]">{TYPE_LABEL[weapon.type]}</span>
+            if (onSkillSelect) {
+              return (
+                <motion.button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onSkillSelect(ultimateSkill)}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  whileHover={!disabled ? { y: -2, scale: 1.01 } : undefined}
+                  whileTap={!disabled ? { scale: 0.98 } : undefined}
+                  className="relative min-h-[58px] w-full text-left rounded-md p-2 border transition-all disabled:cursor-not-allowed disabled:opacity-45"
+                  style={{
+                    borderColor: disabled ? 'rgba(138,141,145,0.25)' : `${typeColor}aa`,
+                    background: disabled
+                      ? 'rgba(31,40,51,0.45)'
+                      : `linear-gradient(135deg, ${typeColor}2b 0%, rgba(11,12,16,0.72) 100%)`,
+                    boxShadow: !disabled ? `0 0 12px ${typeColor}77` : 'none',
+                  }}
+                >
+                  {content}
+                </motion.button>
+              );
+            }
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative min-h-[58px] w-full rounded-md p-2 border"
+                style={{
+                  borderColor: `${typeColor}88`,
+                  background: `linear-gradient(135deg, ${typeColor}1f 0%, rgba(11,12,16,0.6) 100%)`,
+                  boxShadow: `0 0 10px ${typeColor}66`,
+                }}
+              >
+                {content}
+              </motion.div>
+            );
+          })()}
         </div>
-        <div
-          className="text-xs font-black truncate"
-          style={{ color: rarityColor, textShadow: `0 0 6px ${rarityColor}` }}
-        >
-          {weapon.name}
-        </div>
-      </div>
-      <div className="flex flex-col items-end text-[9px] font-bold flex-shrink-0">
-        <span className="text-yellow-400">+{weapon.attackBonus} ATK</span>
-        {weapon.critBonus ? <span className="text-pink-400">+{weapon.critBonus}% CRIT</span> : null}
-        {weapon.speedBonus ? (
-          <span style={{ color: weapon.speedBonus > 0 ? '#22ff88' : '#FF003C' }}>
-            {weapon.speedBonus > 0 ? '+' : ''}
-            {weapon.speedBonus} SPD
-          </span>
-        ) : null}
-      </div>
+      )}
+
     </motion.div>
   );
 };
@@ -921,30 +1032,71 @@ const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({ overlay }
   );
 };
 
+type ManualTurnState = 'waiting' | 'player' | 'resolving' | 'finished';
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const describeBossIntent = (skill: Skill): string => {
+  if (isUltimateSkill(skill)) return '准备释放大招';
+  if (skill.type === 'heal') return '准备恢复生命';
+  if (skill.type === 'buff') return '准备强化自身';
+  if (skill.type === 'debuff') return '准备削弱你';
+  if (skill.damageMultiplier >= 2.2) return '准备打出高伤害';
+  return '准备普通攻击';
+};
+
 export const BattleScreen: React.FC = () => {
-  const { player1, player2, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, equipPlayer1Weapon, equipPlayer2Weapon, addBattleLog, battleLogs, setWinner, battleMode } = useGameStore();
+  const {
+    player1,
+    player2,
+    setPlayer1,
+    setPlayer2,
+    updatePlayer1Hp,
+    updatePlayer2Hp,
+    updatePlayer1UltimateCharge,
+    updatePlayer2UltimateCharge,
+    addBattleLog,
+    battleLogs,
+    setWinner,
+    battleMode,
+    towerLayer,
+    towerRosterId,
+    setPhase,
+  } = useGameStore();
   const [isBattling, setIsBattling] = useState(false);
   const [hitSide, setHitSide] = useState<'left' | 'right' | null>(null);
   const [attackerSide, setAttackerSide] = useState<'left' | 'right' | null>(null);
   const [popups, setPopups] = useState<{ left: PopupDamage[]; right: PopupDamage[] }>({ left: [], right: [] });
   const [shakeScreen, setShakeScreen] = useState(false);
   const [ultimateOverlay, setUltimateOverlay] = useState<UltimateOverlay | null>(null);
-
-  // ===== 武器随机抽取流程 =====
-  const [weaponRollEntry, setWeaponRollEntry] = useState<
-    { side: 'left' | 'right'; playerName: string; weapon: Weapon; target: 'player1' | 'player2' } | null
-  >(null);
-  // weaponPhase: 'p1' = 等待 P1 揭晓，'p2' = 等待 P2 揭晓，'done' = 已完成可进入战斗
-  const [weaponPhase, setWeaponPhase] = useState<'p1' | 'p2' | 'done'>('p1');
-  const weaponInitRef = useRef(false);
+  const [manualTurn, setManualTurn] = useState<ManualTurnState>('waiting');
+  const [bossIntent, setBossIntent] = useState<Skill | null>(null);
+  const manualEngineRef = useRef<BattleEngine | null>(null);
+  const manualStartedRef = useRef(false);
+  const manualLogsRef = useRef<BattleEvent[]>([]);
+  const prefetchTurnRef = useRef(0);
 
   // 自动模式：防止 StrictMode 双重调用导致 simulateBattle 重复执行
   const autoBattleStartedRef = useRef(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = logsContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [battleLogs]);
+
+  useEffect(() => {
+    cleanupEvolutionPrefetchCache();
+  }, []);
+
+  useEffect(() => {
+    if (!towerRosterId) return;
+    return () => {
+      if (useGameStore.getState().phase === 'TOWER_RESULT') return;
+      clearEvolutionPrefetchForRoster(towerRosterId);
+    };
+  }, [towerRosterId]);
 
   /** 预加载大招图片，避免首次显示时卡顿。返回 Promise，可用于等待就绪 */
   const preloadUltimateImage = useCallback((url?: string): Promise<void> => {
@@ -1074,58 +1226,142 @@ export const BattleScreen: React.FC = () => {
     }
   }, [preloadUltimateImage]);
 
-  // ============ 武器随机抽取（进入战斗前依次给 P1、P2 抽武器并装备） ============
+  const appendManualLog = useCallback((log: BattleEvent) => {
+    manualLogsRef.current = [...manualLogsRef.current, log];
+    addBattleLog(log);
+  }, [addBattleLog]);
+
+  const syncManualCharacters = useCallback((engine: BattleEngine) => {
+    const next = engine.getState();
+    setPlayer1(next.p1);
+    setPlayer2(next.p2);
+  }, [setPlayer1, setPlayer2]);
+
+  const appendDefeatLog = useCallback((defenderName: string) => {
+    const turn = manualEngineRef.current?.getState().currentTurn ?? manualLogsRef.current.length;
+    appendManualLog({
+      id: `manual-${Date.now()}-${defenderName}-down`,
+      turn,
+      attacker: 'system',
+      message: `【${defenderName}】倒下了！`,
+    });
+  }, [appendManualLog]);
+
+  const finishManualBattle = useCallback(async (engine: BattleEngine, winner: 'player1' | 'player2') => {
+    setManualTurn('finished');
+    setBossIntent(null);
+
+    const state = engine.getState();
+    const result = winner === 'player1' ? 'win' : 'loss';
+    const summary = summarizeBattle(manualLogsRef.current, state.p1, state.p2, result);
+    useTowerStore.setState({
+      lastSummary: summary,
+      lastResult: result,
+    });
+
+    await wait(900);
+    setWinner(winner);
+  }, [setWinner]);
+
+  const prefetchEvolutionAssets = useCallback((summary: ReturnType<typeof summarizeBattle>, result: 'win' | 'loss') => {
+    if (battleMode !== 'pve_tower' || !towerRosterId) return;
+    const rosterChar = useRosterStore.getState().roster.find((char) => char.rosterId === towerRosterId);
+    if (!rosterChar) return;
+
+    void startEvolutionPrefetch(
+      {
+        rosterId: towerRosterId,
+        layer: towerLayer,
+        result,
+        character: rosterChar,
+        summary,
+      },
+      async (character, _summary, stage) => buildLocalEvolution(character, stage),
+    );
+  }, [battleMode, towerLayer, towerRosterId]);
+
+  // ============ 九层塔半手动模式 ============
   useEffect(() => {
+    if (battleMode !== 'pve_tower') return;
     if (!player1 || !player2) return;
-    // 已完成抽取，或玩家已经持有武器，跳过
-    if (weaponInitRef.current) return;
-    if (player1.weapon && (battleMode === 'pve_tower' || player2.weapon)) {
-      weaponInitRef.current = true;
-      setWeaponPhase('done');
+    if (manualStartedRef.current) return;
+
+    manualStartedRef.current = true;
+    const engine = new BattleEngine(player1, player2);
+    manualEngineRef.current = engine;
+    manualLogsRef.current = [];
+    setIsBattling(true);
+
+    const openingLogs = engine.createOpeningLogs();
+    openingLogs.forEach((log) => appendManualLog(log));
+    syncManualCharacters(engine);
+    setBossIntent(engine.chooseSkill(engine.p2, engine.p1));
+    setManualTurn('player');
+    prefetchEvolutionAssets(summarizeBattle([], engine.p1, engine.p2, 'win'), 'win');
+  }, [appendManualLog, battleMode, player1, player2, prefetchEvolutionAssets, syncManualCharacters]);
+
+  const handlePlayerSkill = useCallback(async (skill: Skill) => {
+    const engine = manualEngineRef.current;
+    if (!engine || manualTurn !== 'player') return;
+    if (isUltimateSkill(skill) && !engine.canUseUltimate(engine.p1)) return;
+
+    setManualTurn('resolving');
+    const playerResult = engine.executeSkill('player1', skill);
+    appendManualLog(playerResult.log);
+    await playLogEffects(playerResult.log);
+    syncManualCharacters(engine);
+    prefetchTurnRef.current += 1;
+
+    if (engine.isBattleOver()) {
+      appendDefeatLog(engine.p2.name);
+      const finalResult = engine.getWinner() === 'player1' ? 'win' : 'loss';
+      const finalState = engine.getState();
+      const finalSummary = summarizeBattle(manualLogsRef.current, finalState.p1, finalState.p2, finalResult);
+      prefetchEvolutionAssets(finalSummary, finalResult);
+      await finishManualBattle(engine, engine.getWinner());
       return;
     }
-    weaponInitRef.current = true;
 
-    // 先给 P1 抽
-    const w1 = rollWeapon();
-    equipPlayer1Weapon(w1);
-    setWeaponRollEntry({
-      side: 'left',
-      playerName: player1.name,
-      weapon: w1,
-      target: 'player1',
-    });
-    setWeaponPhase('p1');
-  }, [player1, player2, equipPlayer1Weapon, battleMode]);
+    await wait(450);
+    const bossSkill = bossIntent ?? engine.chooseSkill(engine.p2, engine.p1);
+    const bossResult = engine.executeSkill('player2', bossSkill);
+    appendManualLog(bossResult.log);
+    await playLogEffects(bossResult.log);
+    syncManualCharacters(engine);
+    prefetchTurnRef.current += 1;
 
-  /** 武器揭晓后用户点击继续：根据当前阶段切换到 P2 或进入战斗 */
-  const handleWeaponContinue = useCallback(() => {
-    if (!player2) return;
-    if (weaponPhase === 'p1') {
-      // PVE 模式 Boss 不抽武器，直接进入战斗
-      if (battleMode === 'pve_tower') {
-        setWeaponRollEntry(null);
-        setWeaponPhase('done');
-        return;
-      }
-      const w2 = rollWeapon();
-      equipPlayer2Weapon(w2);
-      setWeaponRollEntry({
-        side: 'right',
-        playerName: player2.name,
-        weapon: w2,
-        target: 'player2',
-      });
-      setWeaponPhase('p2');
-    } else if (weaponPhase === 'p2') {
-      setWeaponRollEntry(null);
-      setWeaponPhase('done');
+    if (prefetchTurnRef.current % 2 === 0) {
+      const liveState = engine.getState();
+      const liveSummary = summarizeBattle(manualLogsRef.current, liveState.p1, liveState.p2, 'win');
+      prefetchEvolutionAssets(liveSummary, 'win');
     }
-  }, [weaponPhase, player2, equipPlayer2Weapon, battleMode]);
+
+    if (engine.isBattleOver()) {
+      appendDefeatLog(engine.p1.name);
+      const finalResult = engine.getWinner() === 'player1' ? 'win' : 'loss';
+      const finalState = engine.getState();
+      const finalSummary = summarizeBattle(manualLogsRef.current, finalState.p1, finalState.p2, finalResult);
+      prefetchEvolutionAssets(finalSummary, finalResult);
+      await finishManualBattle(engine, engine.getWinner());
+      return;
+    }
+
+    setBossIntent(engine.chooseSkill(engine.p2, engine.p1));
+    setManualTurn('player');
+  }, [
+    appendDefeatLog,
+    appendManualLog,
+    bossIntent,
+    finishManualBattle,
+    manualTurn,
+    playLogEffects,
+    prefetchEvolutionAssets,
+    syncManualCharacters,
+  ]);
 
   // ============ 自动模式 ============
   useEffect(() => {
-    if (weaponPhase !== 'done') return;
+    if (battleMode === 'pve_tower') return;
     if (!player1 || !player2 || isBattling) return;
     // StrictMode 下 effect 会双重调用，使用 ref 阻止第二次启动
     if (autoBattleStartedRef.current) return;
@@ -1185,28 +1421,28 @@ export const BattleScreen: React.FC = () => {
       }
 
       await new Promise(resolve => setTimeout(resolve, 2000));
-      // PVE 塔战：在切到结算页前算好本场聚合摘要，写入 towerStore
-      if (battleMode === 'pve_tower' && player1 && player2) {
-        const summary = summarizeBattle(result.logs, player1, player2, result.winner === 'player1' ? 'win' : 'loss');
-        useTowerStore.setState({
-          lastSummary: summary,
-          lastResult: result.winner === 'player1' ? 'win' : 'loss',
-        });
-      }
       setWinner(result.winner);
     };
 
     startBattle();
-  }, [player1, player2, isBattling, weaponPhase, addBattleLog, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, setWinner, playLogEffects, battleMode]);
+  }, [player1, player2, isBattling, addBattleLog, updatePlayer1Hp, updatePlayer2Hp, updatePlayer1UltimateCharge, updatePlayer2UltimateCharge, setWinner, playLogEffects, battleMode]);
 
   if (!player1 || !player2) return null;
 
   const leftChar = player1;
   const rightChar = player2;
+  const isTowerManual = battleMode === 'pve_tower';
+  const canPickSkill = isTowerManual && manualTurn === 'player';
+  const handleBack = () => {
+    const ok = window.confirm('确定要离开当前战斗吗？战斗进度将丢失。');
+    if (!ok) return;
+    setPhase(battleMode === 'pve_tower' ? 'TOWER_HUB' : 'MODE_SELECT');
+  };
 
   return (
-    <div className={`min-h-screen flex flex-col p-4 md:p-8 relative overflow-hidden grid-bg ${shakeScreen ? 'shake' : ''}`}>
+    <div className={`h-dvh max-h-dvh flex flex-col overflow-hidden p-3 md:p-4 relative grid-bg ${shakeScreen ? 'shake' : ''}`}>
       <ParticleField count={35} colors={['#66FCF1', '#FF003C', '#FFD700']} />
+      <BackButton onClick={handleBack} color="#66FCF1" className="absolute left-4 top-4 z-30" />
 
       {/* VS center spotlight */}
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
@@ -1220,35 +1456,35 @@ export const BattleScreen: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* 武器随机抽取 Overlay（开局阶段） */}
-      <WeaponRollOverlay entry={weaponRollEntry} onContinue={handleWeaponContinue} />
-
       {/* Header */}
       <motion.div 
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="text-center mb-8 z-10"
+        className="text-center mb-3 z-10 flex-shrink-0"
       >
-        <h2 className="text-3xl md:text-4xl font-black tracking-[0.3em] text-[#C5C6C7] flex items-center justify-center gap-4 font-display">
+        <h2 className="text-2xl md:text-3xl font-black tracking-[0.3em] text-[#C5C6C7] flex items-center justify-center gap-4 font-display">
           <Swords className="text-red-500" size={28} style={{ filter: 'drop-shadow(0 0 6px red)' }} />
           <span data-text="BATTLE ARENA" className="glitch-text">BATTLE ARENA</span>
           <Swords className="text-red-500" size={28} style={{ filter: 'drop-shadow(0 0 6px red)' }} />
         </h2>
         <div className="text-xs text-[#8a8d91] mt-1 tracking-widest flex items-center justify-center gap-2">
-          <Bot size={12} /> ▼ AUTO COMBAT IN PROGRESS ▼
+          <Bot size={12} /> {isTowerManual ? '▼ TOWER COMMAND MODE ▼' : '▼ AUTO COMBAT IN PROGRESS ▼'}
         </div>
       </motion.div>
 
-      <div className="flex-1 flex flex-col md:flex-row gap-6 items-stretch max-w-7xl w-full mx-auto z-10">
+      <div className="min-h-0 flex-1 flex flex-col md:flex-row gap-4 items-stretch max-w-7xl w-full mx-auto z-10 overflow-hidden">
         <CharacterCard 
           char={leftChar} 
           isLeft={true} 
           beingHit={hitSide === 'left'} 
           isAttacking={attackerSide === 'left'}
+          isActiveTurn={canPickSkill}
+          canUseSkills={canPickSkill}
+          onSkillSelect={isTowerManual ? handlePlayerSkill : undefined}
           popups={popups.left}
         />
 
-        <div className="flex-1 flex flex-col bg-[#0B0C10]/90 border-2 border-[#45A29E]/40 rounded-xl overflow-hidden shadow-2xl relative backdrop-blur-md min-h-[400px]">
+        <div className="min-h-0 flex-1 flex flex-col bg-[#0B0C10]/90 border-2 border-[#45A29E]/40 rounded-xl overflow-hidden shadow-2xl relative backdrop-blur-md">
           {/* Header bar */}
           <div className="bg-gradient-to-r from-[#1F2833] via-[#0B0C10] to-[#1F2833] p-3 text-center text-xs font-black tracking-[0.3em] border-b border-[#45A29E]/30 flex justify-between items-center">
             <span className="text-[#66FCF1] flex items-center gap-2">
@@ -1258,7 +1494,32 @@ export const BattleScreen: React.FC = () => {
             <span className="text-[#C5C6C7]">▶ COMBAT LOG ◀</span>
             <span className="text-[#FF003C]">TURN {battleLogs.length}</span>
           </div>
-          <div className="h-[520px] p-4 overflow-y-auto flex flex-col gap-2 text-sm relative">
+
+          {isTowerManual && (
+            <div className="border-b border-[#45A29E]/30 bg-[#1F2833]/55 p-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-[10px] tracking-[0.3em] text-[#66FCF1] font-black">
+                    {manualTurn === 'player' ? 'YOUR MOVE' : manualTurn === 'resolving' ? 'RESOLVING' : 'TOWER BATTLE'}
+                  </div>
+                  <div className="text-xs text-[#8a8d91] mt-1">
+                    选择技能后，Boss 会按右侧意图行动。
+                  </div>
+                </div>
+                {bossIntent && (
+                  <div className="min-w-0 rounded border border-[#FF003C]/45 bg-[#0B0C10]/70 px-3 py-2">
+                    <div className="text-[10px] text-[#FF003C] tracking-widest font-black">BOSS INTENT</div>
+                    <div className="mt-1 flex items-center gap-2 text-sm">
+                      <span className="text-[#C5C6C7]">{describeBossIntent(bossIntent)}</span>
+                      <span className="text-[#FF003C] font-black truncate">· {bossIntent.name}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div ref={logsContainerRef} className="min-h-0 flex-1 p-4 overflow-y-auto overscroll-contain flex flex-col gap-2 text-sm relative">
             <AnimatePresence initial={false}>
               {battleLogs.map((log) => {
                 let colorClass = 'text-[#C5C6C7]';
@@ -1303,8 +1564,8 @@ export const BattleScreen: React.FC = () => {
                 );
               })}
             </AnimatePresence>
-            <div ref={logsEndRef} />
           </div>
+
         </div>
 
         <CharacterCard 
@@ -1312,6 +1573,7 @@ export const BattleScreen: React.FC = () => {
           isLeft={false} 
           beingHit={hitSide === 'right'}
           isAttacking={attackerSide === 'right'}
+          isActiveTurn={isTowerManual && manualTurn === 'resolving'}
           popups={popups.right}
         />
       </div>

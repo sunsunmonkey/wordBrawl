@@ -128,14 +128,7 @@ export const summarizeBattle = (
   };
 };
 
-export type Intent = 'analysis' | 'skill' | 'evolve';
-
-export interface AnalysisResult {
-  strengths: string[];
-  weaknesses: string[];
-  suggestedTrait: string;
-  oneLine: string;
-}
+export type Intent = 'skill' | 'evolve';
 
 export interface SkillCandidate {
   name: string;
@@ -162,12 +155,6 @@ const SYSTEM_PROMPT_BASE = `你是一个游戏角色养成顾问。
 你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。`;
 
 const INTENT_PROMPTS: Record<Intent, string> = {
-  analysis: `请基于战斗记录给出简明的成长分析。返回 JSON：{
-  "strengths": ["1-3 条角色当前的核心优势，使用中文短句"],
-  "weaknesses": ["1-3 条短板/不足"],
-  "suggestedTrait": "一句话，建议下一步成长方向（例如：补足生存，或学习一招控制技能）",
-  "oneLine": "一句战斗复盘的金句总结"
-}。`,
   skill: `请为这个角色生成 3 个互补且差异化的【非大招】技能候选，必须用于弥补当前短板（如缺治疗/缺控制/缺爆发）。
 所有 candidate 的 type 必须从 ["attack","heal","buff","debuff"] 中选择，禁止给出 ultimate / isUltimate。
 返回 JSON：{
@@ -182,23 +169,6 @@ const INTENT_PROMPTS: Record<Intent, string> = {
   "newUltimate": { "name": "新大招名（可选）", "description": "若给出大招须含华丽中文描述", "damageMultiplier": 6.5, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
 }
 ultimateType 必须为以下之一：${ULTIMATE_TYPE_IDS.join(', ')}。如果觉得不需要替换大招，可以省略 newUltimate 字段。`,
-};
-
-const normalizeAnalysis = (value: unknown): AnalysisResult => {
-  const data = asRecord(value);
-  const ensureStringArray = (input: unknown, max: number): string[] => {
-    if (!Array.isArray(input)) return [];
-    return input
-      .map((entry) => String(entry || '').trim())
-      .filter(Boolean)
-      .slice(0, max);
-  };
-  return {
-    strengths: ensureStringArray(data.strengths, 3),
-    weaknesses: ensureStringArray(data.weaknesses, 3),
-    suggestedTrait: String(data.suggestedTrait || '').slice(0, 80),
-    oneLine: String(data.oneLine || '').slice(0, 80),
-  };
 };
 
 const normalizeSkillResult = (value: unknown): SkillResult => {
@@ -281,15 +251,6 @@ const sanitizeCharacterForPrompt = (char: CharacterData) => ({
 export interface GrowthReportPayload<T> {
   ok: boolean;
   result: T;
-}
-
-export async function requestAnalysis(
-  cfg: AIConfig,
-  character: CharacterData,
-  summary: BattleSummary,
-  context?: Record<string, unknown>,
-): Promise<AnalysisResult> {
-  return requestGrowthReport<AnalysisResult>(cfg, 'analysis', character, summary, context);
 }
 
 export async function requestSkillCandidates(
@@ -391,7 +352,6 @@ async function requestCustomOpenAI<T>(
   if (!content) throw new Error('AI 返回内容为空');
   const parsed = parseJsonLoose(content);
 
-  if (intent === 'analysis') return normalizeAnalysis(parsed) as T;
   if (intent === 'skill') return normalizeSkillResult(parsed) as T;
   return normalizeEvolveResult(parsed) as T;
 }

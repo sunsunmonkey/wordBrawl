@@ -1,8 +1,9 @@
-import OpenAI from 'openai';
-import { CharacterData, Skill } from '../store/useGameStore';
-import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from '../data/ultimateTypes';
+import OpenAI from "openai";
+import { CharacterData, Skill } from "../store/useGameStore";
+import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from "../data/ultimateTypes";
+import { runPollinationsTask, sleep } from "./pollinationsQueue";
 
-export type AIProviderMode = 'free' | 'custom';
+export type AIProviderMode = "free" | "custom";
 
 export interface AIConfig {
   apiKey: string;
@@ -27,16 +28,28 @@ const stripJsonFences = (raw: string): string => {
 };
 
 const asRecord = (value: unknown): Record<string, unknown> => {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 };
 
-const clampInt = (value: unknown, min: number, max: number, fallback: number): number => {
+const clampInt = (
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(max, Math.max(min, Math.round(numeric)));
 };
 
-const clampNumber = (value: unknown, min: number, max: number, fallback: number): number => {
+const clampNumber = (
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(max, Math.max(min, numeric));
@@ -47,10 +60,14 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
   const rawSkills = Array.isArray(data.skills) ? data.skills : [];
   const skills: Skill[] = rawSkills.map((rawSkill): Skill => {
     const s = asRecord(rawSkill);
-    const rawType = String(s.type || 'attack');
-    const type = (['attack', 'heal', 'buff', 'debuff', 'ultimate'].includes(rawType) ? rawType : 'attack') as Skill['type'];
-    const isUltimate = Boolean(s.isUltimate) || type === 'ultimate';
-    const requestedUltimateType = String(s.ultimateType || '');
+    const rawType = String(s.type || "attack");
+    const type = (
+      ["attack", "heal", "buff", "debuff", "ultimate"].includes(rawType)
+        ? rawType
+        : "attack"
+    ) as Skill["type"];
+    const isUltimate = Boolean(s.isUltimate) || type === "ultimate";
+    const requestedUltimateType = String(s.ultimateType || "");
     const ultimateType = isUltimate
       ? ULTIMATE_TYPE_IDS.includes(requestedUltimateType)
         ? requestedUltimateType
@@ -58,16 +75,29 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
       : undefined;
 
     return {
-      name: String(s.name || '未命名技能'),
-      description: String(s.description || ''),
-      damageMultiplier: clampNumber(s.damageMultiplier, 0, isUltimate ? 8 : 3.2, isUltimate ? 5.5 : 1),
+      name: String(s.name || "未命名技能"),
+      description: String(s.description || ""),
+      damageMultiplier: clampNumber(
+        s.damageMultiplier,
+        0,
+        isUltimate ? 8 : 3.2,
+        isUltimate ? 5.5 : 1,
+      ),
       type,
       isUltimate,
       imagePrompt: s.imagePrompt ? String(s.imagePrompt) : undefined,
-      imageUrl: isUltimate ? getUltimateTypeById(ultimateType)?.imageUrl : s.imageUrl ? String(s.imageUrl) : undefined,
+      imageUrl: isUltimate
+        ? getUltimateTypeById(ultimateType)?.imageUrl
+        : s.imageUrl
+          ? String(s.imageUrl)
+          : undefined,
       ultimateType,
-      healPercent: s.healPercent ? clampInt(s.healPercent, 1, 70, 35) : undefined,
-      buffPercent: s.buffPercent ? clampInt(s.buffPercent, 1, 120, 45) : undefined,
+      healPercent: s.healPercent
+        ? clampInt(s.healPercent, 1, 70, 35)
+        : undefined,
+      buffPercent: s.buffPercent
+        ? clampInt(s.buffPercent, 1, 120, 45)
+        : undefined,
       buffTurns: s.buffTurns ? clampInt(s.buffTurns, 1, 6, 3) : undefined,
     };
   });
@@ -76,13 +106,15 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
 
   return {
     ...data,
-    name: String(data.name || '未命名角色'),
+    name: String(data.name || "未命名角色"),
     hp,
     maxHp: hp,
     attack: clampInt(data.attack, 20, 140, 45),
     defense: clampInt(data.defense, 5, 85, 25),
     speed: clampInt(data.speed, 1, 140, 55),
-    imagePrompt: String(data.imagePrompt || 'cyberpunk game character portrait'),
+    imagePrompt: String(
+      data.imagePrompt || "cyberpunk game character portrait",
+    ),
     skills,
     ultimateCharge: 0,
     attackBuff: 0,
@@ -91,33 +123,40 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
   };
 };
 
-const generateCharacterWithFreeTrial = async (description: string): Promise<CharacterData> => {
-  const response = await fetch('/api/generate-character', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+const generateCharacterWithFreeTrial = async (
+  description: string,
+): Promise<CharacterData> => {
+  const response = await fetch("/api/generate-character", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ description }),
   });
 
   const payload = asRecord(await response.json().catch(() => ({})));
   if (!response.ok) {
-    throw new Error(String(payload.error || '免费体验接口暂时不可用，请稍后再试'));
+    throw new Error(
+      String(payload.error || "免费体验接口暂时不可用，请稍后再试"),
+    );
   }
 
   if (!payload.character) {
-    throw new Error('免费体验接口返回内容异常');
+    throw new Error("免费体验接口返回内容异常");
   }
 
   return normalizeCharacterData(payload.character);
 };
 
-export const generateCharacter = async (cfg: AIConfig, description: string): Promise<CharacterData> => {
-  if ((cfg.apiMode || 'custom') === 'free') {
+export const generateCharacter = async (
+  cfg: AIConfig,
+  description: string,
+): Promise<CharacterData> => {
+  if ((cfg.apiMode || "custom") === "free") {
     return generateCharacterWithFreeTrial(description);
   }
 
-  if (!cfg.apiKey) throw new Error('请先填写 API Key');
-  if (!cfg.baseUrl) throw new Error('请先填写 Base URL');
-  if (!cfg.model) throw new Error('请先填写 Model');
+  if (!cfg.apiKey) throw new Error("请先填写 API Key");
+  if (!cfg.baseUrl) throw new Error("请先填写 Base URL");
+  if (!cfg.model) throw new Error("请先填写 Model");
 
   const client = buildClient(cfg);
 
@@ -135,7 +174,7 @@ export const generateCharacter = async (cfg: AIConfig, description: string): Pro
 5. 一个终极技能/大招（type="ultimate"，isUltimate=true，damageMultiplier 4.0-7.5）
    - 大招必须有 description 字段：详细描述释放时的华丽特效
    - 大招必须有 ultimateType 字段：从以下类型中挑选一个最贴合角色主题的 ID
-     可选类型：${ULTIMATE_TYPE_IDS.join(', ')}
+     可选类型：${ULTIMATE_TYPE_IDS.join(", ")}
    - 例如火焰类角色选 "fire"，冰霜类选 "ice"，机甲类选 "mecha"，宇宙类选 "cosmic"
 
 数值分层要求：
@@ -168,14 +207,14 @@ JSON 结构如下：
   const response = await client.chat.completions.create({
     model: cfg.model,
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: description }
+      { role: "system", content: systemPrompt },
+      { role: "user", content: description },
     ],
     temperature: 0.95,
   });
 
   const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error('AI 返回内容为空');
+  if (!content) throw new Error("AI 返回内容为空");
 
   const cleaned = stripJsonFences(content);
 
@@ -184,40 +223,22 @@ JSON 结构如下：
     data = JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('AI 返回的内容不是合法的 JSON：' + cleaned.slice(0, 100));
+    if (!match)
+      throw new Error("AI 返回的内容不是合法的 JSON：" + cleaned.slice(0, 100));
     data = JSON.parse(match[0]);
   }
 
   return normalizeCharacterData(data);
 };
 
-// ============ 图片生成：Pollinations + 限流 + 可靠性增强 ============
-
-/** 限流器：确保两次请求间至少间隔 minIntervalMs */
-class RateLimiter {
-  private lastCall = 0;
-  constructor(private minIntervalMs: number) {}
-  async wait(maxWaitMs = Number.POSITIVE_INFINITY): Promise<boolean> {
-    const now = Date.now();
-    const elapsed = now - this.lastCall;
-    if (elapsed < this.minIntervalMs) {
-      const waitMs = this.minIntervalMs - elapsed;
-      if (waitMs > maxWaitMs) return false;
-      await new Promise((r) => setTimeout(r, waitMs));
-    }
-    this.lastCall = Date.now();
-    return true;
-  }
-}
-
-// Pollinations anonymous image generation is queue-limited per IP. Keep starts conservative.
-const globalLimiter = new RateLimiter(16_000);
+// ============ 图片生成：Pollinations + 串行队列 + 可靠性增强 ============
 
 export interface ImageLoadResult {
   ok: boolean;
   status?: number;
   rateLimited?: boolean;
   retryAfterMs?: number;
+  forbidden?: boolean;
 }
 
 const parseRetryAfterMs = (value: string | null): number | undefined => {
@@ -229,7 +250,10 @@ const parseRetryAfterMs = (value: string | null): number | undefined => {
   return undefined;
 };
 
-const loadViaImageElement = (url: string, timeoutMs: number): Promise<ImageLoadResult> => {
+const loadViaImageElement = (
+  url: string,
+  timeoutMs: number,
+): Promise<ImageLoadResult> => {
   return new Promise((resolve) => {
     const img = new Image();
     let done = false;
@@ -249,7 +273,10 @@ const loadViaImageElement = (url: string, timeoutMs: number): Promise<ImageLoadR
   });
 };
 
-export const probeImage = async (url: string, timeoutMs = 30000): Promise<ImageLoadResult> => {
+export const probeImage = async (
+  url: string,
+  timeoutMs = 30000,
+): Promise<ImageLoadResult> => {
   if (!url) return { ok: false };
 
   const controller = new AbortController();
@@ -258,25 +285,26 @@ export const probeImage = async (url: string, timeoutMs = 30000): Promise<ImageL
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'image/*,*/*;q=0.8' },
-      cache: 'default',
+      headers: { Accept: "image/*,*/*;q=0.8" },
+      cache: "default",
     });
-    const contentType = response.headers.get('content-type') || '';
-    const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+    const contentType = response.headers.get("content-type") || "";
+    const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       return {
         ok: false,
         status: response.status,
-        rateLimited: response.status === 429,
+        rateLimited: response.status === 429 || response.status === 403,
+        forbidden: response.status === 403,
         retryAfterMs,
       };
     }
 
     const blob = await response.blob();
     return {
-      ok: contentType.startsWith('image/') && blob.size > 0,
+      ok: contentType.startsWith("image/") && blob.size > 0,
       status: response.status,
       retryAfterMs,
     };
@@ -291,7 +319,10 @@ export const probeImage = async (url: string, timeoutMs = 30000): Promise<ImageL
  * 预加载图片，校验是否真的可访问且有效。
  * 关键：检查 naturalWidth > 0，因为空响应也会触发 onload。
  */
-export const preloadImage = (url: string, timeoutMs = 30000): Promise<boolean> => {
+export const preloadImage = (
+  url: string,
+  timeoutMs = 30000,
+): Promise<boolean> => {
   return probeImage(url, timeoutMs).then((result) => result.ok);
 };
 
@@ -308,9 +339,9 @@ const buildPollinationsUrl = (
     width: String(width),
     height: String(height),
     seed: String(seed),
-    nologo: 'true',
+    nologo: "true",
   });
-  if (model) params.set('model', model);
+  if (model) params.set("model", model);
   return `${base}?${params.toString()}`;
 };
 
@@ -323,9 +354,53 @@ const hashSeed = (value: string): number => {
   return Math.abs(hash) % 1_000_000;
 };
 
+interface PollinationsAttempt {
+  model?: string;
+  seedKey: string;
+}
+
+/**
+ * 在全局串行队列里生成并校验一张 Pollinations 图片。
+ * 关键：整个“构造 URL → 探测下载 → 429 退避重试”都在同一个队列槽位里完成，
+ * 保证同一时刻只有一个 Pollinations 请求在飞行中，从根本上避开匿名层 max=1 的 429。
+ * 成功返回校验通过的 URL；全部尝试失败返回空串。
+ */
+const generateValidatedImage = (
+  enriched: string,
+  width: number,
+  height: number,
+  attempts: PollinationsAttempt[],
+  probeTimeoutMs: number,
+  onAttempt?: (info: {
+    attempt: number;
+    total: number;
+    model?: string;
+  }) => void,
+): Promise<string> =>
+  runPollinationsTask(async () => {
+    for (let i = 0; i < attempts.length; i++) {
+      const { model, seedKey } = attempts[i];
+      onAttempt?.({ attempt: i + 1, total: attempts.length, model });
+      const seed = hashSeed(seedKey);
+      const url = buildPollinationsUrl(enriched, width, height, seed, model);
+      const probe = await probeImage(url, probeTimeoutMs);
+      if (probe.ok) return url;
+      // 被限流：按服务端 retry-after 真正退避后，仍在本槽位内重试，绝不并发。
+      if (probe.rateLimited) {
+        const backoff =
+          probe.retryAfterMs && probe.retryAfterMs > 0
+            ? probe.retryAfterMs
+            : 4_000;
+        await sleep(Math.min(backoff, 20_000));
+      }
+    }
+    return "";
+  });
+
 /**
  * 生成角色头像
  * 使用当前可用且更快的 sana 模型；seed 按 prompt/player 固定，便于缓存复用。
+ * 整个生成在串行队列内完成实际下载校验，返回校验通过的 URL。
  */
 export const generateCharacterImage = async (
   _cfg: AIConfig,
@@ -333,21 +408,23 @@ export const generateCharacterImage = async (
   player: 1 | 2,
   modelOverride?: string,
 ): Promise<string> => {
-  if (!prompt) return '';
+  if (!prompt) return "";
   const cleaned = prompt.slice(0, 200);
-  const enriched = `${cleaned}, neon cyberpunk character portrait, glowing rim light, dark background, anime style`;
-  const seed = hashSeed(`${player}:${cleaned}`);
-  const model = modelOverride === '' ? undefined : modelOverride ?? 'sana';
-  const canStartRemoteRequest = await globalLimiter.wait(16_000);
-  if (!canStartRemoteRequest) return '';
-  return buildPollinationsUrl(enriched, 256, 256, seed, model);
+  const enriched = `${cleaned}, single fictional game character avatar, centered head and upper body portrait, clear face or helmet, square composition, clean dark background, neon rim light, anime game art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
+  const baseModel =
+    modelOverride === "" ? undefined : (modelOverride ?? "sana");
+  const attempts: PollinationsAttempt[] = [
+    { model: baseModel, seedKey: `${player}:${cleaned}` },
+    { model: undefined, seedKey: `${player}:${cleaned}:retry` },
+  ];
+  return generateValidatedImage(enriched, 256, 256, attempts, 45_000);
 };
 
 /**
- * 进化形象专用：连续尝试多个模型 + 多个 seed，确保图片真的能被加载。
- * - 优先 sana（最快），失败再回退 flux / 默认
- * - 每次尝试都 probeImage 校验，确保返回的 URL 是真实可用的图片
- * - 全部失败返回空串，调用方需要 fallback 到旧头像
+ * 进化形象专用：匿名 Pollinations 稳定性优先。
+ * - 进化头像是关键资源，只尝试 sana + 默认模型，避免为一个形态打出多次高风险请求。
+ * - 整个尝试循环在同一串行队列槽位内完成探测校验，确保返回的 URL 是真实可用的图片。
+ * - 全部失败返回空串，调用方进入“待重试”状态或使用本地兜底图。
  */
 export const generateEvolutionImage = async (
   prompt: string,
@@ -355,38 +432,67 @@ export const generateEvolutionImage = async (
     seedSalt?: string;
     width?: number;
     height?: number;
-    onAttempt?: (info: { attempt: number; total: number; model?: string }) => void;
+    onAttempt?: (info: {
+      attempt: number;
+      total: number;
+      model?: string;
+    }) => void;
   },
 ): Promise<string> => {
-  if (!prompt) return '';
+  if (!prompt) return "";
   const width = options?.width ?? 384;
   const height = options?.height ?? 384;
-  const cleaned = prompt.slice(0, 220);
-  const enriched = `${cleaned}, ascended evolution form, radiant aura, divine glow, ultra detailed anime key visual, cinematic lighting`;
+  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 160);
+  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, cyberpunk fantasy anime key art, no text, no UI, no screenshot`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
-  const attempts = [
-    { model: 'sana' as string | undefined, seedKey: `${seedSalt}:s1` },
-    { model: 'flux' as string | undefined, seedKey: `${seedSalt}:s2` },
-    { model: 'sana' as string | undefined, seedKey: `${seedSalt}:s3` },
-    { model: undefined as string | undefined, seedKey: `${seedSalt}:s4` },
+  const attempts: PollinationsAttempt[] = [
+    { model: "sana", seedKey: `${seedSalt}:s1` },
+    { model: undefined, seedKey: `${seedSalt}:s2` },
   ];
+  return generateValidatedImage(
+    enriched,
+    width,
+    height,
+    attempts,
+    35_000,
+    options?.onAttempt,
+  );
+};
 
-  for (let i = 0; i < attempts.length; i++) {
-    const { model, seedKey } = attempts[i];
-    options?.onAttempt?.({ attempt: i + 1, total: attempts.length, model });
-    const canStart = await globalLimiter.wait(20_000);
-    if (!canStart) continue;
-    const seed = hashSeed(seedKey);
-    const url = buildPollinationsUrl(enriched, width, height, seed, model);
-    const probe = await probeImage(url, 45_000);
-    if (probe.ok) return url;
-    if (probe.rateLimited && probe.retryAfterMs && probe.retryAfterMs > 0) {
-      await new Promise((r) => setTimeout(r, Math.min(probe.retryAfterMs!, 8_000)));
-    }
-  }
+/** 进化大招图：非关键资源。失败时 UI 展示待生成，不阻塞形态进化。 */
+export const generateEvolutionUltimateImage = async (
+  prompt: string,
+  options?: {
+    seedSalt?: string;
+    width?: number;
+    height?: number;
+    onAttempt?: (info: {
+      attempt: number;
+      total: number;
+      model?: string;
+    }) => void;
+  },
+): Promise<string> => {
+  if (!prompt) return "";
+  const width = options?.width ?? 640;
+  const height = options?.height ?? 360;
+  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 140);
+  const enriched = `${cleaned}, ultimate attack splash art, explosive energy, dramatic anime combat illustration, cinematic lighting, no text`;
 
-  return '';
+  const seedSalt = options?.seedSalt ?? String(Date.now());
+  const attempts: PollinationsAttempt[] = [
+    { model: "sana", seedKey: `${seedSalt}:u1` },
+    { model: undefined, seedKey: `${seedSalt}:u2` },
+  ];
+  return generateValidatedImage(
+    enriched,
+    width,
+    height,
+    attempts,
+    25_000,
+    options?.onAttempt,
+  );
 };
 
 /**
@@ -401,8 +507,10 @@ export const generateUltimateImage = async (
 ): Promise<string> => {
   void _player;
   void _modelOverride;
-  const type = getUltimateTypeById(ultimateType) ?? getUltimateTypeById(ULTIMATE_TYPE_IDS[0]);
-  if (!type) return '';
+  const type =
+    getUltimateTypeById(ultimateType) ??
+    getUltimateTypeById(ULTIMATE_TYPE_IDS[0]);
+  if (!type) return "";
   const pool = [type.imageUrl, ...(type.alternateImageUrls || [])];
   return pool[Math.floor(Math.random() * pool.length)];
 };

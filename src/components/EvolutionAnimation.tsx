@@ -1,23 +1,30 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { evolutionLabel } from '../utils/towerProgress';
-import type { EvolutionStage } from '../store/useRosterStore';
+import type { Skill } from '../store/useGameStore';
+import type { ActiveEvolutionStage } from '../store/useRosterStore';
 
 type AnimPhase = 'charge' | 'break' | 'flash' | 'reveal' | 'settle';
 
 interface Props {
   oldImageUrl?: string;
   newImageUrl: string | null;
-  stage: 1 | 2 | 3;
+  ultimate?: Skill;
+  ultimateImageUrl?: string | null;
+  stage: ActiveEvolutionStage;
   characterName: string;
+  readyToReveal?: boolean;
   onFinish: () => void;
 }
 
-const STAGE_THEME: Record<1 | 2 | 3, { primary: string; secondary: string; rgb: string }> = {
+const STAGE_THEME: Record<ActiveEvolutionStage, { primary: string; secondary: string; rgb: string }> = {
   1: { primary: '#FFD700', secondary: '#FF9F0A', rgb: '255, 215, 0' },
   2: { primary: '#66FCF1', secondary: '#45A29E', rgb: '102, 252, 241' },
-  3: { primary: '#C77DFF', secondary: '#FF6BFF', rgb: '199, 125, 255' },
+  3: { primary: '#7FFF9F', secondary: '#2DD4BF', rgb: '127, 255, 159' },
+  4: { primary: '#FF6B9D', secondary: '#FF003C', rgb: '255, 107, 157' },
+  5: { primary: '#C77DFF', secondary: '#FF6BFF', rgb: '199, 125, 255' },
+  6: { primary: '#FFFFFF', secondary: '#FFD700', rgb: '255, 255, 255' },
 };
 
 /**
@@ -27,12 +34,17 @@ const STAGE_THEME: Record<1 | 2 | 3, { primary: string; secondary: string; rgb: 
 export const EvolutionAnimation: React.FC<Props> = ({
   oldImageUrl,
   newImageUrl,
+  ultimate,
+  ultimateImageUrl,
   stage,
   characterName,
+  readyToReveal = true,
   onFinish,
 }) => {
   const [phase, setPhase] = useState<AnimPhase>('charge');
   const [newImageFailed, setNewImageFailed] = useState(false);
+  const [ultimateImageFailed, setUltimateImageFailed] = useState(false);
+  const chargeStartedAtRef = useRef(Date.now());
   const theme = STAGE_THEME[stage];
 
   // 新图变了：重置失败标记
@@ -40,17 +52,23 @@ export const EvolutionAnimation: React.FC<Props> = ({
     setNewImageFailed(false);
   }, [newImageUrl]);
 
-  // 实际渲染的新图：如果加载失败，回退旧图（避免 broken icon）
-  const renderedNewImage = newImageFailed ? oldImageUrl ?? null : newImageUrl;
+  useEffect(() => {
+    setUltimateImageFailed(false);
+  }, [ultimateImageUrl]);
+
+  // 实际渲染的新图：新图失败时不冒充旧图，保持生成态并等待结果页处理。
+  const renderedNewImage = newImageFailed ? null : newImageUrl;
+  const renderedUltimateImage = ultimateImageFailed ? null : ultimateImageUrl;
 
   // 在新图未就绪前持续 charge；图就绪后立刻往后推进
   useEffect(() => {
     if (phase !== 'charge') return;
-    if (!newImageUrl) return; // 等图
-    // 至少让 charge 跑满 1.6 秒，避免新图秒到时观感太突兀
-    const t = setTimeout(() => setPhase('break'), 1600);
+    if (!readyToReveal) return;
+    const elapsed = Date.now() - chargeStartedAtRef.current;
+    const remaining = Math.max(0, 1600 - elapsed);
+    const t = setTimeout(() => setPhase('break'), remaining);
     return () => clearTimeout(t);
-  }, [newImageUrl, phase]);
+  }, [phase, readyToReveal]);
 
   useEffect(() => {
     if (phase === 'break') {
@@ -202,7 +220,7 @@ export const EvolutionAnimation: React.FC<Props> = ({
             />
           )}
 
-          {showNew && renderedNewImage && (
+          {showNew && (
             <motion.div
               key="new-avatar"
               className="absolute inset-0 rounded-full overflow-hidden"
@@ -214,12 +232,21 @@ export const EvolutionAnimation: React.FC<Props> = ({
               animate={{ scale: 1, opacity: 1, rotate: 0, filter: 'brightness(1)' }}
               transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
             >
-              <img
-                src={renderedNewImage}
-                alt="new-form"
-                className="w-full h-full object-cover"
-                onError={() => setNewImageFailed(true)}
-              />
+              {renderedNewImage ? (
+                <img
+                  src={renderedNewImage}
+                  alt="new-form"
+                  className="w-full h-full object-cover"
+                  onError={() => setNewImageFailed(true)}
+                />
+              ) : (
+                <div
+                  className="flex h-full w-full items-center justify-center text-7xl font-black font-display"
+                  style={{ color: theme.primary, textShadow: `0 0 30px ${theme.primary}` }}
+                >
+                  {characterName[0] || '?'}
+                </div>
+              )}
               {/* 持续金光晕 */}
               <motion.div
                 className="absolute inset-0 pointer-events-none"
@@ -277,10 +304,72 @@ export const EvolutionAnimation: React.FC<Props> = ({
                 textShadow: `0 0 32px ${theme.primary}, 0 0 64px ${theme.primary}88`,
               }}
             >
-              {evolutionLabel(stage as EvolutionStage)}
+              {evolutionLabel(stage)}
             </div>
             <div className="mt-2 text-sm tracking-widest text-[#C5C6C7]">
               {characterName}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] tracking-widest text-[#0B0C10]">
+              <span className="rounded bg-[#FFD700] px-2 py-1 font-black">属性突破</span>
+              <span className="rounded bg-[#FFD700] px-2 py-1 font-black">大招重铸</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showNew && ultimate && (
+          <motion.div
+            key="ultimate-evolution"
+            initial={{ opacity: 0, x: 70, scale: 0.94 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 30 }}
+            transition={{ delay: 0.45, duration: 0.65, ease: 'easeOut' }}
+            className="absolute right-4 top-1/2 hidden w-[280px] -translate-y-1/2 overflow-hidden rounded-lg border bg-[#0B0C10]/78 shadow-2xl md:block"
+            style={{
+              borderColor: `${theme.primary}aa`,
+              boxShadow: `0 0 34px rgba(${theme.rgb},0.42), inset 0 0 24px rgba(${theme.rgb},0.12)`,
+            }}
+          >
+            <div className="border-b px-3 py-2" style={{ borderColor: `${theme.primary}55`, background: `${theme.primary}1f` }}>
+              <div className="flex items-center gap-2 text-[10px] font-black tracking-[0.35em]" style={{ color: theme.primary }}>
+                <Sparkles size={12} /> ULTIMATE EVOLVED
+              </div>
+              <div className="mt-1 text-lg font-black font-display tracking-wide" style={{ color: theme.primary }}>
+                {ultimate.name}
+              </div>
+            </div>
+            <div className="relative aspect-video bg-[#1F2833]">
+              {renderedUltimateImage ? (
+                <img
+                  src={renderedUltimateImage}
+                  alt={ultimate.name}
+                  className="h-full w-full object-cover"
+                  onError={() => setUltimateImageFailed(true)}
+                />
+              ) : (
+                <div
+                  className="flex h-full w-full items-center justify-center text-6xl font-black font-display"
+                  style={{ color: theme.primary, textShadow: `0 0 28px ${theme.primary}` }}
+                >
+                  ☄
+                </div>
+              )}
+              <div
+                className="absolute inset-0"
+                style={{ background: `linear-gradient(180deg, transparent 30%, rgba(11,12,16,0.9) 100%)` }}
+              />
+            </div>
+            <div className="p-3">
+              <div className="flex items-center justify-between text-[10px] tracking-widest text-[#8a8d91]">
+                <span>NEW MULTIPLIER</span>
+                <span className="font-black" style={{ color: theme.primary }}>
+                  x{ultimate.damageMultiplier.toFixed(1)}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-[#C5C6C7]">
+                {ultimate.description}
+              </p>
             </div>
           </motion.div>
         )}
@@ -302,9 +391,7 @@ export const EvolutionAnimation: React.FC<Props> = ({
             >
               ENERGY OVERFLOW
             </div>
-            <div className="text-xs text-[#C5C6C7] tracking-widest">
-              {newImageUrl ? '形态正在重塑...' : 'AI 正在重塑形态...'}
-            </div>
+            <div className="text-xs text-[#C5C6C7] tracking-widest">形态与大招正在重塑...</div>
           </motion.div>
         )}
       </AnimatePresence>

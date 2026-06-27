@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Weapon } from '../data/weapons';
 
 export type SkillType = 'attack' | 'heal' | 'buff' | 'debuff' | 'ultimate';
 
@@ -42,15 +41,11 @@ export interface CharacterData {
   defenseBuff: number;
   /** buff 剩余回合 */
   buffTurnsLeft: number;
-  /** 装备的武器（进入战斗前随机抽取） */
-  weapon?: Weapon;
-  /** 武器额外暴击率加成（百分比） */
+  /** 额外暴击率加成（百分比，Boss 或特殊状态可使用） */
   critBonus?: number;
-  /** 角色基础属性快照（用于卸下武器恢复原值） */
-  baseStats?: { attack: number; defense: number; speed: number };
   /** 生成时的原始描述文本，便于赛后收入麾下时回写 */
   sourceDescription?: string;
-  /** 来自预设角色市场，不参与赛后收入麾下 */
+  /** 来自预设角色，不参与赛后收入麾下 */
   isPreset?: boolean;
 }
 
@@ -78,6 +73,7 @@ export interface BattleEvent {
 export type GamePhase =
   | 'WELCOME'
   | 'MODE_SELECT'
+  | 'RECRUIT_CREATE'
   | 'PLAYER1_CREATE'
   | 'PLAYER2_CREATE'
   | 'BATTLE_ARENA'
@@ -87,27 +83,6 @@ export type GamePhase =
   | 'TOWER_RESULT';
 export type ApiMode = 'free' | 'custom';
 export type BattleMode = 'pvp' | 'pve_tower';
-
-/**
- * 装备武器：以角色的 baseStats 为基线，叠加 weapon 的属性加成。
- * 重复装备会先回到基础属性再叠加新武器，避免数值无限累积。
- */
-const equipWeapon = (char: CharacterData, weapon: Weapon): CharacterData => {
-  const base = char.baseStats ?? {
-    attack: char.attack,
-    defense: char.defense,
-    speed: char.speed,
-  };
-  return {
-    ...char,
-    baseStats: base,
-    attack: base.attack + (weapon.attackBonus || 0),
-    defense: base.defense,
-    speed: Math.max(1, base.speed + (weapon.speedBonus || 0)),
-    critBonus: weapon.critBonus || 0,
-    weapon,
-  };
-};
 
 interface GameStore {
   apiKey: string;
@@ -138,8 +113,6 @@ interface GameStore {
   updatePlayer2Hp: (hp: number) => void;
   updatePlayer1UltimateCharge: (charge: number) => void;
   updatePlayer2UltimateCharge: (charge: number) => void;
-  equipPlayer1Weapon: (weapon: Weapon) => void;
-  equipPlayer2Weapon: (weapon: Weapon) => void;
   addBattleLog: (log: BattleEvent) => void;
   setWinner: (winner: 'player1' | 'player2') => void;
   setBattleMode: (mode: BattleMode) => void;
@@ -176,8 +149,6 @@ export const useGameStore = create<GameStore>()(
       updatePlayer2Hp: (hp) => set((state) => ({ player2: state.player2 ? { ...state.player2, hp } : null })),
       updatePlayer1UltimateCharge: (charge) => set((state) => ({ player1: state.player1 ? { ...state.player1, ultimateCharge: charge } : null })),
       updatePlayer2UltimateCharge: (charge) => set((state) => ({ player2: state.player2 ? { ...state.player2, ultimateCharge: charge } : null })),
-      equipPlayer1Weapon: (weapon) => set((state) => ({ player1: state.player1 ? equipWeapon(state.player1, weapon) : null })),
-      equipPlayer2Weapon: (weapon) => set((state) => ({ player2: state.player2 ? equipWeapon(state.player2, weapon) : null })),
       addBattleLog: (log) => set((state) => ({
         battleLogs: [...state.battleLogs, log],
         currentTurn: Math.max(state.currentTurn, log.turn),
