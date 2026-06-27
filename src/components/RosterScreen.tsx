@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Zap, Shield, Gauge, UsersRound, Sword } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
-import { useRosterStore } from '../store/useRosterStore';
+import {
+  isRosterCharacterEvolutionLocked,
+  isRosterCharacterRecruitLocked,
+  useRosterStore,
+} from '../store/useRosterStore';
 import { CharacterDetailModal } from './CharacterDetailModal';
 import { ParticleField } from './ParticleField';
 import { evolutionStars, levelAscensionLabel } from '../utils/towerProgress';
@@ -66,16 +70,19 @@ export const RosterScreen: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {roster.map((char) => (
-                <motion.button
-                  key={char.rosterId}
-                  type="button"
-                  onClick={() => setSelectedId(char.rosterId)}
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="relative group text-left rounded-lg overflow-hidden border-2 bg-[#0B0C10]/80 transition-all"
-                  style={{ borderColor: `rgba(${themeRgb}, 0.4)` }}
-                >
+              {roster.map((char) => {
+                const evolutionLocked = isRosterCharacterEvolutionLocked(char);
+                const recruitLocked = isRosterCharacterRecruitLocked(char);
+                return (
+                  <motion.button
+                    key={char.rosterId}
+                    type="button"
+                    onClick={() => setSelectedId(char.rosterId)}
+                    whileHover={{ scale: 1.04, y: -2 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="relative group text-left rounded-lg overflow-hidden border-2 bg-[#0B0C10]/80 transition-all"
+                    style={{ borderColor: `rgba(${themeRgb}, 0.4)` }}
+                  >
                     <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
                     {char.imageUrl ? (
                       <img
@@ -100,6 +107,17 @@ export const RosterScreen: React.FC = () => {
                         {'★'.repeat(evolutionStars(char.evolutionStage))}
                       </div>
                     )}
+                    {(evolutionLocked || recruitLocked) && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/68">
+                        <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
+                          {recruitLocked
+                            ? char.recruitLock?.status === 'failed'
+                              ? '招募失败'
+                              : '后台招募中'
+                            : '进化更新中'}
+                        </div>
+                      </div>
+                    )}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 to-transparent p-2">
                       <div className="text-xs font-bold font-display truncate" style={{ color: themeColor }}>
                         {char.name}
@@ -120,8 +138,9 @@ export const RosterScreen: React.FC = () => {
                       <Gauge size={9} className="text-green-400" /> {char.speed}
                     </span>
                   </div>
-                </motion.button>
-              ))}
+                  </motion.button>
+                );
+              })}
             </div>
           )}
         </div>

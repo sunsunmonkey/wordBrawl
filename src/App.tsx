@@ -8,6 +8,7 @@ import { GameOverScreen } from './components/GameOverScreen';
 import { RosterScreen } from './components/RosterScreen';
 import { TowerScreen } from './components/TowerScreen';
 import { TowerResultScreen } from './components/TowerResultScreen';
+import { TrainingGroundScreen } from './components/TrainingGroundScreen';
 
 function App() {
   const { phase } = useGameStore();
@@ -20,6 +21,7 @@ function App() {
       {phase === 'BATTLE_ARENA' && <BattleScreen />}
       {phase === 'GAME_OVER' && <GameOverScreen />}
       {phase === 'ROSTER_VIEW' && <RosterScreen />}
+      {phase === 'TRAINING_GROUND' && <TrainingGroundScreen />}
       {phase === 'TOWER_HUB' && <TowerScreen />}
       {phase === 'TOWER_RESULT' && <TowerResultScreen />}
     </div>

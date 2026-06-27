@@ -27,14 +27,16 @@ import { useGameStore, type Skill } from "../store/useGameStore";
 import { getUltimateTypeById } from "../data/ultimateTypes";
 import {
   useRosterStore,
+  resetCharacterRuntimeState,
   type ActiveEvolutionStage,
   type RosterCharacter,
   type TowerRunRecord,
 } from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { ParticleField } from "./ParticleField";
-import { getTowerBossMeta } from "../data/towerBosses";
+import { getScaledTowerBoss, getTowerBossMeta } from "../data/towerBosses";
 import {
+  applyEvolutionStatBonus,
   applyXp,
   buildLocalEvolution,
   EVOLUTION_STAT_BONUS,
@@ -56,7 +58,6 @@ import { EvolutionAnimation } from "./EvolutionAnimation";
 import { BackButton } from "./BackButton";
 import {
   clearEvolutionPrefetchForRoster,
-  consumeEvolutionPrefetchRecord,
   startEvolutionAssetPrefetch,
   waitEvolutionPrefetch,
 } from "../utils/evolutionPrefetch";
@@ -101,6 +102,15 @@ const getBeforeEvolutionSnapshot = (
   speed: Math.max(1, char.speed - EVOLUTION_STAT_BONUS.speed),
 });
 
+const mergeEvolvedUltimate = (skill: Skill, evolved?: Skill): Skill => ({
+  ...skill,
+  ...(evolved ?? {}),
+  type: "ultimate",
+  isUltimate: true,
+  ultimateType: skill.ultimateType,
+  imageUrl: skill.imageUrl,
+});
+
 const skillIcon = (type: string) => {
   switch (type) {
     case "heal":
@@ -124,9 +134,30 @@ export const TowerResultScreen: React.FC = () => {
   const player2 = useGameStore((s) => s.player2);
   const towerLayer = useGameStore((s) => s.towerLayer);
   const towerRosterId = useGameStore((s) => s.towerRosterId);
+  const towerAutoMode = useGameStore((s) => s.towerAutoMode);
   const setPhase = useGameStore((s) => s.setPhase);
+  const setBattleMode = useGameStore((s) => s.setBattleMode);
+  const setTowerLayer = useGameStore((s) => s.setTowerLayer);
+  const setPlayer1 = useGameStore((s) => s.setPlayer1);
+  const setPlayer2 = useGameStore((s) => s.setPlayer2);
+  const setTowerRosterId = useGameStore((s) => s.setTowerRosterId);
+  const cfg = {
+    apiKey,
+    baseUrl,
+    model,
+    apiMode,
+  };
 
   const lastSummary = useTowerStore((s) => s.lastSummary);
+  const debugForcedEvolutionStage = useTowerStore(
+    (s) => s.debugForcedEvolutionStage,
+  );
+  const setLastSummary = useTowerStore((s) => s.setLastSummary);
+  const setLastRosterId = useTowerStore((s) => s.setLastRosterId);
+  const setLastResult = useTowerStore((s) => s.setLastResult);
+  const setDebugForcedEvolutionStage = useTowerStore(
+    (s) => s.setDebugForcedEvolutionStage,
+  );
   const resetPending = useTowerStore((s) => s.resetPending);
 
   const roster = useRosterStore((s) => s.roster);
@@ -217,6 +248,29 @@ export const TowerResultScreen: React.FC = () => {
     setPreviousXp(char.xp);
 
     // 1) 本地：应用 XP / 多级升级 / 进化标记
+    if (debugForcedEvolutionStage) {
+      const evolvedStats = applyEvolutionStatBonus(char);
+      const evolvedCharacter: RosterCharacter = {
+        ...char,
+        ...evolvedStats,
+        evolutionStage: debugForcedEvolutionStage,
+      };
+      setXpAwarded(0);
+      setNewLevel(char.level);
+      setUnlockEvent(false);
+      setEvolveEvent(debugForcedEvolutionStage);
+      setEvolveLevel(char.level);
+      updateCharacter(char.rosterId, () => evolvedCharacter);
+      await runEvolution(
+        evolvedCharacter,
+        summary,
+        debugForcedEvolutionStage,
+        char.level,
+      );
+      setDebugForcedEvolutionStage(null);
+      return;
+    }
+
     const xpResult = applyXp(char, xpDelta);
     const evolutionLevel =
       xpResult.events.find(
@@ -298,38 +352,41 @@ export const TowerResultScreen: React.FC = () => {
     return false;
   };
 
-  const handlePickSkill = async (candidate: SkillCandidate) => {
-    if (!rosterChar) return;
-    const newSkill: Skill = {
-      name: candidate.name,
-      description: candidate.description,
-      type: candidate.type,
-      damageMultiplier: candidate.damageMultiplier ?? 0,
-      healPercent: candidate.healPercent,
-      buffPercent: candidate.buffPercent,
-      buffTurns: candidate.buffTurns,
-    };
-    appendSkill(rosterChar.rosterId, newSkill);
-    setPickedSkill(newSkill);
-    setSkillCandidates(null);
+  const handlePickSkill = useCallback(
+    async (candidate: SkillCandidate) => {
+      if (!rosterChar) return;
+      const newSkill: Skill = {
+        name: candidate.name,
+        description: candidate.description,
+        type: candidate.type,
+        damageMultiplier: candidate.damageMultiplier ?? 0,
+        healPercent: candidate.healPercent,
+        buffPercent: candidate.buffPercent,
+        buffTurns: candidate.buffTurns,
+      };
+      appendSkill(rosterChar.rosterId, newSkill);
+      setPickedSkill(newSkill);
+      setSkillCandidates(null);
 
-    // 进化 stage 兜底（同一场战斗可能同时升级、解锁技能并进化）
-    if (evolveEvent && !evolutionHandledRef.current) {
-      const refreshed = useRosterStore
-        .getState()
-        .roster.find((c) => c.rosterId === rosterChar.rosterId);
-      if (refreshed && lastSummary) {
-        await runEvolution(
-          refreshed,
-          lastSummary,
-          evolveEvent,
-          evolveLevel ?? refreshed.level,
-        );
-        return;
+      // 进化 stage 兜底（同一场战斗可能同时升级、解锁技能并进化）
+      if (evolveEvent && !evolutionHandledRef.current) {
+        const refreshed = useRosterStore
+          .getState()
+          .roster.find((c) => c.rosterId === rosterChar.rosterId);
+        if (refreshed && lastSummary) {
+          await runEvolution(
+            refreshed,
+            lastSummary,
+            evolveEvent,
+            evolveLevel ?? refreshed.level,
+          );
+          return;
+        }
       }
-    }
-    setStage("finished");
-  };
+      setStage("finished");
+    },
+    [rosterChar, evolveEvent, evolveLevel, lastSummary, appendSkill],
+  );
 
   const runEvolution = async (
     char: RosterCharacter,
@@ -345,6 +402,10 @@ export const TowerResultScreen: React.FC = () => {
     setEvolutionAfterStats(getStatSnapshot(char));
     setEvolutionReadyToReveal(false);
     setEvolutionImageStatus("loading");
+    updateCharacter(char.rosterId, (current) => ({
+      ...current,
+      evolutionLock: { stage: stageNum, startedAt: Date.now() },
+    }));
     try {
       const localEvo = buildLocalEvolution(char, stageNum);
       setEvolveData(localEvo);
@@ -359,12 +420,7 @@ export const TowerResultScreen: React.FC = () => {
           layer: towerLayer,
         },
         async () => localEvo,
-      );
-      const cached = consumeEvolutionPrefetchRecord(
-        char.rosterId,
-        stageNum,
-        triggerLevel,
-        towerLayer,
+        cfg,
       );
       const pending = waitEvolutionPrefetch(
         char.rosterId,
@@ -372,16 +428,90 @@ export const TowerResultScreen: React.FC = () => {
         triggerLevel,
         towerLayer,
       );
-      const prepared =
-        cached ??
-        (await Promise.race([
-          pending ?? prefetchTask,
-          new Promise<null>((resolve) =>
-            setTimeout(() => resolve(null), 12_000),
-          ),
-        ]));
+      const waitTimeoutMs = 45_000;
+      const prepared = await Promise.race([
+        pending ?? prefetchTask,
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), waitTimeoutMs),
+        ),
+      ]);
 
       if (!prepared?.avatarUrl) {
+        void prefetchTask
+          .then((latePrepared) => {
+            if (!latePrepared?.avatarUrl) return;
+            const lateEvo = latePrepared.evo ?? localEvo;
+            const lateUltimateImage =
+              latePrepared.ultimateImageUrl ||
+              lateEvo.newUltimate?.imageUrl ||
+              null;
+            const lateEvoWithImage: EvolveResult = {
+              ...lateEvo,
+              newUltimate:
+                lateEvo.newUltimate && lateUltimateImage
+                  ? { ...lateEvo.newUltimate, imageUrl: lateUltimateImage }
+                  : lateEvo.newUltimate,
+            };
+            updateCharacter(char.rosterId, (current) => {
+              const fallbackIndex = current.formHistory
+                .map((form, index) => ({ form, index }))
+                .reverse()
+                .find(
+                  ({ form }) =>
+                    form.stage === stageNum && form.imageStatus === "fallback",
+                )?.index;
+              const formHistory =
+                typeof fallbackIndex === "number"
+                  ? current.formHistory.map((form, index) =>
+                      index === fallbackIndex
+                        ? {
+                            ...form,
+                            imageUrl: latePrepared.avatarUrl,
+                            imagePrompt: lateEvoWithImage.imagePrompt,
+                            lore: lateEvoWithImage.lore,
+                            createdAt: Date.now(),
+                            imageStatus: "ready" as const,
+                          }
+                        : form,
+                    )
+                  : [
+                      ...current.formHistory,
+                      {
+                        stage: stageNum,
+                        imagePrompt: lateEvoWithImage.imagePrompt,
+                        imageUrl: latePrepared.avatarUrl,
+                        lore: lateEvoWithImage.lore,
+                        createdAt: Date.now(),
+                        imageStatus: "ready" as const,
+                      },
+                    ];
+              return {
+                ...current,
+                imageUrl: latePrepared.avatarUrl,
+                imagePrompt:
+                  lateEvoWithImage.imagePrompt || current.imagePrompt,
+                evolutionLock: undefined,
+                formHistory,
+                skills: lateEvoWithImage.newUltimate
+                  ? current.skills.map((s) =>
+                      s.isUltimate || s.type === "ultimate"
+                        ? mergeEvolvedUltimate(s, lateEvoWithImage.newUltimate)
+                        : s,
+                    )
+                  : current.skills,
+              };
+            });
+            setEvolveData(lateEvoWithImage);
+            setEvolvedImageUrl(latePrepared.avatarUrl);
+            setEvolutionImageStatus("ready");
+            const evolvedCharacterLate = useRosterStore
+              .getState()
+              .roster.find((c) => c.rosterId === char.rosterId);
+            if (evolvedCharacterLate) {
+              setEvolutionAfterStats(getStatSnapshot(evolvedCharacterLate));
+            }
+          })
+          .catch(() => undefined);
         // 兜底：不阻塞玩家。用本地兜底图替代，数值进化照常完成；retry 按钮可稍后覆盖。
         const fallbackUrl = getFallbackAvatarUrl({
           name: char.name,
@@ -408,6 +538,7 @@ export const TowerResultScreen: React.FC = () => {
           imageUrl: fallbackUrl,
           lore: evoWithImageFallback.lore,
           createdAt: Date.now(),
+          imageStatus: "fallback",
         } as const;
         appendFormHistory(char.rosterId, entry);
 
@@ -418,18 +549,11 @@ export const TowerResultScreen: React.FC = () => {
           skills: evoWithImageFallback.newUltimate
             ? current.skills.map((s) =>
                 s.isUltimate || s.type === "ultimate"
-                  ? {
-                      ...s,
-                      ...evoWithImageFallback.newUltimate,
-                      ultimateType:
-                        evoWithImageFallback.newUltimate?.ultimateType ??
-                        s.ultimateType,
-                    }
+                  ? mergeEvolvedUltimate(s, evoWithImageFallback.newUltimate)
                   : s,
               )
             : current.skills,
         }));
-        clearEvolutionPrefetchForRoster(char.rosterId);
         const evolvedCharacterFallback = useRosterStore
           .getState()
           .roster.find((c) => c.rosterId === char.rosterId);
@@ -464,6 +588,7 @@ export const TowerResultScreen: React.FC = () => {
         imageUrl: newImage,
         lore: evoWithImage.lore,
         createdAt: Date.now(),
+        imageStatus: "ready",
       } as const;
       appendFormHistory(char.rosterId, entry);
 
@@ -471,15 +596,11 @@ export const TowerResultScreen: React.FC = () => {
         ...current,
         imageUrl: newImage,
         imagePrompt: evoWithImage.imagePrompt || current.imagePrompt,
+        evolutionLock: undefined,
         skills: evoWithImage.newUltimate
           ? current.skills.map((s) =>
               s.isUltimate || s.type === "ultimate"
-                ? {
-                    ...s,
-                    ...evoWithImage.newUltimate,
-                    ultimateType:
-                      evoWithImage.newUltimate?.ultimateType ?? s.ultimateType,
-                  }
+                ? mergeEvolvedUltimate(s, evoWithImage.newUltimate)
                 : s,
             )
           : current.skills,
@@ -517,6 +638,7 @@ export const TowerResultScreen: React.FC = () => {
         imageUrl: fallbackUrl,
         lore: localEvoSafe.lore,
         createdAt: Date.now(),
+        imageStatus: "fallback",
       } as const;
       appendFormHistory(char.rosterId, entry);
 
@@ -527,12 +649,7 @@ export const TowerResultScreen: React.FC = () => {
         skills: localEvoSafe.newUltimate
           ? current.skills.map((s) =>
               s.isUltimate || s.type === "ultimate"
-                ? {
-                    ...s,
-                    ...localEvoSafe.newUltimate,
-                    ultimateType:
-                      localEvoSafe.newUltimate?.ultimateType ?? s.ultimateType,
-                  }
+                ? mergeEvolvedUltimate(s, localEvoSafe.newUltimate)
                 : s,
             )
           : current.skills,
@@ -573,6 +690,80 @@ export const TowerResultScreen: React.FC = () => {
     resetPending();
     setPhase("TOWER_HUB");
   };
+
+  const handleAutoNext = useCallback(() => {
+    if (!rosterChar) {
+      resetPending();
+      setPhase("TOWER_HUB");
+      return;
+    }
+    const nextLayer = towerLayer + 1;
+    const boss = getScaledTowerBoss(nextLayer, rosterChar);
+    if (!boss) {
+      resetPending();
+      setPhase("TOWER_HUB");
+      return;
+    }
+    setBattleMode("pve_tower");
+    setTowerLayer(nextLayer);
+    setTowerRosterId(rosterChar.rosterId);
+    setPlayer1(resetCharacterRuntimeState(rosterChar));
+    setPlayer2(resetCharacterRuntimeState(boss));
+    setLastSummary(null);
+    setLastRosterId(rosterChar.rosterId);
+    setLastResult(null);
+    resetPending();
+    useGameStore.setState({ battleLogs: [], currentTurn: 0, winner: null });
+    setPhase("BATTLE_ARENA");
+  }, [
+    rosterChar,
+    towerLayer,
+    setBattleMode,
+    setTowerLayer,
+    setTowerRosterId,
+    setPlayer1,
+    setPlayer2,
+    setLastSummary,
+    setLastRosterId,
+    setLastResult,
+    resetPending,
+    setPhase,
+  ]);
+
+  // 自动模式：自动选择技能
+  useEffect(() => {
+    if (!towerAutoMode || stage !== "choose_skill" || !skillCandidates?.length)
+      return;
+    const timer = setTimeout(() => {
+      handlePickSkill(skillCandidates[0]);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [stage, towerAutoMode, skillCandidates, handlePickSkill]);
+
+  // 自动模式：自动完成进化展示
+  useEffect(() => {
+    if (!towerAutoMode || stage !== "evolution_done") return;
+    const timer = setTimeout(() => {
+      setShowEvoAnim(false);
+      setEvolutionReadyToReveal(false);
+      setStage("finished");
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [stage, towerAutoMode]);
+
+  // 自动模式：结算后自动继续
+  useEffect(() => {
+    if (!towerAutoMode || stage !== "finished") return;
+    const timer = setTimeout(() => {
+      if (result === "win") {
+        handleAutoNext();
+      } else {
+        resetPending();
+        setPhase("TOWER_HUB");
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [stage, towerAutoMode, result, handleAutoNext, resetPending, setPhase]);
 
   if (!rosterChar || !player1 || !player2 || !meta) {
     return (
@@ -929,7 +1120,7 @@ export const TowerResultScreen: React.FC = () => {
       </motion.div>
 
       <AnimatePresence>
-        {showEvoAnim && evolveEvent && evolveData && (
+        {showEvoAnim && evolveEvent && evolveData && !towerAutoMode && (
           <EvolutionAnimation
             key={`evo-${evolutionAnimKey}-${evolveEvent}`}
             oldImageUrl={evolvingFromImage}
@@ -1005,7 +1196,7 @@ const EvolutionPortrait: React.FC<EvolutionPortraitProps> = ({
             {status === "ready"
               ? "NEW FORM"
               : status === "fallback"
-                ? "FALLBACK"
+                ? "BACKGROUND"
                 : status === "failed"
                   ? "WAITING"
                   : "GENERATING"}
@@ -1028,7 +1219,7 @@ const EvolutionPortrait: React.FC<EvolutionPortraitProps> = ({
             {isFallback && onRetry && (
               <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-[#0B0C10]/95 via-[#0B0C10]/70 to-transparent px-2 py-2">
                 <span className="text-[9px] font-black tracking-widest text-[#FFD700]">
-                  本地兜底图
+                  后台生成中
                 </span>
                 <button
                   type="button"
@@ -1080,8 +1271,8 @@ const EvolutionPortrait: React.FC<EvolutionPortraitProps> = ({
             </div>
             <div className="relative z-10 mt-2 max-w-[180px] text-[10px] leading-relaxed text-[#8a8d91]">
               {isLoading
-                ? "正在等待真实进化图返回"
-                : "不会使用占位图替代真实形态"}
+                ? "真实进化图可能较慢，可先让任务后台执行"
+                : "当前为临时形态图，回到修炼主页可重新生成"}
             </div>
             {isFailed && onRetry && (
               <button

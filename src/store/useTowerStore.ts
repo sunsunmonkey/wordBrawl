@@ -29,6 +29,8 @@ interface TowerStore {
   pendingEvolution: PendingEvolution | null;
   /** 待写入的形态历史（应用进化后会同步写入 roster） */
   pendingFormHistory: FormHistoryEntry | null;
+  /** Debug：强制结算页进入指定进化阶段演出 */
+  debugForcedEvolutionStage: ActiveEvolutionStage | null;
 
   setCurrentLayer: (layer: number) => void;
   setLastSummary: (summary: BattleSummary | null) => void;
@@ -38,6 +40,7 @@ interface TowerStore {
   setPendingSkillChoices: (skills: Skill[] | null) => void;
   setPendingEvolution: (evo: PendingEvolution | null) => void;
   setPendingFormHistory: (entry: FormHistoryEntry | null) => void;
+  setDebugForcedEvolutionStage: (stage: ActiveEvolutionStage | null) => void;
   resetPending: () => void;
 }
 
@@ -50,6 +53,7 @@ export const useTowerStore = create<TowerStore>((set) => ({
   pendingSkillChoices: null,
   pendingEvolution: null,
   pendingFormHistory: null,
+  debugForcedEvolutionStage: null,
 
   setCurrentLayer: (layer) => set({ currentLayer: layer }),
   setLastSummary: (summary) => set({ lastSummary: summary }),
@@ -59,11 +63,14 @@ export const useTowerStore = create<TowerStore>((set) => ({
   setPendingSkillChoices: (skills) => set({ pendingSkillChoices: skills }),
   setPendingEvolution: (evo) => set({ pendingEvolution: evo }),
   setPendingFormHistory: (entry) => set({ pendingFormHistory: entry }),
+  setDebugForcedEvolutionStage: (stage) =>
+    set({ debugForcedEvolutionStage: stage }),
   resetPending: () =>
     set({
       pendingRun: null,
       pendingSkillChoices: null,
       pendingEvolution: null,
       pendingFormHistory: null,
+      debugForcedEvolutionStage: null,
     }),
 }));

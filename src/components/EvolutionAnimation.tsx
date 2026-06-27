@@ -383,7 +383,7 @@ export const EvolutionAnimation: React.FC<Props> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute bottom-[20%] text-center pointer-events-none"
+            className="absolute bottom-[16%] max-w-[360px] text-center"
           >
             <div
               className="text-[10px] tracking-[0.5em] mb-2"
@@ -391,7 +391,25 @@ export const EvolutionAnimation: React.FC<Props> = ({
             >
               ENERGY OVERFLOW
             </div>
-            <div className="text-xs text-[#C5C6C7] tracking-widest">形态与大招正在重塑...</div>
+            <div className="text-xs text-[#C5C6C7] tracking-widest">
+              形态正在重塑，进化图生成可能需要一些时间
+            </div>
+            <div className="mt-2 text-[10px] leading-relaxed tracking-[0.22em] text-[#8a8d91]">
+              可以先关闭动效，后台完成后会自动更新角色形态
+            </div>
+            <button
+              type="button"
+              onClick={onFinish}
+              className="mt-4 rounded-full border px-4 py-2 text-[10px] font-black tracking-[0.24em] transition-all hover:scale-105"
+              style={{
+                borderColor: `${theme.primary}99`,
+                color: theme.primary,
+                background: `rgba(${theme.rgb},0.1)`,
+                boxShadow: `0 0 18px rgba(${theme.rgb},0.22)`,
+              }}
+            >
+              关闭动效 · 后台更新
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

@@ -153,41 +153,46 @@ export const WelcomeScreen: React.FC = () => {
         <div className="text-center relative">
           <motion.div
             animate={{ rotate: [0, 3, -3, 0], scale: [1, 1.05, 1] }}
-            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
             className="flex justify-center mb-6"
           >
             <div className="relative">
               <img
                 src="/logo.png"
-                alt="Word Brawl"
+                alt="词灵乱斗"
                 className="w-40 h-40 md:w-52 md:h-52 object-contain drop-shadow-[0_0_20px_rgba(102,252,241,0.6)]"
               />
               <motion.div
                 className="absolute inset-0 rounded-full"
                 animate={{ opacity: [0.3, 0.7, 0.3] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                transition={{
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
                 style={{
-                  background: 'radial-gradient(circle, rgba(102,252,241,0.2) 0%, transparent 70%)',
+                  background:
+                    "radial-gradient(circle, rgba(102,252,241,0.2) 0%, transparent 70%)",
                 }}
               />
             </div>
           </motion.div>
           <h1
-            data-text="言出法随"
+            data-text="词灵乱斗"
             className="text-6xl md:text-7xl font-black tracking-wider mb-2 glitch-text font-display"
             style={{
               color: "#66FCF1",
               textShadow: "0 0 18px #66FCF1, 0 0 40px rgba(102, 252, 241, 0.4)",
             }}
           >
-            言出法随
+            词灵乱斗
           </h1>
-          <p className="text-xl font-bold tracking-[0.3em] text-[#C5C6C7] uppercase mt-2 text-glow-cyan">
-            Word · Brawl
+          <p className="text-xl font-bold tracking-[0.35em] text-[#C5C6C7] mt-2 text-glow-cyan">
+            输入成灵 · 一言开战
           </p>
           <div className="flex items-center justify-center gap-2 mt-3 text-xs text-[#8a8d91]">
             <Zap size={12} className="text-yellow-400" />
-            描述角色 · AI 生成 · 自动对战
+            描述角色 · AI 生成 · 对战进化
             <Zap size={12} className="text-yellow-400" />
           </div>
         </div>
@@ -324,7 +329,7 @@ export const WelcomeScreen: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setPhase('ROSTER_VIEW')}
+            onClick={() => setPhase("ROSTER_VIEW")}
             className="mt-3 w-full flex items-center justify-center gap-2 bg-[#0B0C10]/60 border border-[#45A29E]/40 text-[#8a8d91] hover:text-[#66FCF1] hover:border-[#66FCF1]/60 py-2.5 px-4 rounded text-xs font-display tracking-[0.3em] transition-all"
           >
             <UsersRound size={14} />

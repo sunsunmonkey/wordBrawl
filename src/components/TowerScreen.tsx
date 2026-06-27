@@ -9,9 +9,15 @@ import {
   Lock,
   Sparkles,
   Sword,
+  Bot,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
-import { useRosterStore } from "../store/useRosterStore";
+import {
+  isRosterCharacterEvolutionLocked,
+  isRosterCharacterRecruitLocked,
+  isRosterCharacterUnavailable,
+  useRosterStore,
+} from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { ParticleField } from "./ParticleField";
 import {
@@ -38,6 +44,8 @@ export const TowerScreen: React.FC = () => {
   const setBattleMode = useGameStore((s) => s.setBattleMode);
   const setTowerLayer = useGameStore((s) => s.setTowerLayer);
   const setTowerRosterId = useGameStore((s) => s.setTowerRosterId);
+  const towerAutoMode = useGameStore((s) => s.towerAutoMode);
+  const setTowerAutoMode = useGameStore((s) => s.setTowerAutoMode);
   const initialTowerRosterId = useGameStore((s) => s.towerRosterId);
   const initialTowerLayer = useGameStore((s) => s.towerLayer);
   const setLastSummary = useTowerStore((s) => s.setLastSummary);
@@ -60,6 +68,7 @@ export const TowerScreen: React.FC = () => {
     () => roster.find((c) => c.rosterId === selectedRosterId) || null,
     [roster, selectedRosterId],
   );
+  const selectedLocked = isRosterCharacterUnavailable(selectedChar);
 
   const [selectedLayer, setSelectedLayer] = useState<number>(() => {
     const initialChar =
@@ -71,7 +80,7 @@ export const TowerScreen: React.FC = () => {
   });
 
   const startChallenge = () => {
-    if (!selectedChar) return;
+    if (!selectedChar || selectedLocked) return;
     const boss = getScaledTowerBoss(selectedLayer, selectedChar);
     if (!boss) return;
 
@@ -110,14 +119,33 @@ export const TowerScreen: React.FC = () => {
               "0 0 30px rgba(255,215,0,0.18), inset 0 0 30px rgba(255,215,0,0.05)",
           }}
         >
-          <div className="flex items-center gap-2 mb-1">
-            <Castle size={22} style={{ color: "#FFD700" }} />
-            <h1
-              className="text-2xl md:text-3xl font-black tracking-widest font-display"
-              style={{ color: "#FFD700" }}
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2">
+              <Castle size={22} style={{ color: "#FFD700" }} />
+              <h1
+                className="text-2xl md:text-3xl font-black tracking-widest font-display"
+                style={{ color: "#FFD700" }}
+              >
+                九层塔
+              </h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTowerAutoMode(!towerAutoMode)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-[10px] font-black tracking-widest transition-all"
+              style={{
+                borderColor: towerAutoMode
+                  ? "rgba(102,252,241,0.6)"
+                  : "rgba(255,215,0,0.35)",
+                color: towerAutoMode ? "#66FCF1" : "#8a8d91",
+                background: towerAutoMode
+                  ? "rgba(102,252,241,0.12)"
+                  : "rgba(11,12,16,0.6)",
+              }}
             >
-              九层塔
-            </h1>
+              <Bot size={12} />
+              {towerAutoMode ? "自动模式 ON" : "自动模式 OFF"}
+            </button>
           </div>
           <div className="text-[10px] text-[#8a8d91] tracking-[0.3em] mb-6">
             ▼ 选择麾下角色 · 九层一番 · 无限修炼 ▼
@@ -143,17 +171,27 @@ export const TowerScreen: React.FC = () => {
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6">
                     {roster.map((char) => {
                       const isActive = char.rosterId === selectedRosterId;
+                      const evolutionLocked =
+                        isRosterCharacterEvolutionLocked(char);
+                      const recruitLocked =
+                        isRosterCharacterRecruitLocked(char);
                       const progress = xpProgress(char.level, char.xp);
                       const nextEvo = getNextEvolutionProgress(
                         char.level,
                         char.xp,
                         char.evolutionStage,
                       );
-                      const nextEvoText = nextEvo.nextStage
-                        ? nextEvo.ready
-                          ? "进化待触发"
-                          : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
-                        : "最终形态";
+                      const nextEvoText = recruitLocked
+                        ? char.recruitLock?.status === "failed"
+                          ? "招募失败"
+                          : "后台招募中"
+                        : evolutionLocked
+                          ? "进化更新中"
+                          : nextEvo.nextStage
+                            ? nextEvo.ready
+                              ? "进化待触发"
+                              : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
+                            : "最终形态";
                       return (
                         <motion.button
                           key={char.rosterId}
@@ -194,6 +232,18 @@ export const TowerScreen: React.FC = () => {
                                 {"★".repeat(
                                   evolutionStars(char.evolutionStage),
                                 )}
+                              </div>
+                            )}
+                            {(evolutionLocked || recruitLocked) && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/68">
+                                <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
+                                  <Lock size={10} className="mr-1 inline" />
+                                  {recruitLocked
+                                    ? char.recruitLock?.status === "failed"
+                                      ? "招募失败"
+                                      : "招募中"
+                                    : "进化更新中"}
+                                </div>
                               </div>
                             )}
                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 to-transparent p-2">
@@ -357,13 +407,15 @@ export const TowerScreen: React.FC = () => {
 
                 <button
                   type="button"
-                  disabled={!selectedChar}
+                  disabled={!selectedChar || selectedLocked}
                   onClick={startChallenge}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded font-display tracking-[0.3em] font-black border-2 border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded font-display tracking-[0.3em] font-black border-2 border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#FFD700]"
                   style={{ boxShadow: "0 0 14px rgba(255,215,0,0.4)" }}
                 >
-                  <Sword size={16} />
-                  挑战 L{selectedLayer} · {towerAscensionLabel(selectedLayer)}
+                  {selectedLocked ? <Lock size={16} /> : <Sword size={16} />}
+                  {selectedLocked
+                    ? "角色暂不可用 · 稍后再试"
+                    : `挑战 L${selectedLayer} · ${towerAscensionLabel(selectedLayer)}`}
                 </button>
               </div>
             </>
