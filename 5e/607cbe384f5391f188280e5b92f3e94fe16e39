@@ -1,0 +1,43 @@
+scripts/download-preset-evolutions.mjs
+  s_7729c03605da6d::t_ab8908d8ae7b29 4,21-25,29-30,34,43-67,72-74,83-86,91,115,121-122,148,154-157,163-168,176,200-201,206-210,214-218,228-241,245-246,248-256,262,265,269-272,281,315-317,319-321,332-334,337,361-363,365
+  s_7729c03605da6d::t_acd86d88c2cfb0 295
+src/components/TowerResultScreen.tsx
+  s_e844b0be9401fd::t_92076349f4c21c 27
+  s_e844b0be9401fd::t_194add31625b10 854-871
+  s_e844b0be9401fd::t_6bdad73cff6bc6 938-942
+scripts/download-presets.mjs
+  s_7729c03605da6d::t_787b2d96723f4c 39-43
+src/data/presetCharacters.ts
+  s_7729c03605da6d::t_42a6d153eafd10 44-48,50-52,54,57-58,63-65,69-70,73,77-78,81,85-87,94,96-98,100-101,104,107-108,113-115,119-120,123,126-127,134-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5e607cbe384f5391f188280e5b92f3e94fe16e39",
+  "prompts": {},
+  "humans": {
+    "h_f09a81d3255be5": {
+      "author": "zhangzuoke.fun <zhangzuoke.fun@bytedance.com>"
+    }
+  },
+  "sessions": {
+    "s_7729c03605da6d": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a3f4a84fc509196a80c7db1",
+        "model": "kimi-k2.6__dev"
+      },
+      "human_author": "zhangzuoke.fun <zhangzuoke.fun@bytedance.com>"
+    },
+    "s_e844b0be9401fd": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a3f4bd4fc509196a80c7de8",
+        "model": "kimi-k2.6__dev"
+      },
+      "human_author": "zhangzuoke.fun <zhangzuoke.fun@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
