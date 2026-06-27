@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import type { Skill } from './useGameStore';
 import type { BattleSummary } from '../utils/towerAnalysis';
-import type { FormHistoryEntry, TowerRunRecord } from './useRosterStore';
+import type { ActiveEvolutionStage, FormHistoryEntry, TowerRunRecord } from './useRosterStore';
 
 /** AI 生成的形态进化结果（写入 formHistory 之前的中间态） */
 export interface PendingEvolution {
-  stage: 1 | 2 | 3;
+  stage: ActiveEvolutionStage;
   imagePrompt: string;
   imageUrl?: string;
   lore?: string;
@@ -25,7 +25,7 @@ interface TowerStore {
   pendingRun: TowerRunRecord | null;
   /** 待解锁的技能候选（升到 5/12/22 时） */
   pendingSkillChoices: Skill[] | null;
-  /** 待应用的进化（升到 10/20/30 时） */
+  /** 待应用的进化（每 5 级一次） */
   pendingEvolution: PendingEvolution | null;
   /** 待写入的形态历史（应用进化后会同步写入 roster） */
   pendingFormHistory: FormHistoryEntry | null;

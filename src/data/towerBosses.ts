@@ -1,4 +1,6 @@
 import { CharacterData, Skill } from '../store/useGameStore';
+import type { RosterCharacter } from '../store/useRosterStore';
+import { getTowerAscensionRank } from '../utils/towerProgress';
 
 /**
  * 九层塔 Boss 配置：每个 Boss 的属性、技能与图片路径。
@@ -451,16 +453,54 @@ const buildBoss = (def: TowerBossDef): CharacterData => {
 /** 全部 9 层 Boss（运行时直接使用本地图片）。索引 0 = L1。 */
 export const towerBosses: CharacterData[] = towerBossDefs.map(buildBoss);
 
-/** 根据层号取 Boss（layer ∈ [1,9]） */
+const cloneCharacter = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const estimateRosterPower = (char: RosterCharacter): number => (
+  char.maxHp * 0.12 +
+  char.attack * 3.1 +
+  char.defense * 2.3 +
+  char.speed * 1.35 +
+  char.level * 8
+);
+
+const scaleBoss = (boss: CharacterData, endlessLayer: number, challenger?: RosterCharacter): CharacterData => {
+  const localLayer = ((Math.max(1, endlessLayer) - 1) % TOWER_TOTAL_LAYERS) + 1;
+  const rank = getTowerAscensionRank(Math.max(1, endlessLayer));
+  const roundMultiplier = 1 + (rank - 1) * 0.38;
+  const layerMultiplier = 1 + (localLayer - 1) * 0.018;
+  const challengerPower = challenger ? estimateRosterPower(challenger) : 0;
+  const adaptiveMultiplier = challengerPower > 0
+    ? Math.min(1.85 + (rank - 1) * 0.18, Math.max(1, challengerPower / 620))
+    : 1;
+  const multiplier = Math.max(roundMultiplier, adaptiveMultiplier) * layerMultiplier;
+  const scaled = cloneCharacter(boss);
+  scaled.name = rank > 1 ? `${boss.name} · ${rank}番` : boss.name;
+  scaled.maxHp = Math.round(boss.maxHp * multiplier);
+  scaled.hp = scaled.maxHp;
+  scaled.attack = Math.round(boss.attack * Math.sqrt(multiplier) * (1 + (rank - 1) * 0.08));
+  scaled.defense = Math.round(boss.defense * Math.sqrt(multiplier) * (1 + (rank - 1) * 0.06));
+  scaled.speed = Math.round(boss.speed * (1 + (rank - 1) * 0.045));
+  scaled.critBonus = Math.round((boss.critBonus || 0) + Math.max(0, rank - 1) * 3);
+  return scaled;
+};
+
+/** 根据层号取 Boss（支持无尽累计层数；1-9 循环，番数提升强度） */
 export const getTowerBoss = (layer: number): CharacterData | null => {
-  if (layer < 1 || layer > towerBosses.length) return null;
-  return towerBosses[layer - 1];
+  if (layer < 1) return null;
+  const index = (layer - 1) % towerBosses.length;
+  return cloneCharacter(towerBosses[index]);
+};
+
+export const getScaledTowerBoss = (layer: number, challenger?: RosterCharacter): CharacterData | null => {
+  const boss = getTowerBoss(layer);
+  if (!boss) return null;
+  return scaleBoss(boss, layer, challenger);
 };
 
 /** 取 Boss 标题/定位等元信息（UI 展示用） */
 export const getTowerBossMeta = (layer: number): TowerBossDef | null => {
-  if (layer < 1 || layer > towerBossDefs.length) return null;
-  return towerBossDefs[layer - 1];
+  if (layer < 1) return null;
+  return towerBossDefs[(layer - 1) % towerBossDefs.length];
 };
 
 /** 总层数 */

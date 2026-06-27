@@ -369,6 +369,24 @@ export class BattleEngine {
     return `临场状态：【${this.p1.name}】${this.p1BattleState.name}（${this.p1BattleState.description}）；【${this.p2.name}】${this.p2BattleState.name}（${this.p2BattleState.description}）。${underdogText}`;
   }
 
+  /** 生成战斗开场日志。手动塔战和自动模拟共用同一份开场信息。 */
+  createOpeningLogs(): BattleEvent[] {
+    return [
+      {
+        id: `turn-${this.instanceId}-0-start`,
+        turn: 0,
+        attacker: 'system',
+        message: `战斗开始！【${this.p1.name}】 VS 【${this.p2.name}】`,
+      },
+      {
+        id: `turn-${this.instanceId}-0-state`,
+        turn: 0,
+        attacker: 'system',
+        message: this.formatStateSummary(),
+      },
+    ];
+  }
+
   private maybeApplyUnderdogClutch(defender: CharacterData, attacker: CharacterData, incomingDamage: number, isUlt: boolean, isFinisher: boolean): { damage: number; suffix: string } {
     const underdog = this.getUnderdogProfile(defender);
     if (underdog.intensity <= 0 || this.isClutchUsed(defender) || incomingDamage < defender.hp) {
@@ -544,18 +562,7 @@ export class BattleEngine {
 
   /** 自动模拟整场战斗（自动模式用） */
   public simulateBattle(): { logs: BattleEvent[], winner: 'player1' | 'player2' } {
-    this.logs.push({
-      id: `turn-${this.instanceId}-0-start`,
-      turn: 0,
-      attacker: 'system',
-      message: `战斗开始！【${this.p1.name}】 VS 【${this.p2.name}】`
-    });
-    this.logs.push({
-      id: `turn-${this.instanceId}-0-state`,
-      turn: 0,
-      attacker: 'system',
-      message: this.formatStateSummary(),
-    });
+    this.logs.push(...this.createOpeningLogs());
 
     let p1Turn = this.p1.speed >= this.p2.speed;
 

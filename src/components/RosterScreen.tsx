@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Heart, Zap, Shield, Gauge, UsersRound, Sword } from 'lucide-react';
+import { Heart, Zap, Shield, Gauge, UsersRound, Sword } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { useRosterStore } from '../store/useRosterStore';
 import { CharacterDetailModal } from './CharacterDetailModal';
 import { ParticleField } from './ParticleField';
-import { evolutionStars } from '../utils/towerProgress';
+import { evolutionStars, levelAscensionLabel } from '../utils/towerProgress';
+import { BackButton } from './BackButton';
 
 export const RosterScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
@@ -29,13 +30,7 @@ export const RosterScreen: React.FC = () => {
 
       <div className="z-10 w-full max-w-5xl">
         <div className="flex items-center gap-3 mb-6">
-          <button
-            type="button"
-            onClick={() => setPhase('MODE_SELECT')}
-            className="flex items-center gap-1 text-xs text-[#8a8d91] hover:text-[#66FCF1] transition-colors"
-          >
-            <ArrowLeft size={14} /> 返回
-          </button>
+          <BackButton onClick={() => setPhase('MODE_SELECT')} color={themeColor} />
           <div className="ml-auto flex items-center gap-2 text-[#8a8d91] text-[10px] tracking-widest">
             <span className="inline-block w-2 h-2 rounded-full bg-[#66FCF1] animate-pulse" />
             ROSTER ARCHIVE
@@ -96,6 +91,9 @@ export const RosterScreen: React.FC = () => {
                     )}
                     <div className="absolute top-1 right-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
                       Lv.{char.level}
+                    </div>
+                    <div className="absolute top-7 right-1 bg-black/70 text-[9px] font-bold px-1.5 py-0.5 rounded text-[#66FCF1]">
+                      {levelAscensionLabel(char.level)}
                     </div>
                     {char.evolutionStage > 0 && (
                       <div className="absolute top-1 left-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">

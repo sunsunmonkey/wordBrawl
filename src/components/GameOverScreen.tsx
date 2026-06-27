@@ -4,9 +4,10 @@ import { useRosterStore } from '../store/useRosterStore';
 import { motion } from 'framer-motion';
 import { Trophy, RotateCcw, Skull, Crown, UserPlus, Check, Sparkles, Zap, Heart } from 'lucide-react';
 import { ParticleField } from './ParticleField';
+import { BackButton } from './BackButton';
 
 export const GameOverScreen: React.FC = () => {
-  const { winner, player1, player2, resetGame } = useGameStore();
+  const { winner, player1, player2, resetGame, setPhase } = useGameStore();
   const { roster, recruitCharacter } = useRosterStore();
   const [winnerImgFailed, setWinnerImgFailed] = useState(false);
   const [loserImgFailed, setLoserImgFailed] = useState(false);
@@ -36,6 +37,7 @@ export const GameOverScreen: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden grid-bg">
       <ParticleField count={50} colors={[themeColor, '#FFD700', '#FFFFFF']} />
+      <BackButton onClick={() => setPhase('MODE_SELECT')} color={themeColor} className="absolute left-6 top-6 z-20" />
 
       <motion.div
         animate={{ x: [0, 60, 0], y: [0, -30, 0] }}
