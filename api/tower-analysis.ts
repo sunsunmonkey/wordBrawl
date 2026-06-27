@@ -11,7 +11,7 @@ import {
   stripJsonFences,
   type ApiRequest,
   type ApiResponse,
-} from './_shared.ts';
+} from './_shared.js';
 
 const ULTIMATE_TYPE_IDS = [
   'fire',
