@@ -333,15 +333,15 @@ export const ModeSelectScreen: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-[1.45fr_0.75fr]">
+        <div className="grid items-start gap-5 md:grid-cols-[1.45fr_0.75fr]">
           <div
-            className="rounded-xl border-2 bg-[#1F2833]/75 p-5"
+            className="flex flex-col rounded-xl border-2 bg-[#1F2833]/75 p-5"
             style={{
               borderColor: "#FFD700",
               boxShadow: "0 0 28px rgba(255,215,0,0.22)",
             }}
           >
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex shrink-0 items-center justify-between">
               <div>
                 <div className="text-xs tracking-[0.35em] text-[#FFD700]">
                   ROSTER CORE
@@ -377,7 +377,7 @@ export const ModeSelectScreen: React.FC = () => {
             </div>
 
             {lead ? (
-              <div className="grid gap-4">
+              <div className="flex flex-1 flex-col gap-4">
                 <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                   {rosterPreview.map((char) => {
                     const isSelected =
@@ -396,12 +396,12 @@ export const ModeSelectScreen: React.FC = () => {
                         ? "招募失败"
                         : "后台招募中"
                       : evolutionLocked
-                      ? "进化更新中"
-                      : nextEvo.nextStage
-                        ? nextEvo.ready
-                          ? "进化待触发"
-                          : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
-                        : "最终形态";
+                        ? "进化更新中"
+                        : nextEvo.nextStage
+                          ? nextEvo.ready
+                            ? "进化待触发"
+                            : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
+                          : "最终形态";
                     const highestLayer =
                       char.tower.highestEndlessLayer ??
                       char.tower.highestCleared;
@@ -604,7 +604,7 @@ export const ModeSelectScreen: React.FC = () => {
                   </div>
                 )}
 
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <div className="mt-auto grid shrink-0 gap-2 sm:grid-cols-[1fr_auto_auto]">
                   <button
                     type="button"
                     onClick={startTower}
@@ -640,7 +640,7 @@ export const ModeSelectScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={startRecruit}
-                className="flex h-48 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#FFD700]/45 bg-[#0B0C10]/55 text-[#FFD700] transition-all hover:bg-[#FFD700]/10"
+                className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#FFD700]/45 bg-[#0B0C10]/55 text-[#FFD700] transition-all hover:bg-[#FFD700]/10"
               >
                 <Plus size={30} />
                 <span className="font-black tracking-[0.25em]">
