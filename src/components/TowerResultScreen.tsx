@@ -18,13 +18,8 @@ import {
   ShieldPlus,
   HeartPulse,
   Wand2,
-  Heart,
-  Shield,
-  Gauge,
-  Flame,
 } from "lucide-react";
 import { useGameStore, type Skill } from "../store/useGameStore";
-import { getUltimateTypeById } from "../data/ultimateTypes";
 import {
   useRosterStore,
   resetCharacterRuntimeState,
@@ -39,7 +34,6 @@ import {
   applyEvolutionStatBonus,
   applyXp,
   buildLocalEvolution,
-  EVOLUTION_STAT_BONUS,
   evolutionLabel,
   getNextEvolutionProgress,
   isSkillUnlockLevel,
@@ -54,53 +48,13 @@ import {
   type EvolveResult,
   requestSkillCandidates,
 } from "../utils/towerAnalysis";
-import { EvolutionAnimation } from "./EvolutionAnimation";
 import { BackButton } from "./BackButton";
 import {
   clearEvolutionPrefetchForRoster,
   startEvolutionAssetPrefetch,
-  waitEvolutionPrefetch,
 } from "../utils/evolutionPrefetch";
-import { EVOLUTION_VISUAL_THEME } from "../utils/evolutionVisuals";
-import { getFallbackAvatarUrl } from "../data/presetCharacters";
 
-type Stage =
-  | "idle"
-  | "choose_skill"
-  | "evolving"
-  | "evolution_done"
-  | "finished";
-type EvolutionImageStatus =
-  | "idle"
-  | "loading"
-  | "ready"
-  | "failed"
-  | "fallback";
-
-interface StatSnapshot {
-  maxHp: number;
-  attack: number;
-  defense: number;
-  speed: number;
-}
-
-const getStatSnapshot = (
-  char: Pick<RosterCharacter, "maxHp" | "attack" | "defense" | "speed">,
-): StatSnapshot => ({
-  maxHp: char.maxHp,
-  attack: char.attack,
-  defense: char.defense,
-  speed: char.speed,
-});
-
-const getBeforeEvolutionSnapshot = (
-  char: Pick<RosterCharacter, "maxHp" | "attack" | "defense" | "speed">,
-): StatSnapshot => ({
-  maxHp: Math.max(1, char.maxHp - EVOLUTION_STAT_BONUS.maxHp),
-  attack: Math.max(1, char.attack - EVOLUTION_STAT_BONUS.attack),
-  defense: Math.max(0, char.defense - EVOLUTION_STAT_BONUS.defense),
-  speed: Math.max(1, char.speed - EVOLUTION_STAT_BONUS.speed),
-});
+type Stage = "idle" | "choose_skill" | "finished";
 
 const mergeEvolvedUltimate = (skill: Skill, evolved?: Skill): Skill => ({
   ...skill,
@@ -163,7 +117,6 @@ export const TowerResultScreen: React.FC = () => {
   const roster = useRosterStore((s) => s.roster);
   const updateCharacter = useRosterStore((s) => s.updateCharacter);
   const appendTowerRun = useRosterStore((s) => s.appendTowerRun);
-  const appendFormHistory = useRosterStore((s) => s.appendFormHistory);
   const appendSkill = useRosterStore((s) => s.appendSkill);
 
   const rosterChar = useMemo(
@@ -181,19 +134,6 @@ export const TowerResultScreen: React.FC = () => {
   >(null);
   const [pickedSkill, setPickedSkill] = useState<Skill | null>(null);
   const [evolveData, setEvolveData] = useState<EvolveResult | null>(null);
-  const [evolvedImageUrl, setEvolvedImageUrl] = useState<string | null>(null);
-  const [evolvingFromImage, setEvolvingFromImage] = useState<
-    string | undefined
-  >(undefined);
-  const [evolutionBeforeStats, setEvolutionBeforeStats] =
-    useState<StatSnapshot | null>(null);
-  const [evolutionAfterStats, setEvolutionAfterStats] =
-    useState<StatSnapshot | null>(null);
-  const [showEvoAnim, setShowEvoAnim] = useState(false);
-  const [evolutionAnimKey, setEvolutionAnimKey] = useState(0);
-  const [evolutionReadyToReveal, setEvolutionReadyToReveal] = useState(false);
-  const [evolutionImageStatus, setEvolutionImageStatus] =
-    useState<EvolutionImageStatus>("idle");
   const [skillUnlockLoading, setSkillUnlockLoading] = useState(false);
   const pipelineStartedRef = useRef(false);
   const evolutionHandledRef = useRef(false);
@@ -394,297 +334,84 @@ export const TowerResultScreen: React.FC = () => {
     stageNum: ActiveEvolutionStage,
     triggerLevel: number,
   ) => {
-    setStage("evolving");
+    void summary;
     setError(null);
-    setEvolvingFromImage(char.imageUrl);
-    setEvolvedImageUrl(null);
-    setEvolutionBeforeStats(getBeforeEvolutionSnapshot(char));
-    setEvolutionAfterStats(getStatSnapshot(char));
-    setEvolutionReadyToReveal(false);
-    setEvolutionImageStatus("loading");
+    const localEvo = buildLocalEvolution(char, stageNum);
+    setEvolveData(localEvo);
+    evolutionHandledRef.current = true;
     updateCharacter(char.rosterId, (current) => ({
       ...current,
       evolutionLock: { stage: stageNum, startedAt: Date.now() },
     }));
-    try {
-      const localEvo = buildLocalEvolution(char, stageNum);
-      setEvolveData(localEvo);
-      setEvolutionAnimKey((key) => key + 1);
-      setShowEvoAnim(true);
-      const prefetchTask = startEvolutionAssetPrefetch(
-        {
-          rosterId: char.rosterId,
-          characterName: char.name,
-          stage: stageNum,
-          level: triggerLevel,
-          layer: towerLayer,
-        },
-        async () => localEvo,
-        cfg,
-      );
-      const pending = waitEvolutionPrefetch(
-        char.rosterId,
-        stageNum,
-        triggerLevel,
-        towerLayer,
-      );
-      const waitTimeoutMs = 45_000;
-      const prepared = await Promise.race([
-        pending ?? prefetchTask,
-        new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), waitTimeoutMs),
-        ),
-      ]);
 
-      if (!prepared?.avatarUrl) {
-        void prefetchTask
-          .then((latePrepared) => {
-            if (!latePrepared?.avatarUrl) return;
-            const lateEvo = latePrepared.evo ?? localEvo;
-            const lateUltimateImage =
-              latePrepared.ultimateImageUrl ||
-              lateEvo.newUltimate?.imageUrl ||
-              null;
-            const lateEvoWithImage: EvolveResult = {
-              ...lateEvo,
-              newUltimate:
-                lateEvo.newUltimate && lateUltimateImage
-                  ? { ...lateEvo.newUltimate, imageUrl: lateUltimateImage }
-                  : lateEvo.newUltimate,
-            };
-            updateCharacter(char.rosterId, (current) => {
-              const fallbackIndex = current.formHistory
-                .map((form, index) => ({ form, index }))
-                .reverse()
-                .find(
-                  ({ form }) =>
-                    form.stage === stageNum && form.imageStatus === "fallback",
-                )?.index;
-              const formHistory =
-                typeof fallbackIndex === "number"
-                  ? current.formHistory.map((form, index) =>
-                      index === fallbackIndex
-                        ? {
-                            ...form,
-                            imageUrl: latePrepared.avatarUrl,
-                            imagePrompt: lateEvoWithImage.imagePrompt,
-                            lore: lateEvoWithImage.lore,
-                            createdAt: Date.now(),
-                            imageStatus: "ready" as const,
-                          }
-                        : form,
-                    )
-                  : [
-                      ...current.formHistory,
-                      {
-                        stage: stageNum,
-                        imagePrompt: lateEvoWithImage.imagePrompt,
-                        imageUrl: latePrepared.avatarUrl,
-                        lore: lateEvoWithImage.lore,
-                        createdAt: Date.now(),
-                        imageStatus: "ready" as const,
-                      },
-                    ];
-              return {
-                ...current,
-                imageUrl: latePrepared.avatarUrl,
-                imagePrompt:
-                  lateEvoWithImage.imagePrompt || current.imagePrompt,
-                evolutionLock: undefined,
-                formHistory,
-                skills: lateEvoWithImage.newUltimate
-                  ? current.skills.map((s) =>
-                      s.isUltimate || s.type === "ultimate"
-                        ? mergeEvolvedUltimate(s, lateEvoWithImage.newUltimate)
-                        : s,
-                    )
-                  : current.skills,
-              };
-            });
-            setEvolveData(lateEvoWithImage);
-            setEvolvedImageUrl(latePrepared.avatarUrl);
-            setEvolutionImageStatus("ready");
-            const evolvedCharacterLate = useRosterStore
-              .getState()
-              .roster.find((c) => c.rosterId === char.rosterId);
-            if (evolvedCharacterLate) {
-              setEvolutionAfterStats(getStatSnapshot(evolvedCharacterLate));
-            }
-          })
-          .catch(() => undefined);
-        // 兜底：不阻塞玩家。用本地兜底图替代，数值进化照常完成；retry 按钮可稍后覆盖。
-        const fallbackUrl = getFallbackAvatarUrl({
-          name: char.name,
-          imagePrompt: localEvo.imagePrompt,
-          description: localEvo.lore,
-          ultimateType: localEvo.newUltimate?.ultimateType,
-          player: 1,
-        });
-        const ultimateImageFallback = localEvo.newUltimate?.imageUrl || null;
-        const evoWithImageFallback: EvolveResult = {
-          ...localEvo,
+    const prefetchTask = startEvolutionAssetPrefetch(
+      {
+        rosterId: char.rosterId,
+        characterName: char.name,
+        stage: stageNum,
+        level: triggerLevel,
+        layer: towerLayer,
+      },
+      async () => localEvo,
+      cfg,
+    );
+
+    void prefetchTask
+      .then((prepared) => {
+        if (!prepared?.avatarUrl) return;
+        const evo = prepared.evo ?? localEvo;
+        const ultimateImage =
+          prepared.ultimateImageUrl || evo.newUltimate?.imageUrl || null;
+        const evoWithImage: EvolveResult = {
+          ...evo,
           newUltimate:
-            localEvo.newUltimate && ultimateImageFallback
-              ? { ...localEvo.newUltimate, imageUrl: ultimateImageFallback }
-              : localEvo.newUltimate,
+            evo.newUltimate && ultimateImage
+              ? { ...evo.newUltimate, imageUrl: ultimateImage }
+              : evo.newUltimate,
         };
-        setEvolveData(evoWithImageFallback);
-        setEvolvedImageUrl(fallbackUrl);
-        setEvolutionImageStatus("fallback");
+        setEvolveData(evoWithImage);
 
+        const newImage = prepared.avatarUrl;
         const entry = {
           stage: stageNum,
-          imagePrompt: evoWithImageFallback.imagePrompt,
-          imageUrl: fallbackUrl,
-          lore: evoWithImageFallback.lore,
+          imagePrompt: evoWithImage.imagePrompt,
+          imageUrl: newImage,
+          lore: evoWithImage.lore,
           createdAt: Date.now(),
-          imageStatus: "fallback",
+          imageStatus: "ready",
         } as const;
-        appendFormHistory(char.rosterId, entry);
 
         updateCharacter(char.rosterId, (current) => ({
           ...current,
-          imageUrl: fallbackUrl,
-          imagePrompt: evoWithImageFallback.imagePrompt || current.imagePrompt,
-          skills: evoWithImageFallback.newUltimate
+          imageUrl: newImage,
+          imagePrompt: evoWithImage.imagePrompt || current.imagePrompt,
+          evolutionLock: undefined,
+          pendingEvolutionReplay: {
+            stage: stageNum,
+            oldImageUrl: char.imageUrl,
+            newImageUrl: newImage,
+            imagePrompt: evoWithImage.imagePrompt,
+            lore: evoWithImage.lore,
+            newUltimate: evoWithImage.newUltimate,
+            createdAt: Date.now(),
+          },
+          formHistory: [...current.formHistory, entry],
+          skills: evoWithImage.newUltimate
             ? current.skills.map((s) =>
                 s.isUltimate || s.type === "ultimate"
-                  ? mergeEvolvedUltimate(s, evoWithImageFallback.newUltimate)
+                  ? mergeEvolvedUltimate(s, evoWithImage.newUltimate)
                   : s,
               )
             : current.skills,
         }));
-        const evolvedCharacterFallback = useRosterStore
-          .getState()
-          .roster.find((c) => c.rosterId === char.rosterId);
-        if (evolvedCharacterFallback) {
-          setEvolutionAfterStats(getStatSnapshot(evolvedCharacterFallback));
-        }
-        setStage("evolution_done");
-        evolutionHandledRef.current = true;
-        setEvolutionReadyToReveal(true);
-        return;
-      }
-
-      const evo = prepared?.evo ?? localEvo;
-      const ultimateImage =
-        prepared?.ultimateImageUrl || evo.newUltimate?.imageUrl || null;
-      const evoWithImage: EvolveResult = {
-        ...evo,
-        newUltimate:
-          evo.newUltimate && ultimateImage
-            ? { ...evo.newUltimate, imageUrl: ultimateImage }
-            : evo.newUltimate,
-      };
-      setEvolveData(evoWithImage);
-
-      const newImage = prepared.avatarUrl;
-      setEvolvedImageUrl(newImage || null);
-      setEvolutionImageStatus("ready");
-
-      const entry = {
-        stage: stageNum,
-        imagePrompt: evoWithImage.imagePrompt,
-        imageUrl: newImage,
-        lore: evoWithImage.lore,
-        createdAt: Date.now(),
-        imageStatus: "ready",
-      } as const;
-      appendFormHistory(char.rosterId, entry);
-
-      updateCharacter(char.rosterId, (current) => ({
-        ...current,
-        imageUrl: newImage,
-        imagePrompt: evoWithImage.imagePrompt || current.imagePrompt,
-        evolutionLock: undefined,
-        skills: evoWithImage.newUltimate
-          ? current.skills.map((s) =>
-              s.isUltimate || s.type === "ultimate"
-                ? mergeEvolvedUltimate(s, evoWithImage.newUltimate)
-                : s,
-            )
-          : current.skills,
-      }));
-      clearEvolutionPrefetchForRoster(char.rosterId);
-      const evolvedCharacter = useRosterStore
-        .getState()
-        .roster.find((c) => c.rosterId === char.rosterId);
-      if (evolvedCharacter) {
-        setEvolutionAfterStats(getStatSnapshot(evolvedCharacter));
-      }
-
-      setStage("evolution_done");
-      evolutionHandledRef.current = true;
-      setEvolutionReadyToReveal(true);
-    } catch (err) {
-      console.warn("evolve request failed", err);
-      // 即便构建/缓存抛错，也必须让玩家能继续——用本地兜底图替代，retry 可后续覆盖。
-      const localEvoSafe = buildLocalEvolution(char, stageNum);
-      const fallbackUrl = getFallbackAvatarUrl({
-        name: char.name,
-        imagePrompt: localEvoSafe.imagePrompt,
-        description: localEvoSafe.lore,
-        ultimateType: localEvoSafe.newUltimate?.ultimateType,
-        player: 1,
+        clearEvolutionPrefetchForRoster(char.rosterId);
+      })
+      .catch((err) => {
+        console.warn("background evolution failed", err);
       });
-      setEvolveData(localEvoSafe);
-      setEvolvedImageUrl(fallbackUrl);
-      setEvolutionImageStatus("fallback");
-      setError(null);
 
-      const entry = {
-        stage: stageNum,
-        imagePrompt: localEvoSafe.imagePrompt,
-        imageUrl: fallbackUrl,
-        lore: localEvoSafe.lore,
-        createdAt: Date.now(),
-        imageStatus: "fallback",
-      } as const;
-      appendFormHistory(char.rosterId, entry);
-
-      updateCharacter(char.rosterId, (current) => ({
-        ...current,
-        imageUrl: fallbackUrl,
-        imagePrompt: localEvoSafe.imagePrompt || current.imagePrompt,
-        skills: localEvoSafe.newUltimate
-          ? current.skills.map((s) =>
-              s.isUltimate || s.type === "ultimate"
-                ? mergeEvolvedUltimate(s, localEvoSafe.newUltimate)
-                : s,
-            )
-          : current.skills,
-      }));
-      clearEvolutionPrefetchForRoster(char.rosterId);
-      const evolvedCharacterCatch = useRosterStore
-        .getState()
-        .roster.find((c) => c.rosterId === char.rosterId);
-      if (evolvedCharacterCatch) {
-        setEvolutionAfterStats(getStatSnapshot(evolvedCharacterCatch));
-      }
-      setStage("evolution_done");
-      evolutionHandledRef.current = true;
-      setEvolutionReadyToReveal(true);
-    }
+    setStage("finished");
   };
-
-  const handleRetryEvolutionImage = async () => {
-    if (!rosterChar || !lastSummary || !evolveEvent) return;
-    const refreshed =
-      useRosterStore
-        .getState()
-        .roster.find((c) => c.rosterId === rosterChar.rosterId) ?? rosterChar;
-    await runEvolution(
-      refreshed,
-      lastSummary,
-      evolveEvent,
-      evolveLevel ?? refreshed.level,
-    );
-  };
-
-  const handleEvolutionAnimFinish = useCallback(() => {
-    setShowEvoAnim(false);
-    setEvolutionReadyToReveal(false);
-  }, []);
 
   const handleContinue = () => {
     resetPending();
@@ -697,8 +424,21 @@ export const TowerResultScreen: React.FC = () => {
       setPhase("TOWER_HUB");
       return;
     }
+    const latestRosterChar =
+      useRosterStore
+        .getState()
+        .roster.find((char) => char.rosterId === rosterChar.rosterId) ??
+      rosterChar;
+    if (
+      latestRosterChar.evolutionLock ||
+      latestRosterChar.pendingEvolutionReplay
+    ) {
+      resetPending();
+      setPhase("TOWER_HUB");
+      return;
+    }
     const nextLayer = towerLayer + 1;
-    const boss = getScaledTowerBoss(nextLayer, rosterChar);
+    const boss = getScaledTowerBoss(nextLayer, latestRosterChar);
     if (!boss) {
       resetPending();
       setPhase("TOWER_HUB");
@@ -706,11 +446,11 @@ export const TowerResultScreen: React.FC = () => {
     }
     setBattleMode("pve_tower");
     setTowerLayer(nextLayer);
-    setTowerRosterId(rosterChar.rosterId);
-    setPlayer1(resetCharacterRuntimeState(rosterChar));
+    setTowerRosterId(latestRosterChar.rosterId);
+    setPlayer1(resetCharacterRuntimeState(latestRosterChar));
     setPlayer2(resetCharacterRuntimeState(boss));
     setLastSummary(null);
-    setLastRosterId(rosterChar.rosterId);
+    setLastRosterId(latestRosterChar.rosterId);
     setLastResult(null);
     resetPending();
     useGameStore.setState({ battleLogs: [], currentTurn: 0, winner: null });
@@ -739,17 +479,6 @@ export const TowerResultScreen: React.FC = () => {
     }, 800);
     return () => clearTimeout(timer);
   }, [stage, towerAutoMode, skillCandidates, handlePickSkill]);
-
-  // 自动模式：自动完成进化展示
-  useEffect(() => {
-    if (!towerAutoMode || stage !== "evolution_done") return;
-    const timer = setTimeout(() => {
-      setShowEvoAnim(false);
-      setEvolutionReadyToReveal(false);
-      setStage("finished");
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [stage, towerAutoMode]);
 
   // 自动模式：结算后自动继续
   useEffect(() => {
@@ -932,161 +661,22 @@ export const TowerResultScreen: React.FC = () => {
           </div>
         )}
 
-        {stage === "evolving" && (
-          <div className="flex items-center justify-center gap-2 text-[#FFD700] text-sm py-4">
-            <Loader2 size={16} className="animate-spin" />{" "}
-            进化中，形态与大招正在重塑...
-          </div>
-        )}
-
         {skillUnlockLoading && (
           <div className="flex items-center justify-center gap-2 text-[#66FCF1] text-xs py-3">
             <Loader2 size={14} className="animate-spin" /> 正在生成新技能候选...
           </div>
         )}
 
-        <AnimatePresence>
-          {stage === "evolution_done" && evolveData && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="mb-5 overflow-hidden rounded-xl border-2 border-[#FFD700]/70 bg-[#0B0C10]/80"
-              style={{
-                boxShadow:
-                  "0 0 28px rgba(255,215,0,0.35), inset 0 0 24px rgba(255,215,0,0.08)",
-              }}
-            >
-              <div className="flex items-center justify-between gap-3 border-b border-[#FFD700]/25 bg-[#FFD700]/10 px-4 py-3">
-                <div>
-                  <div className="text-[10px] text-[#FFD700] tracking-[0.35em] font-black">
-                    FORM EVOLUTION
-                  </div>
-                  <div className="mt-1 text-2xl font-black font-display tracking-wider text-[#FFD700]">
-                    {evolveEvent ? evolutionLabel(evolveEvent) : "进化完成"}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-[#FFD700]">
-                  <Sparkles size={16} />
-                  <span className="text-xs font-black tracking-widest">
-                    突破
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-4">
-                <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-center">
-                  <EvolutionPortrait
-                    label="进化前"
-                    imageUrl={evolvingFromImage}
-                    fallback={rosterChar.name}
-                    muted
-                  />
-                  <div className="hidden md:flex h-full items-center justify-center text-[#FFD700]">
-                    <ArrowRight size={28} />
-                  </div>
-                  <EvolutionPortrait
-                    label="进化后"
-                    imageUrl={evolvedImageUrl}
-                    fallback={rosterChar.name}
-                    featured
-                    status={evolutionImageStatus}
-                    stage={evolveEvent ?? undefined}
-                    onRetry={handleRetryEvolutionImage}
-                  />
-                </div>
-
-                <div className="mt-4 rounded-lg border border-[#FFD700]/25 bg-[#1F2833]/50 p-4">
-                  <p className="text-sm leading-relaxed text-[#C5C6C7]">
-                    {evolveData.lore
-                      ? `“${evolveData.lore}”`
-                      : `${rosterChar.name} 的形态完成突破，战斗潜能被重新释放。`}
-                  </p>
-                  <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-                    <EvolutionStatChip
-                      icon={<Heart size={13} />}
-                      label="HP"
-                      before={evolutionBeforeStats?.maxHp}
-                      after={evolutionAfterStats?.maxHp}
-                      color="#FF6B9D"
-                    />
-                    <EvolutionStatChip
-                      icon={<ZapIcon size={13} />}
-                      label="ATK"
-                      before={evolutionBeforeStats?.attack}
-                      after={evolutionAfterStats?.attack}
-                      color="#FFD700"
-                    />
-                    <EvolutionStatChip
-                      icon={<Shield size={13} />}
-                      label="DEF"
-                      before={evolutionBeforeStats?.defense}
-                      after={evolutionAfterStats?.defense}
-                      color="#66FCF1"
-                    />
-                    <EvolutionStatChip
-                      icon={<Gauge size={13} />}
-                      label="SPD"
-                      before={evolutionBeforeStats?.speed}
-                      after={evolutionAfterStats?.speed}
-                      color="#7FFF9F"
-                    />
-                  </div>
-
-                  {evolveData.newUltimate && (
-                    <div className="mt-4 rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/65 p-3">
-                      <div className="flex items-center gap-2 text-[#FFD700]">
-                        <Flame size={14} />
-                        <span className="text-xs font-black tracking-widest">
-                          大招蜕变
-                        </span>
-                      </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-[140px_1fr] md:items-center">
-                        <div className="aspect-video overflow-hidden rounded border border-[#FFD700]/30 bg-[#1F2833]">
-                          {(() => {
-                            const ultImage =
-                              evolveData.newUltimate.imageUrl ||
-                              getUltimateTypeById(
-                                evolveData.newUltimate.ultimateType || "",
-                              )?.imageUrl;
-                            return ultImage ? (
-                              <img
-                                src={ultImage}
-                                alt={evolveData.newUltimate.name}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-4xl text-[#FFD700]">
-                                ☄
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        <div>
-                          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                            <div className="text-sm font-black font-display tracking-wide text-[#FFD700]">
-                              {evolveData.newUltimate.name}
-                            </div>
-                            <div className="text-[11px] text-[#8a8d91]">
-                              伤害倍率 x
-                              {evolveData.newUltimate.damageMultiplier.toFixed(
-                                1,
-                              )}
-                            </div>
-                          </div>
-                          {evolveData.newUltimate.description && (
-                            <div className="mt-2 text-[11px] leading-relaxed text-[#C5C6C7]">
-                              {evolveData.newUltimate.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {evolveEvent && evolveData && (
+          <div className="mb-5 rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3 text-[11px] leading-relaxed text-[#C5C6C7]">
+            <div className="mb-1 flex items-center gap-2 text-[10px] font-black tracking-[0.26em] text-[#FFD700]">
+              <Sparkles size={12} />
+              进化后台任务
+            </div>
+            {rosterChar.name} 已触发{evolutionLabel(evolveEvent)}
+            ，形态图正在后台生成。资源就绪后角色会自动解锁，并在下一次出战前补播进化动画。
+          </div>
+        )}
 
         {error && <div className="mb-4 text-xs text-red-400">{error}</div>}
 
@@ -1094,7 +684,7 @@ export const TowerResultScreen: React.FC = () => {
           <button
             type="button"
             onClick={handleContinue}
-            disabled={stage === "evolving" || stage === "choose_skill"}
+            disabled={stage === "choose_skill"}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded font-display tracking-[0.3em] font-black border-2 border-[#66FCF1] text-[#66FCF1] hover:bg-[#66FCF1] hover:text-[#0B0C10] disabled:opacity-50 transition-all"
           >
             <ArrowRight size={16} />
@@ -1118,26 +708,6 @@ export const TowerResultScreen: React.FC = () => {
             <div className="mt-4 text-[10px] text-[#8a8d91]">等待选择技能</div>
           )}
       </motion.div>
-
-      <AnimatePresence>
-        {showEvoAnim && evolveEvent && evolveData && !towerAutoMode && (
-          <EvolutionAnimation
-            key={`evo-${evolutionAnimKey}-${evolveEvent}`}
-            oldImageUrl={evolvingFromImage}
-            newImageUrl={evolvedImageUrl}
-            ultimate={evolveData?.newUltimate}
-            ultimateImageUrl={
-              evolveData?.newUltimate?.imageUrl ||
-              getUltimateTypeById(evolveData?.newUltimate?.ultimateType || "")
-                ?.imageUrl
-            }
-            stage={evolveEvent}
-            characterName={rosterChar.name}
-            readyToReveal={evolutionReadyToReveal}
-            onFinish={handleEvolutionAnimFinish}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 };
@@ -1146,197 +716,6 @@ interface SummaryTileProps {
   label: string;
   value: number;
 }
-
-interface EvolutionPortraitProps {
-  label: string;
-  imageUrl?: string | null;
-  fallback: string;
-  muted?: boolean;
-  featured?: boolean;
-  status?: EvolutionImageStatus;
-  stage?: ActiveEvolutionStage;
-  onRetry?: () => void;
-}
-
-const EvolutionPortrait: React.FC<EvolutionPortraitProps> = ({
-  label,
-  imageUrl,
-  fallback,
-  muted,
-  featured,
-  status = imageUrl ? "ready" : "idle",
-  stage,
-  onRetry,
-}) => {
-  const theme = stage
-    ? EVOLUTION_VISUAL_THEME[stage]
-    : EVOLUTION_VISUAL_THEME[1];
-  const isLoading = featured && status === "loading";
-  const isFailed = featured && status === "failed";
-  const isFallback = featured && status === "fallback";
-
-  return (
-    <div
-      className="relative overflow-hidden rounded-lg border bg-[#0B0C10]/70 p-3"
-      style={{
-        borderColor: featured ? `${theme.primary}aa` : "rgba(69,162,158,0.35)",
-        boxShadow: featured ? `0 0 20px rgba(${theme.rgb},0.35)` : "none",
-        opacity: muted ? 0.72 : 1,
-      }}
-    >
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10px] font-black tracking-widest text-[#8a8d91]">
-          {label}
-        </span>
-        {featured && (
-          <span
-            className="text-[10px] font-black tracking-widest"
-            style={{ color: theme.primary }}
-          >
-            {status === "ready"
-              ? "NEW FORM"
-              : status === "fallback"
-                ? "BACKGROUND"
-                : status === "failed"
-                  ? "WAITING"
-                  : "GENERATING"}
-          </span>
-        )}
-      </div>
-      <div
-        className="relative aspect-square overflow-hidden rounded border bg-[#1F2833]"
-        style={{
-          borderColor: featured ? `${theme.primary}66` : "rgba(255,215,0,0.25)",
-        }}
-      >
-        {imageUrl ? (
-          <>
-            <img
-              src={imageUrl}
-              alt={label}
-              className="h-full w-full object-cover"
-            />
-            {isFallback && onRetry && (
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-[#0B0C10]/95 via-[#0B0C10]/70 to-transparent px-2 py-2">
-                <span className="text-[9px] font-black tracking-widest text-[#FFD700]">
-                  后台生成中
-                </span>
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  className="rounded border px-2 py-1 text-[9px] font-black tracking-widest transition-all hover:bg-[#FFD700] hover:text-[#0B0C10]"
-                  style={{ borderColor: theme.primary, color: theme.primary }}
-                >
-                  重新生成
-                </button>
-              </div>
-            )}
-          </>
-        ) : isLoading || isFailed ? (
-          <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden px-4 text-center">
-            <div
-              className="absolute inset-0 opacity-45"
-              style={{
-                background: `radial-gradient(circle at center, rgba(${theme.rgb},0.34), rgba(11,12,16,0.94) 62%)`,
-              }}
-            />
-            <motion.div
-              className="absolute h-36 w-36 rounded-full border-2"
-              style={{
-                borderColor: `${theme.primary}aa`,
-                boxShadow: `0 0 28px rgba(${theme.rgb},0.55), inset 0 0 22px rgba(${theme.rgb},0.24)`,
-              }}
-              animate={
-                isLoading
-                  ? { rotate: 360, scale: [0.92, 1.04, 0.92] }
-                  : { scale: 1 }
-              }
-              transition={
-                isLoading
-                  ? {
-                      rotate: { duration: 4, repeat: Infinity, ease: "linear" },
-                      scale: { duration: 1.6, repeat: Infinity },
-                    }
-                  : undefined
-              }
-            />
-            <div
-              className="relative z-10 text-[10px] font-black tracking-[0.35em]"
-              style={{ color: theme.primary }}
-            >
-              {theme.label}
-            </div>
-            <div className="relative z-10 mt-3 text-lg font-black font-display text-[#C5C6C7]">
-              {isLoading ? "形态生成中" : "生成未完成"}
-            </div>
-            <div className="relative z-10 mt-2 max-w-[180px] text-[10px] leading-relaxed text-[#8a8d91]">
-              {isLoading
-                ? "真实进化图可能较慢，可先让任务后台执行"
-                : "当前为临时形态图，回到修炼主页可重新生成"}
-            </div>
-            {isFailed && onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="relative z-10 mt-4 rounded border px-3 py-1.5 text-[10px] font-black tracking-widest transition-all hover:bg-[#FFD700] hover:text-[#0B0C10]"
-                style={{ borderColor: theme.primary, color: theme.primary }}
-              >
-                重新生成
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-5xl font-black font-display text-[#FFD700]">
-            {fallback[0] || "?"}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-interface EvolutionStatChipProps {
-  icon: React.ReactNode;
-  label: string;
-  before?: number;
-  after?: number;
-  color: string;
-}
-
-const EvolutionStatChip: React.FC<EvolutionStatChipProps> = ({
-  icon,
-  label,
-  before,
-  after,
-  color,
-}) => {
-  const hasValues = typeof before === "number" && typeof after === "number";
-  const delta = hasValues ? after - before : 0;
-
-  return (
-    <div className="rounded border border-[#45A29E]/25 bg-[#0B0C10]/65 px-3 py-2">
-      <div className="flex items-center gap-1 text-[10px] tracking-widest text-[#8a8d91]">
-        <span style={{ color }}>{icon}</span>
-        {label}
-      </div>
-      <div className="mt-1 flex items-end justify-between gap-2">
-        <span className="text-sm font-black font-display" style={{ color }}>
-          {hasValues ? after : "--"}
-        </span>
-        {hasValues && delta > 0 && (
-          <span className="text-[10px] font-black text-[#7FFF9F]">
-            +{delta}
-          </span>
-        )}
-      </div>
-      {hasValues && (
-        <div className="mt-1 text-[10px] text-[#8a8d91]">
-          {before} → {after}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const SummaryTile: React.FC<SummaryTileProps> = ({ label, value }) => (
   <div className="p-3 rounded-lg bg-[#0B0C10]/70 border border-[#45A29E]/30">
