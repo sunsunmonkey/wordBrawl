@@ -1,7 +1,11 @@
 import OpenAI from "openai";
 import { CharacterData, Skill } from "../store/useGameStore";
 import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from "../data/ultimateTypes";
-import { runPollinationsTask, sleep } from "./pollinationsQueue";
+import {
+  isPollinationsUrl,
+  runPollinationsTask,
+  sleep,
+} from "./pollinationsQueue";
 
 export type AIProviderMode = "free" | "custom";
 
@@ -279,6 +283,10 @@ export const probeImage = async (
 ): Promise<ImageLoadResult> => {
   if (!url) return { ok: false };
 
+  if (isPollinationsUrl(url)) {
+    return loadViaImageElement(url, timeoutMs);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -295,6 +303,13 @@ export const probeImage = async (
       await response.body?.cancel().catch(() => undefined);
       const is429 = response.status === 429;
       const is403 = response.status === 403;
+      const imageElementProbe =
+        url.startsWith("http://") || url.startsWith("https://")
+          ? await loadViaImageElement(url, timeoutMs)
+          : null;
+      if (imageElementProbe?.ok) {
+        return { ...imageElementProbe, status: response.status };
+      }
       return {
         ok: false,
         status: response.status,
@@ -415,14 +430,15 @@ export const generateCharacterImage = async (
   modelOverride?: string,
 ): Promise<string> => {
   if (!prompt) return "";
-  const cleaned = prompt.slice(0, 200);
-  const enriched = `${cleaned}, single fictional game character avatar, centered head and upper body portrait, clear face or helmet, square composition, clean dark background, neon rim light, anime game art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
+  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 240);
+  const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, dramatic neon rim light, cinematic dark background, sharp focus, polished anime RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
+
   const baseModel =
     modelOverride === "" ? undefined : (modelOverride ?? "flux");
   const attempts: PollinationsAttempt[] = [
     { model: baseModel, seedKey: `${player}:${cleaned}` },
   ];
-  return generateValidatedImage(enriched, 256, 256, attempts, 45_000);
+  return generateValidatedImage(enriched, 512, 512, attempts, 45_000);
 };
 
 /**
@@ -437,6 +453,7 @@ export const generateEvolutionImage = async (
     seedSalt?: string;
     width?: number;
     height?: number;
+    cfg?: AIConfig;
     onAttempt?: (info: {
       attempt: number;
       total: number;
@@ -471,6 +488,7 @@ export const generateEvolutionUltimateImage = async (
     seedSalt?: string;
     width?: number;
     height?: number;
+    cfg?: AIConfig;
     onAttempt?: (info: {
       attempt: number;
       total: number;

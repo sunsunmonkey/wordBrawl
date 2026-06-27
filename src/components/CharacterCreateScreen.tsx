@@ -1,6 +1,9 @@
 import React, { useState } from "react";
-import { useGameStore, type CharacterData } from "../store/useGameStore";
+import { useGameStore } from "../store/useGameStore";
 import {
+  isRosterCharacterEvolutionLocked,
+  isRosterCharacterRecruitLocked,
+  isRosterCharacterUnavailable,
   resetCharacterRuntimeState,
   useRosterStore,
 } from "../store/useRosterStore";
@@ -29,9 +32,6 @@ import {
   Trash2,
   Info,
   ArrowRight,
-  X,
-  UserPlus,
-  CheckCircle2,
 } from "lucide-react";
 import { ParticleField } from "./ParticleField";
 import { CharacterDetailModal } from "./CharacterDetailModal";
@@ -60,400 +60,6 @@ const loadGeneratedAvatar = async (
   return { url, ready: true };
 };
 
-interface RecruitPreviewModalProps {
-  character: CharacterData;
-  themeColor: string;
-  themeColorHex: string;
-  imageFailed: boolean;
-  onImageFailed: () => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-const RecruitPreviewModal: React.FC<RecruitPreviewModalProps> = ({
-  character,
-  themeColor,
-  themeColorHex,
-  imageFailed,
-  onImageFailed,
-  onCancel,
-  onConfirm,
-}) => {
-  const ultimateSkill = character.skills.find(
-    (skill) => skill.isUltimate || skill.type === "ultimate",
-  );
-  const stats = [
-    { icon: Heart, label: "生命", value: character.maxHp, color: "#FF6B9D" },
-    { icon: Zap, label: "攻击", value: character.attack, color: "#FFD700" },
-    { icon: Shield, label: "防御", value: character.defense, color: "#66FCF1" },
-    { icon: Gauge, label: "速度", value: character.speed, color: "#7FFF9F" },
-  ];
-  const hasAvatarImage = Boolean(character.imageUrl && !imageFailed);
-  const [imageLoaded, setImageLoaded] = useState(false);
-
-  React.useEffect(() => {
-    setImageLoaded(false);
-  }, [character.imageUrl]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-[#0B0C10]/92 backdrop-blur-lg flex items-center justify-center p-3 md:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-label="确认收下角色"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.88, y: 24 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.94, y: 12 }}
-        transition={{ type: "spring", bounce: 0.35, duration: 0.55 }}
-        className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-xl border-2 bg-[#1F2833]/95 p-4 md:p-6 corner-frame"
-        style={{
-          borderColor: themeColor,
-          boxShadow: `0 0 48px rgba(${themeColorHex}, 0.45), inset 0 0 28px rgba(${themeColorHex}, 0.08)`,
-        }}
-      >
-        <button
-          type="button"
-          onClick={onCancel}
-          aria-label="放弃本次招募"
-          className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded border bg-[#0B0C10]/80 text-[#8a8d91] transition-all hover:text-[#FF003C]"
-          style={{ borderColor: `rgba(${themeColorHex}, 0.35)` }}
-        >
-          <X size={18} />
-        </button>
-
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-          <div
-            className="relative flex items-center justify-center overflow-hidden rounded-lg border bg-[#0B0C10]/80 p-3"
-            style={{ borderColor: `rgba(${themeColorHex}, 0.35)` }}
-          >
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
-              className="absolute h-[72%] w-[72%] rounded-full border-2 border-dashed opacity-35"
-              style={{ borderColor: themeColor }}
-            />
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-28"
-              style={{
-                background: `linear-gradient(180deg, rgba(${themeColorHex}, 0.22), transparent)`,
-              }}
-            />
-            <motion.div
-              initial={{ scale: 0.84 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", bounce: 0.42, duration: 0.7 }}
-              className="relative z-[1] w-full max-w-[440px] overflow-hidden rounded-lg border-2 bg-[#0B0C10] shadow-2xl"
-              style={{
-                borderColor: themeColor,
-                boxShadow: `0 0 34px rgba(${themeColorHex}, 0.55)`,
-              }}
-            >
-              <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#111721]">
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: `
-                      radial-gradient(circle at 50% 34%, rgba(${themeColorHex}, 0.32), transparent 34%),
-                      linear-gradient(135deg, rgba(${themeColorHex}, 0.2), rgba(11, 12, 16, 0.96) 58%, rgba(102, 252, 241, 0.1))
-                    `,
-                  }}
-                />
-                <motion.div
-                  className="absolute inset-0 opacity-45"
-                  animate={{ backgroundPosition: ["0 0", "0 96px"] }}
-                  transition={{
-                    duration: 3.2,
-                    repeat: Infinity,
-                    ease: "linear",
-                  }}
-                  style={{
-                    backgroundImage: `linear-gradient(180deg, transparent 0, transparent 13px, rgba(${themeColorHex}, 0.28) 14px, transparent 16px)`,
-                    backgroundSize: "100% 24px",
-                  }}
-                />
-                <div
-                  className="pointer-events-none absolute inset-0 opacity-55"
-                  style={{
-                    background: `linear-gradient(90deg, transparent, rgba(${themeColorHex}, 0.12), transparent)`,
-                  }}
-                />
-
-                {hasAvatarImage && (
-                  <img
-                    src={character.imageUrl}
-                    alt={character.name}
-                    onLoad={() => setImageLoaded(true)}
-                    onError={() => {
-                      setImageLoaded(false);
-                      onImageFailed();
-                    }}
-                    className={`relative z-[1] h-full w-full object-cover transition-opacity duration-500 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-                  />
-                )}
-
-                <AnimatePresence initial={false}>
-                  {(!hasAvatarImage || !imageLoaded) && (
-                    <motion.div
-                      key={
-                        hasAvatarImage ? "avatar-loading" : "avatar-fallback"
-                      }
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="absolute inset-0 z-[2] flex flex-col items-center justify-center px-6 text-center"
-                    >
-                      <motion.div
-                        className="absolute h-[54%] w-[54%] rounded-full border border-dashed opacity-45"
-                        animate={{ rotate: 360 }}
-                        transition={{
-                          duration: 13,
-                          repeat: Infinity,
-                          ease: "linear",
-                        }}
-                        style={{ borderColor: themeColor }}
-                      />
-                      <motion.div
-                        className="absolute h-[34%] w-[34%] rounded-full blur-3xl"
-                        animate={{
-                          opacity: [0.32, 0.62, 0.32],
-                          scale: [0.92, 1.08, 0.92],
-                        }}
-                        transition={{
-                          duration: 2.6,
-                          repeat: Infinity,
-                          ease: "easeInOut",
-                        }}
-                        style={{
-                          backgroundColor: `rgba(${themeColorHex}, 0.48)`,
-                        }}
-                      />
-                      <div
-                        className="relative flex h-28 w-28 items-center justify-center rounded-full border-2 bg-[#0B0C10]/70 font-display text-6xl font-black shadow-2xl"
-                        style={{
-                          borderColor: themeColor,
-                          color: themeColor,
-                          textShadow: `0 0 18px ${themeColor}`,
-                          boxShadow: `0 0 28px rgba(${themeColorHex}, 0.42), inset 0 0 18px rgba(${themeColorHex}, 0.16)`,
-                        }}
-                      >
-                        {hasAvatarImage ? (
-                          <ImageIcon size={42} />
-                        ) : (
-                          character.name?.[0] || "?"
-                        )}
-                        {hasAvatarImage && (
-                          <motion.span
-                            className="absolute inset-[-7px] rounded-full border-2 border-transparent"
-                            animate={{ rotate: 360 }}
-                            transition={{
-                              duration: 1.05,
-                              repeat: Infinity,
-                              ease: "linear",
-                            }}
-                            style={{
-                              borderTopColor: themeColor,
-                              borderRightColor: `rgba(${themeColorHex}, 0.35)`,
-                            }}
-                          />
-                        )}
-                      </div>
-                      <div
-                        className="mt-5 font-display text-[10px] font-black tracking-[0.34em]"
-                        style={{ color: themeColor }}
-                      >
-                        {hasAvatarImage
-                          ? "影像载入中"
-                          : imageFailed
-                            ? "影像未就绪"
-                            : "生成候补影像"}
-                      </div>
-                      <div className="mt-3 h-1.5 w-44 overflow-hidden rounded-full bg-white/10">
-                        <motion.div
-                          className="h-full w-1/2 rounded-full"
-                          animate={{ x: ["-110%", "230%"] }}
-                          transition={{
-                            duration: 1.2,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                          }}
-                          style={{
-                            background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)`,
-                          }}
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              <div className="absolute inset-x-0 bottom-0 z-[3] bg-gradient-to-t from-black via-black/70 to-transparent p-4">
-                <div className="text-[10px] font-display tracking-[0.35em] text-[#FFD700]">
-                  NEW RECRUIT
-                </div>
-                <div
-                  className="mt-1 break-words text-3xl font-black font-display"
-                  style={{
-                    color: themeColor,
-                    textShadow: `0 0 14px ${themeColor}`,
-                  }}
-                >
-                  {character.name}
-                </div>
-              </div>
-            </motion.div>
-          </div>
-
-          <div className="flex min-w-0 flex-col">
-            <div className="pr-10">
-              <div
-                className="mb-2 flex items-center gap-2 text-[10px] font-display tracking-[0.32em]"
-                style={{ color: themeColor }}
-              >
-                <Sparkles size={13} />
-                招募完成
-              </div>
-              <h3
-                className="break-words text-3xl font-black font-display leading-tight md:text-4xl"
-                style={{ color: themeColor }}
-              >
-                {character.name}
-              </h3>
-              {character.sourceDescription && (
-                <div className="mt-3 rounded border border-[#45A29E]/30 bg-[#0B0C10]/65 p-3 text-xs leading-relaxed text-[#C5C6C7]">
-                  <span style={{ color: themeColor }}>▸</span>{" "}
-                  {character.sourceDescription}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              {stats.map((stat) => {
-                const Icon = stat.icon;
-                return (
-                  <div
-                    key={stat.label}
-                    className="rounded border border-[#45A29E]/25 bg-[#0B0C10]/60 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2 text-[10px] text-[#8a8d91]">
-                      <Icon size={13} style={{ color: stat.color }} />
-                      {stat.label}
-                    </div>
-                    <div
-                      className="mt-1 text-xl font-black font-display"
-                      style={{ color: stat.color }}
-                    >
-                      {stat.value}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {ultimateSkill && (
-              <div
-                className="mt-4 rounded border bg-[#0B0C10]/65 p-3"
-                style={{ borderColor: "#FFD70066" }}
-              >
-                <div className="mb-1 flex items-center gap-2 text-[10px] font-display tracking-[0.25em] text-[#FFD700]">
-                  <Flame size={13} />
-                  终极技能
-                </div>
-                <div className="break-words text-lg font-black font-display text-[#FFD700]">
-                  {ultimateSkill.name}
-                </div>
-                <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
-                  {ultimateSkill.description}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-4 min-h-0 flex-1 overflow-hidden">
-              <div
-                className="mb-2 text-[10px] font-display tracking-[0.25em]"
-                style={{ color: themeColor }}
-              >
-                技能档案
-              </div>
-              <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                {character.skills.map((skill, idx) => {
-                  const isUltimate =
-                    skill.isUltimate || skill.type === "ultimate";
-                  return (
-                    <div
-                      key={`${skill.name}-${skill.type}-${idx}`}
-                      className="rounded border border-[#45A29E]/20 bg-[#0B0C10]/55 p-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="min-w-0 truncate text-sm font-bold font-display"
-                          style={{ color: isUltimate ? "#FFD700" : themeColor }}
-                        >
-                          {skill.name}
-                        </span>
-                        <span
-                          className="shrink-0 rounded px-1.5 py-0.5 text-[9px] tracking-widest"
-                          style={{
-                            color: isUltimate ? "#FFD700" : themeColor,
-                            background: isUltimate
-                              ? "#FFD70022"
-                              : `rgba(${themeColorHex}, 0.16)`,
-                          }}
-                        >
-                          {isUltimate ? "大招" : skill.type}
-                        </span>
-                      </div>
-                      <div className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-[#C5C6C7]">
-                        {skill.description}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div
-              className="mt-5 grid grid-cols-2 gap-3 border-t pt-4"
-              style={{ borderColor: `rgba(${themeColorHex}, 0.24)` }}
-            >
-              <motion.button
-                type="button"
-                onClick={onCancel}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 rounded border-2 bg-[#0B0C10]/80 py-3 text-xs font-black font-display tracking-[0.2em] text-[#8a8d91] transition-all hover:text-[#FF003C]"
-                style={{ borderColor: "#3a3d42" }}
-              >
-                <X size={16} />
-                放弃
-              </motion.button>
-              <motion.button
-                type="button"
-                onClick={onConfirm}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 rounded border-2 py-3 text-xs font-black font-display tracking-[0.2em] text-[#0B0C10] transition-all"
-                style={{
-                  borderColor: themeColor,
-                  backgroundColor: themeColor,
-                  boxShadow: `0 0 22px rgba(${themeColorHex}, 0.45)`,
-                }}
-              >
-                <UserPlus size={16} />
-                确认收下
-                <CheckCircle2 size={16} />
-              </motion.button>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
 export const CharacterCreateScreen: React.FC = () => {
   const {
     phase,
@@ -466,8 +72,20 @@ export const CharacterCreateScreen: React.FC = () => {
     setPhase,
     player1,
   } = useGameStore();
-  const { roster, removeCharacter, recruitCharacter } = useRosterStore();
-  const cfg: AIConfig = { apiKey, baseUrl, model, apiMode };
+  const {
+    roster,
+    removeCharacter,
+    recruitCharacter,
+    createPendingRecruit,
+    completePendingRecruit,
+    failPendingRecruit,
+  } = useRosterStore();
+  const cfg: AIConfig = {
+    apiKey,
+    baseUrl,
+    model,
+    apiMode,
+  };
   const isRecruitMode = phase === "RECRUIT_CREATE";
   const isPlayer1 = phase === "PLAYER1_CREATE";
   const playerName = isRecruitMode
@@ -500,11 +118,6 @@ export const CharacterCreateScreen: React.FC = () => {
   const [inspectingRosterId, setInspectingRosterId] = useState<string | null>(
     null,
   );
-  const [pendingRecruit, setPendingRecruit] = useState<CharacterData | null>(
-    null,
-  );
-  const [pendingRecruitImageFailed, setPendingRecruitImageFailed] =
-    useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(() => {
     if (typeof window === "undefined") return 0;
     const lastGeneratedAt = Number(
@@ -533,6 +146,59 @@ export const CharacterCreateScreen: React.FC = () => {
     return interval;
   };
 
+  const startBackgroundRecruit = (
+    rosterId: string,
+    sourceDescription: string,
+  ) => {
+    void (async () => {
+      try {
+        const charData = await generateCharacter(cfg, sourceDescription);
+        const avatar = await loadGeneratedAvatar(() =>
+          generateCharacterImage(
+            cfg,
+            charData.imagePrompt || sourceDescription,
+            1,
+          ),
+        );
+
+        charData.imageUrl = avatar.ready
+          ? await cacheImageUrlAsDataUrl(avatar.url, { maxSize: 512 })
+          : avatar.url;
+        charData.sourceDescription = sourceDescription;
+
+        const recruited = completePendingRecruit(
+          rosterId,
+          charData,
+          sourceDescription,
+        );
+        if (!recruited) return;
+
+        try {
+          await startEvolutionAssetPrefetch(
+            {
+              rosterId: recruited.rosterId,
+              characterName: recruited.name,
+              stage: 1,
+              level: 5,
+              layer: 1,
+            },
+            async () => buildLocalEvolution(recruited, 1),
+            cfg,
+          );
+        } catch (prefetchErr) {
+          console.warn("recruit stage1 prefetch failed", prefetchErr);
+        }
+      } catch (err: unknown) {
+        failPendingRecruit(
+          rosterId,
+          err instanceof Error
+            ? err.message
+            : "生成失败，请检查 API Key 或网络连接",
+        );
+      }
+    })();
+  };
+
   const handleGenerate = async () => {
     if (isRecruitMode && cooldownLeftMs > 0) {
       setError(`角色生成冷却中，请 ${cooldownLeftSec} 秒后再试。`);
@@ -544,34 +210,43 @@ export const CharacterCreateScreen: React.FC = () => {
     }
     setError("");
     setAvatarHint(null);
-    setPendingRecruit(null);
-    setPendingRecruitImageFailed(false);
+    const sourceDescription = description.trim();
+
+    if (isRecruitMode) {
+      const pending = createPendingRecruit(sourceDescription);
+      const generatedAt = Date.now();
+      window.localStorage.setItem(RECRUIT_COOLDOWN_KEY, String(generatedAt));
+      setCooldownUntil(generatedAt + RECRUIT_COOLDOWN_MS);
+      setNow(generatedAt);
+      setDescription("");
+      startBackgroundRecruit(pending.rosterId, sourceDescription);
+      setPhase("MODE_SELECT");
+      return;
+    }
+
     setIsGenerating(true);
     const interval = cycleLoadingSteps();
     const player: 1 | 2 = isPlayer1 ? 1 : 2;
-    const sourceDescription = description.trim();
 
     try {
-      setAvatarHint("正在生成头像...");
-      const avatar = await loadGeneratedAvatar(() =>
-        generateCharacterImage(cfg, sourceDescription, player),
-      );
-
-      setAvatarHint("头像就绪，正在生成角色数值...");
+      setAvatarHint("正在生成角色数值...");
       const charData = await generateCharacter(cfg, sourceDescription);
 
+      setAvatarHint("角色档案就绪，正在生成头像...");
+      const avatar = await loadGeneratedAvatar(() =>
+        generateCharacterImage(
+          cfg,
+          charData.imagePrompt || sourceDescription,
+          player,
+        ),
+      );
+
       charData.imageUrl = avatar.ready
-        ? await cacheImageUrlAsDataUrl(avatar.url)
+        ? await cacheImageUrlAsDataUrl(avatar.url, { maxSize: 512 })
         : avatar.url;
       charData.sourceDescription = sourceDescription;
 
-      if (isRecruitMode) {
-        const generatedAt = Date.now();
-        window.localStorage.setItem(RECRUIT_COOLDOWN_KEY, String(generatedAt));
-        setCooldownUntil(generatedAt + RECRUIT_COOLDOWN_MS);
-        setNow(generatedAt);
-        setPendingRecruit(charData);
-      } else if (isPlayer1) {
+      if (isPlayer1) {
         setPlayer1(charData);
         setPhase("PLAYER2_CREATE");
         setDescription("");
@@ -592,45 +267,21 @@ export const CharacterCreateScreen: React.FC = () => {
     }
   };
 
-  const handleConfirmRecruit = async () => {
-    if (!pendingRecruit) return;
-
-    const recruited = recruitCharacter(
-      pendingRecruit,
-      pendingRecruit.sourceDescription,
-    );
-    setPendingRecruit(null);
-    setPendingRecruitImageFailed(false);
-
-    // 等待首阶段进化资源就绪，再进入后续流程。
-    // 预设角色已预下载本地图，会立即命中；非预设角色走串行队列，最坏情况用兜底图兜底。
-    try {
-      await startEvolutionAssetPrefetch(
-        {
-          rosterId: recruited.rosterId,
-          characterName: recruited.name,
-          stage: 1,
-          level: 5,
-          layer: 1,
-        },
-        async () => buildLocalEvolution(recruited, 1),
-      );
-    } catch (prefetchErr) {
-      console.warn("recruit stage1 prefetch failed", prefetchErr);
-    }
-
-    setDescription("");
-    setPhase("MODE_SELECT");
-  };
-
-  const handleCancelRecruit = () => {
-    setPendingRecruit(null);
-    setPendingRecruitImageFailed(false);
-  };
-
   const handleSelectRosterCharacter = async (
     saved: (typeof roster)[number],
   ) => {
+    if (isRosterCharacterRecruitLocked(saved)) {
+      setError(
+        saved.recruitLock?.status === "failed"
+          ? saved.recruitLock.error || "该角色生成失败，请移除后重新招募。"
+          : "该角色正在后台生成中，完成后才能出战。",
+      );
+      return;
+    }
+    if (isRosterCharacterEvolutionLocked(saved)) {
+      setError("该角色正在进化图后台更新中，完成后才能出战。");
+      return;
+    }
     setSelectingRoster(saved.rosterId);
     setError("");
 
@@ -740,11 +391,21 @@ export const CharacterCreateScreen: React.FC = () => {
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
       {roster.map((saved) => {
         const isSelecting = selectingRoster === saved.rosterId;
+        const evolutionLocked = isRosterCharacterEvolutionLocked(saved);
+        const recruitLocked = isRosterCharacterRecruitLocked(saved);
         const isDisabled =
-          isGenerating || !!selectingPreset || !!selectingRoster;
+          isRosterCharacterUnavailable(saved) ||
+          isGenerating ||
+          !!selectingPreset ||
+          !!selectingRoster;
         const ultimateSkill = saved.skills.find(
           (s) => s.isUltimate || s.type === "ultimate",
         );
+        const lockText = recruitLocked
+          ? saved.recruitLock?.status === "failed"
+            ? "生成失败"
+            : "后台生成中"
+          : "进化更新中";
         return (
           <motion.div
             key={saved.rosterId}
@@ -799,6 +460,13 @@ export const CharacterCreateScreen: React.FC = () => {
                       className="w-6 h-6 border-2 border-transparent rounded-full"
                       style={{ borderTopColor: themeColor }}
                     />
+                  </div>
+                )}
+                {(evolutionLocked || recruitLocked) && (
+                  <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                    <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
+                      {lockText}
+                    </div>
                   </div>
                 )}
                 {/* 底部名字 + 大招标签 */}
@@ -1025,7 +693,7 @@ export const CharacterCreateScreen: React.FC = () => {
                 style={{ backgroundColor: themeColor }}
               />
               {isRecruitMode
-                ? "生成后确认收下"
+                ? "提交后后台生成"
                 : isPlayer1
                   ? "选择 P1 出战角色"
                   : "P1 已就绪 · 选择 P2"}
@@ -1069,7 +737,7 @@ export const CharacterCreateScreen: React.FC = () => {
                 }
               />
               <div className="text-[10px] text-[#8a8d91] mt-1 flex justify-between">
-                <span>生成后放大预览 · 确认后收入麾下 · 60 秒冷却</span>
+                <span>提交后后台生成 · 完成后自动收入麾下 · 60 秒冷却</span>
                 <span>{description.length} chars</span>
               </div>
             </div>
@@ -1114,7 +782,7 @@ export const CharacterCreateScreen: React.FC = () => {
                   <Sparkles size={18} />
                   {cooldownLeftMs > 0
                     ? `冷却中 ${cooldownLeftSec}s`
-                    : "招募角色"}
+                    : "后台招募"}
                   <Sparkles size={18} />
                 </>
               )}
@@ -1293,21 +961,6 @@ export const CharacterCreateScreen: React.FC = () => {
           </div>
         )}
       </motion.div>
-
-      <AnimatePresence>
-        {pendingRecruit && (
-          <RecruitPreviewModal
-            key="pending-recruit"
-            character={pendingRecruit}
-            themeColor={themeColor}
-            themeColorHex={themeColorHex}
-            imageFailed={pendingRecruitImageFailed}
-            onImageFailed={() => setPendingRecruitImageFailed(true)}
-            onCancel={handleCancelRecruit}
-            onConfirm={handleConfirmRecruit}
-          />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {(() => {

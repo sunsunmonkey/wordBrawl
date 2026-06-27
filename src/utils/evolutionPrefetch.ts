@@ -3,7 +3,7 @@ import type {
   ActiveEvolutionStage,
   RosterCharacter,
 } from "../store/useRosterStore";
-import { generateEvolutionImage, probeImage } from "./ai";
+import { generateEvolutionImage, probeImage, type AIConfig } from "./ai";
 import { cacheImageUrlAsDataUrl } from "./localImage";
 import { type BattleSummary, type EvolveResult } from "./towerAnalysis";
 import { applyXp, xpForLayer } from "./towerProgress";
@@ -37,19 +37,12 @@ interface EvolutionAssetPrefetchRequest {
   layer: number;
 }
 
-type PrefetchRecord = EvolutionPrefetchPayload & {
-  status: "ready" | "failed";
-  error?: string;
-};
-
 type TaskState = {
   promise: Promise<EvolutionPrefetchPayload | null>;
   startedAt: number;
 };
 
-const STORAGE_KEY = "word-brawl-evolution-prefetch-v1";
-const MAX_RECORDS = 8;
-const MAX_RECORD_AGE_MS = 1000 * 60 * 60 * 6;
+const TASK_MAX_AGE_MS = 1000 * 60 * 60;
 // 全局 Pollinations 串行队列已保证“同一时刻仅 1 个网络请求在飞行”，
 // 这里只需一个很小的间隔避免任务排布过密，真正的并发控制交给全局队列。
 const QUEUE_START_GAP_MS = 1_000;
@@ -59,75 +52,9 @@ const canceledKeys = new Set<string>();
 let queueTail: Promise<void> = Promise.resolve();
 let lastQueueStart = 0;
 
-const clampStage = (value: unknown): ActiveEvolutionStage | null => {
-  return value === 1 ||
-    value === 2 ||
-    value === 3 ||
-    value === 4 ||
-    value === 5 ||
-    value === 6
-    ? value
-    : null;
-};
-
-const isBrowser = (): boolean =>
-  typeof window !== "undefined" && !!window.localStorage;
-
-const readRecords = (): PrefetchRecord[] => {
-  if (!isBrowser()) return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return [];
-    const now = Date.now();
-    return parsed
-      .filter((entry): entry is PrefetchRecord => {
-        if (!entry || typeof entry !== "object") return false;
-        const record = entry as PrefetchRecord;
-        return (
-          typeof record.key === "string" &&
-          typeof record.rosterId === "string" &&
-          !!clampStage(record.stage) &&
-          typeof record.createdAt === "number" &&
-          now - record.createdAt < MAX_RECORD_AGE_MS
-        );
-      })
-      .slice(-MAX_RECORDS);
-  } catch {
-    return [];
-  }
-};
-
-const writeRecords = (records: PrefetchRecord[]) => {
-  if (!isBrowser()) return;
-  try {
-    const now = Date.now();
-    const fresh = records
-      .filter((record) => now - record.createdAt < MAX_RECORD_AGE_MS)
-      .slice(-MAX_RECORDS);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-  } catch {
-    // Image data URLs can exceed storage quota. Drop oldest records and keep the app responsive.
-    try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(records.slice(-2)),
-      );
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }
-};
-
-const upsertRecord = (record: PrefetchRecord) => {
-  const records = readRecords().filter((entry) => entry.key !== record.key);
-  writeRecords([...records, record]);
-};
-
 export const cleanupEvolutionPrefetchCache = () => {
-  writeRecords(readRecords());
   for (const [key, task] of tasks) {
-    if (Date.now() - task.startedAt > MAX_RECORD_AGE_MS) {
+    if (Date.now() - task.startedAt > TASK_MAX_AGE_MS) {
       tasks.delete(key);
     }
   }
@@ -136,42 +63,9 @@ export const cleanupEvolutionPrefetchCache = () => {
 export const buildEvolutionPrefetchKey = (
   rosterId: string,
   stage: ActiveEvolutionStage,
-  level: number,
-  layer: number,
-): string => `${rosterId}:${stage}:${level}:${layer}`;
-
-export const getEvolutionPrefetchRecord = (
-  rosterId: string,
-  stage: ActiveEvolutionStage,
-  level: number,
-  layer: number,
-): EvolutionPrefetchPayload | null => {
-  cleanupEvolutionPrefetchCache();
-  const key = buildEvolutionPrefetchKey(rosterId, stage, level, layer);
-  const record = readRecords().find(
-    (entry) => entry.key === key && entry.status === "ready",
-  );
-  return record ? toPayload(record) : null;
-};
-
-export const consumeEvolutionPrefetchRecord = (
-  rosterId: string,
-  stage: ActiveEvolutionStage,
-  level: number,
-  layer: number,
-): EvolutionPrefetchPayload | null => {
-  cleanupEvolutionPrefetchCache();
-  const key = buildEvolutionPrefetchKey(rosterId, stage, level, layer);
-  const records = readRecords();
-  const record = records.find(
-    (entry) => entry.key === key && entry.status === "ready",
-  );
-  writeRecords(records.filter((entry) => entry.key !== key));
-  return record ? toPayload(record) : null;
-};
+): string => `${rosterId}:${stage}`;
 
 export const clearEvolutionPrefetchForRoster = (rosterId: string) => {
-  writeRecords(readRecords().filter((entry) => entry.rosterId !== rosterId));
   for (const key of tasks.keys()) {
     if (key.startsWith(`${rosterId}:`)) {
       canceledKeys.add(key);
@@ -211,6 +105,7 @@ export const startEvolutionPrefetch = (
     summary: BattleSummary,
     stage: ActiveEvolutionStage,
   ) => Promise<EvolveResult>,
+  cfg?: AIConfig,
 ): Promise<EvolutionPrefetchPayload | null> => {
   cleanupEvolutionPrefetchCache();
   const pending = getPendingEvolutionFromBattle(
@@ -230,34 +125,24 @@ export const startEvolutionPrefetch = (
       layer: context.layer,
     },
     () => buildEvolve(pending.character, context.summary, pending.stage),
+    cfg,
   );
 };
 
 export const startEvolutionAssetPrefetch = (
   request: EvolutionAssetPrefetchRequest,
   buildEvolve: () => Promise<EvolveResult>,
+  cfg?: AIConfig,
 ): Promise<EvolutionPrefetchPayload | null> => {
   cleanupEvolutionPrefetchCache();
-  const key = buildEvolutionPrefetchKey(
-    request.rosterId,
-    request.stage,
-    request.level,
-    request.layer,
-  );
-  const cached = getEvolutionPrefetchRecord(
-    request.rosterId,
-    request.stage,
-    request.level,
-    request.layer,
-  );
-  if (cached) return Promise.resolve(cached);
+  const key = buildEvolutionPrefetchKey(request.rosterId, request.stage);
   const active = tasks.get(key);
   if (active) return active.promise;
   canceledKeys.delete(key);
 
   const promise = enqueuePrefetch(async () => {
     const evo = await buildEvolve();
-    const avatarUrl = await resolveEvolutionAvatar(request, evo);
+    const avatarUrl = await resolveEvolutionAvatar(request, evo, cfg);
     if (!avatarUrl) {
       throw new Error("进化形态图生成失败");
     }
@@ -268,35 +153,14 @@ export const startEvolutionAssetPrefetch = (
       stage: request.stage,
       level: request.level,
       layer: request.layer,
-      evo: {
-        ...evo,
-        newUltimate: evo.newUltimate
-          ? { ...evo.newUltimate, imageUrl: undefined }
-          : evo.newUltimate,
-      },
+      evo,
       avatarUrl,
       ultimateImageUrl: undefined,
       createdAt: Date.now(),
     };
-    if (!canceledKeys.has(key)) {
-      upsertRecord({ ...payload, status: "ready" });
-    }
     return payload;
   })
-    .catch((error) => {
-      if (!canceledKeys.has(key)) {
-        upsertRecord({
-          key,
-          rosterId: request.rosterId,
-          stage: request.stage,
-          level: request.level,
-          layer: request.layer,
-          evo: { imagePrompt: "", lore: "" },
-          createdAt: Date.now(),
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+    .catch(() => {
       return null;
     })
     .finally(() => {
@@ -313,7 +177,9 @@ export const waitEvolutionPrefetch = (
   level: number,
   layer: number,
 ): Promise<EvolutionPrefetchPayload | null> | null => {
-  const key = buildEvolutionPrefetchKey(rosterId, stage, level, layer);
+  void level;
+  void layer;
+  const key = buildEvolutionPrefetchKey(rosterId, stage);
   return tasks.get(key)?.promise ?? null;
 };
 
@@ -362,6 +228,7 @@ const cacheGeneratedImage = async (
 const resolveEvolutionAvatar = async (
   request: EvolutionAssetPrefetchRequest,
   evo: EvolveResult,
+  cfg?: AIConfig,
 ): Promise<string | undefined> => {
   const name = request.characterName;
   if (name) {
@@ -375,19 +242,8 @@ const resolveEvolutionAvatar = async (
     () =>
       generateEvolutionImage(evo.imagePrompt, {
         seedSalt: `${request.rosterId}:${request.stage}`,
+        cfg,
       }),
     384,
   );
 };
-
-const toPayload = (record: PrefetchRecord): EvolutionPrefetchPayload => ({
-  key: record.key,
-  rosterId: record.rosterId,
-  stage: record.stage,
-  level: record.level,
-  layer: record.layer,
-  evo: record.evo,
-  avatarUrl: record.avatarUrl,
-  ultimateImageUrl: record.ultimateImageUrl,
-  createdAt: record.createdAt,
-});

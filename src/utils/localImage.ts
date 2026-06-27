@@ -1,4 +1,4 @@
-import { isPollinationsUrl, runPollinationsTask } from "./pollinationsQueue";
+import { isPollinationsUrl } from "./pollinationsQueue";
 
 const DEFAULT_MAX_IMAGE_SIZE = 256;
 
@@ -64,7 +64,10 @@ export const cacheImageUrlAsDataUrl = async (
 ): Promise<string | undefined> => {
   if (!url || url.startsWith("data:")) return url;
 
-  // Pollinations 远程图需走全局串行队列，避免与其他生成请求并发触发 max=1 限流。
+  // Pollinations 会拦截浏览器 fetch 并要求 Turnstile token；图片标签直连可以正常加载。
+  // 因此这里保留远程 URL，避免一次必失败的缓存请求拖慢预览。
+  if (isPollinationsUrl(url)) return url;
+
   const fetchBlob = async (): Promise<string | undefined> => {
     const response = await fetch(url, {
       headers: { Accept: "image/*,*/*;q=0.8" },
@@ -84,9 +87,7 @@ export const cacheImageUrlAsDataUrl = async (
   };
 
   try {
-    return isPollinationsUrl(url)
-      ? await runPollinationsTask(fetchBlob)
-      : await fetchBlob();
+    return await fetchBlob();
   } catch {
     return url;
   }

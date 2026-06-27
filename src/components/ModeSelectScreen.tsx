@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Swords,
@@ -10,36 +10,138 @@ import {
   Shield,
   Gauge,
   Plus,
+  Gamepad2,
+  RotateCcw,
+  FlaskConical,
+  Lock,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
-import { useRosterStore } from "../store/useRosterStore";
+import {
+  isRosterCharacterEvolutionLocked,
+  isRosterCharacterRecruitLocked,
+  isRosterCharacterUnavailable,
+  resetCharacterRuntimeState,
+  useRosterStore,
+  type ActiveEvolutionStage,
+  type FormHistoryEntry,
+  type RosterCharacter,
+} from "../store/useRosterStore";
+import { useTowerStore } from "../store/useTowerStore";
 import { ParticleField } from "./ParticleField";
 import {
+  buildLocalEvolution,
   evolutionLabel,
   getNextEvolutionProgress,
   levelAscensionLabel,
   xpProgress,
 } from "../utils/towerProgress";
 import { BackButton } from "./BackButton";
+import { generateEvolutionImage, type AIConfig } from "../utils/ai";
+import { cacheImageUrlAsDataUrl } from "../utils/localImage";
+import { getScaledTowerBoss } from "../data/towerBosses";
+import type { BattleSummary } from "../utils/towerAnalysis";
+
+const isActiveEvolutionStage = (stage: number): stage is ActiveEvolutionStage =>
+  stage >= 1 && stage <= 6;
+
+const getLatestFallbackEvolutionForm = (
+  char?: RosterCharacter | null,
+): (FormHistoryEntry & { stage: ActiveEvolutionStage }) | null => {
+  if (!char || !isActiveEvolutionStage(char.evolutionStage)) return null;
+  for (let i = char.formHistory.length - 1; i >= 0; i--) {
+    const form = char.formHistory[i];
+    if (form.stage === char.evolutionStage) {
+      return form.imageStatus === "fallback" &&
+        isActiveEvolutionStage(form.stage)
+        ? (form as FormHistoryEntry & { stage: ActiveEvolutionStage })
+        : null;
+    }
+  }
+  return null;
+};
+
+const getNextDebugEvolutionStage = (
+  char?: RosterCharacter | null,
+): ActiveEvolutionStage | null => {
+  if (!char || char.evolutionStage >= 6) return null;
+  return (char.evolutionStage + 1) as ActiveEvolutionStage;
+};
+
+const DEBUG_ACCESS_KEY = "debug";
+
+const isEvolutionDebugAvailable = () => {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return (
+    window.location.hostname === "localhost" &&
+    params.get(DEBUG_ACCESS_KEY) === "true"
+  );
+};
 
 export const ModeSelectScreen: React.FC = () => {
   const {
+    apiKey,
+    baseUrl,
+    model,
+    apiMode,
+    evolutionDebugMode,
+    setEvolutionDebugMode,
     setPhase,
     setBattleMode,
     setTowerRosterId,
     setTowerLayer,
+    setPlayer1,
+    setPlayer2,
+    setWinner,
     resetGame,
   } = useGameStore();
   const roster = useRosterStore((s) => s.roster);
+  const updateCharacter = useRosterStore((s) => s.updateCharacter);
+  const setCurrentLayer = useTowerStore((s) => s.setCurrentLayer);
+  const setLastSummary = useTowerStore((s) => s.setLastSummary);
+  const setLastRosterId = useTowerStore((s) => s.setLastRosterId);
+  const setLastResult = useTowerStore((s) => s.setLastResult);
+  const setDebugForcedEvolutionStage = useTowerStore(
+    (s) => s.setDebugForcedEvolutionStage,
+  );
+  const resetTowerPending = useTowerStore((s) => s.resetPending);
   const rosterCount = roster.length;
   const lead = roster[0] ?? null;
-  const rosterPreview = roster.slice(0, 8);
+  const rosterPreview = roster.slice(0, 24);
   const hiddenRosterCount = Math.max(0, rosterCount - rosterPreview.length);
   const [selectedRosterId, setSelectedRosterId] = useState<string | null>(
     lead?.rosterId ?? null,
   );
+  const [regeneratingRosterId, setRegeneratingRosterId] = useState<
+    string | null
+  >(null);
+  const [regenerateError, setRegenerateError] = useState("");
   const selectedRoster =
     roster.find((char) => char.rosterId === selectedRosterId) ?? lead;
+  const selectedFallbackForm = getLatestFallbackEvolutionForm(selectedRoster);
+  const debugNextStage = getNextDebugEvolutionStage(selectedRoster);
+  const selectedEvolutionLocked =
+    isRosterCharacterEvolutionLocked(selectedRoster);
+  const selectedRecruitLocked = isRosterCharacterRecruitLocked(selectedRoster);
+  const selectedUnavailable = isRosterCharacterUnavailable(selectedRoster);
+  const canRegenerateEvolutionImage =
+    Boolean(selectedRoster) &&
+    Boolean(selectedFallbackForm || selectedRoster?.evolutionLock);
+  const evolutionDebugAvailable = isEvolutionDebugAvailable();
+  const activeEvolutionDebugMode =
+    evolutionDebugAvailable && evolutionDebugMode;
+  const cfg: AIConfig = {
+    apiKey,
+    baseUrl,
+    model,
+    apiMode,
+  };
+
+  useEffect(() => {
+    if (!evolutionDebugAvailable && evolutionDebugMode) {
+      setEvolutionDebugMode(false);
+    }
+  }, [evolutionDebugAvailable, evolutionDebugMode, setEvolutionDebugMode]);
 
   const startPvP = () => {
     resetGame();
@@ -52,14 +154,147 @@ export const ModeSelectScreen: React.FC = () => {
   };
 
   const startTower = () => {
+    if (!selectedRoster || selectedUnavailable) return;
     setBattleMode("pve_tower");
-    setTowerRosterId(selectedRoster?.rosterId ?? null);
-    setTowerLayer(selectedRoster?.tower.nextLayer ?? 1);
+    setTowerRosterId(selectedRoster.rosterId);
+    setTowerLayer(selectedRoster.tower.nextLayer ?? 1);
     setPhase("TOWER_HUB");
+  };
+
+  const startTraining = () => {
+    setPhase("TRAINING_GROUND");
   };
 
   const goRoster = () => {
     setPhase("ROSTER_VIEW");
+  };
+
+  const regenerateEvolutionImage = async () => {
+    if (!selectedRoster) return;
+    const lockedStage = selectedRoster.evolutionLock?.stage;
+    const stage =
+      selectedFallbackForm?.stage ??
+      (lockedStage && isActiveEvolutionStage(lockedStage) ? lockedStage : null);
+    if (!stage) return;
+    setRegenerateError("");
+    setRegeneratingRosterId(selectedRoster.rosterId);
+    const localEvo = buildLocalEvolution(selectedRoster, stage);
+    const prompt =
+      selectedFallbackForm?.imagePrompt ||
+      localEvo.imagePrompt ||
+      selectedRoster.imagePrompt;
+
+    try {
+      const remote = await generateEvolutionImage(prompt, {
+        seedSalt: `${selectedRoster.rosterId}:${stage}:manual:${Date.now()}`,
+        cfg,
+      });
+      if (!remote) throw new Error("进化图生成失败，请稍后重试。");
+      const imageUrl =
+        (await cacheImageUrlAsDataUrl(remote, { maxSize: 384 })) || remote;
+
+      updateCharacter(selectedRoster.rosterId, (current) => {
+        const targetIndex = current.formHistory
+          .map((form, index) => ({ form, index }))
+          .reverse()
+          .find(
+            ({ form }) =>
+              form.stage === stage && form.imageStatus === "fallback",
+          )?.index;
+        const formHistory =
+          typeof targetIndex === "number"
+            ? current.formHistory.map((form, index) =>
+                index === targetIndex
+                  ? {
+                      ...form,
+                      imageUrl,
+                      imagePrompt: prompt,
+                      imageStatus: "ready" as const,
+                      createdAt: Date.now(),
+                    }
+                  : form,
+              )
+            : [
+                ...current.formHistory,
+                {
+                  stage,
+                  imageUrl,
+                  imagePrompt: prompt,
+                  lore: localEvo.lore,
+                  imageStatus: "ready" as const,
+                  createdAt: Date.now(),
+                },
+              ];
+        return {
+          ...current,
+          imageUrl,
+          imagePrompt: prompt || current.imagePrompt,
+          evolutionLock: undefined,
+          formHistory,
+        };
+      });
+    } catch (err) {
+      setRegenerateError(
+        err instanceof Error ? err.message : "进化图生成失败，请稍后重试。",
+      );
+    } finally {
+      setRegeneratingRosterId(null);
+    }
+  };
+
+  const startDebugEvolutionAnimation = () => {
+    if (
+      !activeEvolutionDebugMode ||
+      !selectedRoster ||
+      !debugNextStage ||
+      selectedEvolutionLocked
+    ) {
+      return;
+    }
+    setRegenerateError("");
+    const layer = Math.max(1, selectedRoster.tower.nextLayer || 1);
+    const boss = getScaledTowerBoss(layer, selectedRoster);
+    if (!boss) {
+      setRegenerateError("无法创建测试 Boss，请先换一个角色或层数。");
+      return;
+    }
+    const summary: BattleSummary = {
+      turns: 3,
+      damageDealt: Math.max(120, selectedRoster.attack * 8),
+      damageTaken: Math.max(1, Math.floor(selectedRoster.maxHp * 0.12)),
+      criticalCount: 1,
+      ultimateCount: 1,
+      mostUsedSkill: selectedRoster.skills[0]?.name,
+      lowestHpPercent: 0.72,
+      longestStreak: 1,
+      rawHighlights: [
+        `${selectedRoster.name} 在 Debug 测试中完成压制，触发进化演出。`,
+      ],
+    };
+
+    resetTowerPending();
+    setBattleMode("pve_tower");
+    setTowerRosterId(selectedRoster.rosterId);
+    setTowerLayer(layer);
+    setCurrentLayer(layer);
+    setPlayer1(resetCharacterRuntimeState(selectedRoster));
+    setPlayer2(resetCharacterRuntimeState(boss));
+    setLastSummary(summary);
+    setLastRosterId(selectedRoster.rosterId);
+    setLastResult("win");
+    setDebugForcedEvolutionStage(debugNextStage);
+    useGameStore.setState({
+      battleLogs: [
+        {
+          id: `debug-evolution-${Date.now()}`,
+          turn: 3,
+          attacker: "system",
+          message: `${selectedRoster.name} Debug 进化演出测试`,
+        },
+      ],
+      currentTurn: 3,
+    });
+    setWinner("player1");
   };
 
   return (
@@ -106,8 +341,29 @@ export const ModeSelectScreen: React.FC = () => {
                   {lead ? "核心队列" : "尚未招募"}
                 </div>
               </div>
-              <div className="text-right text-[10px] text-[#8a8d91]">
-                麾下 {rosterCount}/24
+              <div className="flex flex-col items-end gap-2">
+                <div className="text-right text-[10px] text-[#8a8d91]">
+                  麾下 {rosterCount}/24
+                </div>
+                {evolutionDebugAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => setEvolutionDebugMode(!evolutionDebugMode)}
+                    className="flex items-center gap-1.5 rounded border px-2.5 py-1 text-[9px] font-black tracking-widest transition-all"
+                    style={{
+                      borderColor: evolutionDebugMode
+                        ? "rgba(255,107,157,0.75)"
+                        : "rgba(255,215,0,0.28)",
+                      color: evolutionDebugMode ? "#FF6B9D" : "#8a8d91",
+                      background: evolutionDebugMode
+                        ? "rgba(255,107,157,0.14)"
+                        : "rgba(11,12,16,0.55)",
+                    }}
+                  >
+                    <FlaskConical size={11} />
+                    DEBUG {evolutionDebugMode ? "ON" : "OFF"}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -117,17 +373,26 @@ export const ModeSelectScreen: React.FC = () => {
                   {rosterPreview.map((char) => {
                     const isSelected =
                       char.rosterId === selectedRoster?.rosterId;
+                    const evolutionLocked =
+                      isRosterCharacterEvolutionLocked(char);
+                    const recruitLocked = isRosterCharacterRecruitLocked(char);
                     const progress = xpProgress(char.level, char.xp);
                     const nextEvo = getNextEvolutionProgress(
                       char.level,
                       char.xp,
                       char.evolutionStage,
                     );
-                    const nextEvoText = nextEvo.nextStage
-                      ? nextEvo.ready
-                        ? "进化待触发"
-                        : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
-                      : "最终形态";
+                    const nextEvoText = recruitLocked
+                      ? char.recruitLock?.status === "failed"
+                        ? "招募失败"
+                        : "后台招募中"
+                      : evolutionLocked
+                      ? "进化更新中"
+                      : nextEvo.nextStage
+                        ? nextEvo.ready
+                          ? "进化待触发"
+                          : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
+                        : "最终形态";
                     const highestLayer =
                       char.tower.highestEndlessLayer ??
                       char.tower.highestCleared;
@@ -161,6 +426,18 @@ export const ModeSelectScreen: React.FC = () => {
                               {char.name[0]}
                             </div>
                           )}
+                          {(evolutionLocked || recruitLocked) && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/68">
+                              <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
+                                <Lock size={10} className="mr-1 inline" />
+                                {recruitLocked
+                                  ? char.recruitLock?.status === "failed"
+                                    ? "招募失败"
+                                    : "招募中"
+                                  : "进化更新中"}
+                              </div>
+                            </div>
+                          )}
                           {isSelected && (
                             <div className="absolute inset-0 border-2 border-[#FFD700] shadow-[inset_0_0_18px_rgba(255,215,0,0.35)]" />
                           )}
@@ -170,7 +447,7 @@ export const ModeSelectScreen: React.FC = () => {
                           <div className="absolute right-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#66FCF1]">
                             L{highestLayer}
                           </div>
-                          {isSelected && (
+                          {isSelected && !evolutionLocked && !recruitLocked && (
                             <div className="absolute right-1.5 bottom-10 rounded bg-[#FFD700] px-1.5 py-0.5 text-[9px] font-black text-[#0B0C10]">
                               出战
                             </div>
@@ -226,16 +503,119 @@ export const ModeSelectScreen: React.FC = () => {
                   })}
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                {selectedRoster && canRegenerateEvolutionImage && (
+                  <div className="rounded-lg border border-[#FFD700]/45 bg-[#0B0C10]/70 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-[10px] font-black tracking-[0.28em] text-[#FFD700]">
+                          进化图后台任务
+                        </div>
+                        <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
+                          {selectedFallbackForm
+                            ? `${selectedRoster.name} 当前 ${evolutionLabel(selectedFallbackForm.stage)} 使用临时形态图，可在这里重新生成真实进化图。`
+                            : `${selectedRoster.name} 的进化更新可能已中断，可在这里重新生成真实进化图并解锁。`}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={regenerateEvolutionImage}
+                        disabled={
+                          regeneratingRosterId === selectedRoster.rosterId
+                        }
+                        className="flex shrink-0 items-center justify-center gap-2 rounded border border-[#FFD700] px-3 py-2 text-[10px] font-black tracking-[0.18em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-60"
+                      >
+                        <RotateCcw
+                          size={13}
+                          className={
+                            regeneratingRosterId === selectedRoster.rosterId
+                              ? "animate-spin"
+                              : ""
+                          }
+                        />
+                        {regeneratingRosterId === selectedRoster.rosterId
+                          ? "生成中"
+                          : "重新生成进化图"}
+                      </button>
+                    </div>
+                    {regenerateError && (
+                      <div className="mt-2 text-[10px] text-[#FF6B9D]">
+                        {regenerateError}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedRoster && selectedEvolutionLocked && (
+                  <div className="rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3 text-[11px] leading-relaxed text-[#C5C6C7]">
+                    <div className="mb-1 flex items-center gap-2 text-[10px] font-black tracking-[0.26em] text-[#FFD700]">
+                      <Lock size={12} />
+                      角色暂不可用
+                    </div>
+                    {selectedRoster.name}
+                    正在完成进化图更新，期间不能出战或训练。真实形态图完成后会自动恢复使用。
+                  </div>
+                )}
+
+                {selectedRoster && selectedRecruitLocked && (
+                  <div className="rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3 text-[11px] leading-relaxed text-[#C5C6C7]">
+                    <div className="mb-1 flex items-center gap-2 text-[10px] font-black tracking-[0.26em] text-[#FFD700]">
+                      <Lock size={12} />
+                      角色暂不可用
+                    </div>
+                    {selectedRoster.recruitLock?.status === "failed"
+                      ? selectedRoster.recruitLock.error ||
+                        "后台招募失败，请移除后重新招募。"
+                      : `${selectedRoster.recruitLock?.description || "新角色"} 正在后台生成，完成后会自动解锁。`}
+                  </div>
+                )}
+
+                {activeEvolutionDebugMode && selectedRoster && (
+                  <div className="rounded-lg border border-[#FF6B9D]/50 bg-[#0B0C10]/70 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-[10px] font-black tracking-[0.28em] text-[#FF6B9D]">
+                          DEBUG EVOLUTION
+                        </div>
+                        <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
+                          {debugNextStage
+                            ? `${selectedRoster.name} 可进入 ${evolutionLabel(debugNextStage)} 进化演出测试。`
+                            : `${selectedRoster.name} 已是最终形态。`}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={startDebugEvolutionAnimation}
+                        disabled={!debugNextStage || selectedEvolutionLocked}
+                        className="flex shrink-0 items-center justify-center gap-2 rounded border border-[#FF6B9D] px-3 py-2 text-[10px] font-black tracking-[0.18em] text-[#FF6B9D] transition-all hover:bg-[#FF6B9D] hover:text-[#0B0C10] disabled:opacity-50"
+                      >
+                        <FlaskConical size={13} />
+                        测试进化演出
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                   <button
                     type="button"
                     onClick={startTower}
-                    className="flex items-center justify-center gap-2 rounded border-2 border-[#FFD700] py-3 font-black tracking-[0.25em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10]"
+                    disabled={!selectedRoster || selectedUnavailable}
+                    className="flex items-center justify-center gap-2 rounded border-2 border-[#FFD700] py-3 font-black tracking-[0.25em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#FFD700]"
                   >
                     <Castle size={16} />
                     {selectedRoster
-                      ? `${selectedRoster.name} · 进入九层塔`
+                      ? selectedUnavailable
+                        ? `${selectedRoster.name} · 暂不可用`
+                        : `${selectedRoster.name} · 进入九层塔`
                       : "进入九层塔"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startTraining}
+                    className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/55 px-4 py-3 text-xs font-black tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10"
+                  >
+                    <Gamepad2 size={15} />
+                    训练场
                   </button>
                   <button
                     type="button"
@@ -270,6 +650,14 @@ export const ModeSelectScreen: React.FC = () => {
               accent="#FFD700"
               description="描述一个想长期培养的角色，生成后进入本地麾下，1 分钟冷却。"
               highlight
+            />
+            <ModeCard
+              onClick={startTraining}
+              icon={<Gamepad2 size={30} />}
+              title="娱乐训练场"
+              subtitle="小游戏 · 角色升级"
+              accent="#66FCF1"
+              description="玩贪吃蛇和扫雷，分数结算为角色 XP。"
             />
             <ModeCard
               onClick={goRoster}

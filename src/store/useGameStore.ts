@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-export type SkillType = 'attack' | 'heal' | 'buff' | 'debuff' | 'ultimate';
+export type SkillType = "attack" | "heal" | "buff" | "debuff" | "ultimate";
 
 export interface Skill {
   name: string;
@@ -52,7 +52,7 @@ export interface CharacterData {
 export interface BattleEvent {
   id: string;
   turn: number;
-  attacker: 'player1' | 'player2' | 'system';
+  attacker: "player1" | "player2" | "system";
   message: string;
   damage?: number;
   heal?: number;
@@ -71,18 +71,19 @@ export interface BattleEvent {
 }
 
 export type GamePhase =
-  | 'WELCOME'
-  | 'MODE_SELECT'
-  | 'RECRUIT_CREATE'
-  | 'PLAYER1_CREATE'
-  | 'PLAYER2_CREATE'
-  | 'BATTLE_ARENA'
-  | 'GAME_OVER'
-  | 'ROSTER_VIEW'
-  | 'TOWER_HUB'
-  | 'TOWER_RESULT';
-export type ApiMode = 'free' | 'custom';
-export type BattleMode = 'pvp' | 'pve_tower';
+  | "WELCOME"
+  | "MODE_SELECT"
+  | "RECRUIT_CREATE"
+  | "PLAYER1_CREATE"
+  | "PLAYER2_CREATE"
+  | "BATTLE_ARENA"
+  | "GAME_OVER"
+  | "ROSTER_VIEW"
+  | "TRAINING_GROUND"
+  | "TOWER_HUB"
+  | "TOWER_RESULT";
+export type ApiMode = "free" | "custom";
+export type BattleMode = "pvp" | "pve_tower";
 
 interface GameStore {
   apiKey: string;
@@ -94,13 +95,17 @@ interface GameStore {
   player2: CharacterData | null;
   battleLogs: BattleEvent[];
   currentTurn: number;
-  winner: 'player1' | 'player2' | null;
+  winner: "player1" | "player2" | null;
   /** 当前战斗模式：PVP 或 九层塔 PVE */
   battleMode: BattleMode;
   /** PVE 当前挑战的塔层号 1-9 */
   towerLayer: number;
   /** PVE 出战的麾下角色 rosterId */
   towerRosterId: string | null;
+  /** 九层塔是否启用自动战斗 */
+  towerAutoMode: boolean;
+  /** Debug：允许角色跳过等级门槛直接进化 */
+  evolutionDebugMode: boolean;
 
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
@@ -114,29 +119,33 @@ interface GameStore {
   updatePlayer1UltimateCharge: (charge: number) => void;
   updatePlayer2UltimateCharge: (charge: number) => void;
   addBattleLog: (log: BattleEvent) => void;
-  setWinner: (winner: 'player1' | 'player2') => void;
+  setWinner: (winner: "player1" | "player2") => void;
   setBattleMode: (mode: BattleMode) => void;
   setTowerLayer: (layer: number) => void;
   setTowerRosterId: (rosterId: string | null) => void;
+  setTowerAutoMode: (mode: boolean) => void;
+  setEvolutionDebugMode: (mode: boolean) => void;
   resetGame: () => void;
 }
 
 export const useGameStore = create<GameStore>()(
   persist(
     (set) => ({
-      apiKey: '',
-      baseUrl: '',
-      model: '',
-      apiMode: 'free',
-      phase: 'WELCOME',
+      apiKey: "",
+      baseUrl: "",
+      model: "",
+      apiMode: "free",
+      phase: "WELCOME",
       player1: null,
       player2: null,
       battleLogs: [],
       currentTurn: 0,
       winner: null,
-      battleMode: 'pvp',
+      battleMode: "pvp",
       towerLayer: 1,
       towerRosterId: null,
+      towerAutoMode: false,
+      evolutionDebugMode: false,
 
       setApiKey: (key) => set({ apiKey: key }),
       setBaseUrl: (url) => set({ baseUrl: url }),
@@ -145,41 +154,79 @@ export const useGameStore = create<GameStore>()(
       setPhase: (phase) => set({ phase }),
       setPlayer1: (char) => set({ player1: char }),
       setPlayer2: (char) => set({ player2: char }),
-      updatePlayer1Hp: (hp) => set((state) => ({ player1: state.player1 ? { ...state.player1, hp } : null })),
-      updatePlayer2Hp: (hp) => set((state) => ({ player2: state.player2 ? { ...state.player2, hp } : null })),
-      updatePlayer1UltimateCharge: (charge) => set((state) => ({ player1: state.player1 ? { ...state.player1, ultimateCharge: charge } : null })),
-      updatePlayer2UltimateCharge: (charge) => set((state) => ({ player2: state.player2 ? { ...state.player2, ultimateCharge: charge } : null })),
-      addBattleLog: (log) => set((state) => ({
-        battleLogs: [...state.battleLogs, log],
-        currentTurn: Math.max(state.currentTurn, log.turn),
-      })),
-      setWinner: (winner) => set((state) => ({
-        winner,
-        phase: state.battleMode === 'pve_tower' ? 'TOWER_RESULT' : 'GAME_OVER',
-      })),
+      updatePlayer1Hp: (hp) =>
+        set((state) => ({
+          player1: state.player1 ? { ...state.player1, hp } : null,
+        })),
+      updatePlayer2Hp: (hp) =>
+        set((state) => ({
+          player2: state.player2 ? { ...state.player2, hp } : null,
+        })),
+      updatePlayer1UltimateCharge: (charge) =>
+        set((state) => ({
+          player1: state.player1
+            ? { ...state.player1, ultimateCharge: charge }
+            : null,
+        })),
+      updatePlayer2UltimateCharge: (charge) =>
+        set((state) => ({
+          player2: state.player2
+            ? { ...state.player2, ultimateCharge: charge }
+            : null,
+        })),
+      addBattleLog: (log) =>
+        set((state) => ({
+          battleLogs: [...state.battleLogs, log],
+          currentTurn: Math.max(state.currentTurn, log.turn),
+        })),
+      setWinner: (winner) =>
+        set((state) => ({
+          winner,
+          phase:
+            state.battleMode === "pve_tower" ? "TOWER_RESULT" : "GAME_OVER",
+        })),
       setBattleMode: (mode) => set({ battleMode: mode }),
       setTowerLayer: (layer) => set({ towerLayer: layer }),
       setTowerRosterId: (rosterId) => set({ towerRosterId: rosterId }),
-      resetGame: () => set({
-        phase: 'PLAYER1_CREATE',
-        player1: null,
-        player2: null,
-        battleLogs: [],
-        currentTurn: 0,
-        winner: null,
-        battleMode: 'pvp',
-        towerLayer: 1,
-        towerRosterId: null,
-      }),
+      setTowerAutoMode: (mode) => set({ towerAutoMode: mode }),
+      setEvolutionDebugMode: (mode) => set({ evolutionDebugMode: mode }),
+      resetGame: () =>
+        set({
+          phase: "PLAYER1_CREATE",
+          player1: null,
+          player2: null,
+          battleLogs: [],
+          currentTurn: 0,
+          winner: null,
+          battleMode: "pvp",
+          towerLayer: 1,
+          towerRosterId: null,
+          towerAutoMode: false,
+        }),
     }),
     {
-      name: 'word-brawl-config',
+      name: "word-brawl-config",
       partialize: (state) => ({
         apiKey: state.apiKey,
         baseUrl: state.baseUrl,
         model: state.model,
         apiMode: state.apiMode,
+        towerAutoMode: state.towerAutoMode,
+        evolutionDebugMode: state.evolutionDebugMode,
       }),
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<GameStore>;
+        return {
+          ...current,
+          apiKey: saved.apiKey ?? current.apiKey,
+          baseUrl: saved.baseUrl ?? current.baseUrl,
+          model: saved.model ?? current.model,
+          apiMode: saved.apiMode ?? current.apiMode,
+          towerAutoMode: saved.towerAutoMode ?? current.towerAutoMode,
+          evolutionDebugMode:
+            saved.evolutionDebugMode ?? current.evolutionDebugMode,
+        };
+      },
     },
   ),
 );
