@@ -293,11 +293,13 @@ export const probeImage = async (
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
+      const is429 = response.status === 429;
+      const is403 = response.status === 403;
       return {
         ok: false,
         status: response.status,
-        rateLimited: response.status === 429 || response.status === 403,
-        forbidden: response.status === 403,
+        rateLimited: is429,
+        forbidden: is403,
         retryAfterMs,
       };
     }
@@ -385,6 +387,10 @@ const generateValidatedImage = (
       const url = buildPollinationsUrl(enriched, width, height, seed, model);
       const probe = await probeImage(url, probeTimeoutMs);
       if (probe.ok) return url;
+      // 403 Forbidden（内容过滤/模型禁用）：不浪费退避时间，立即换模型重试。
+      if (probe.forbidden) {
+        continue;
+      }
       // 被限流：按服务端 retry-after 真正退避后，仍在本槽位内重试，绝不并发。
       if (probe.rateLimited) {
         const backoff =
@@ -412,17 +418,16 @@ export const generateCharacterImage = async (
   const cleaned = prompt.slice(0, 200);
   const enriched = `${cleaned}, single fictional game character avatar, centered head and upper body portrait, clear face or helmet, square composition, clean dark background, neon rim light, anime game art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
   const baseModel =
-    modelOverride === "" ? undefined : (modelOverride ?? "sana");
+    modelOverride === "" ? undefined : (modelOverride ?? "flux");
   const attempts: PollinationsAttempt[] = [
     { model: baseModel, seedKey: `${player}:${cleaned}` },
-    { model: undefined, seedKey: `${player}:${cleaned}:retry` },
   ];
   return generateValidatedImage(enriched, 256, 256, attempts, 45_000);
 };
 
 /**
  * 进化形象专用：匿名 Pollinations 稳定性优先。
- * - 进化头像是关键资源，只尝试 sana + 默认模型，避免为一个形态打出多次高风险请求。
+ * - 进化头像是关键资源，只尝试 flux，避免为一个形态打出多次高风险请求。
  * - 整个尝试循环在同一串行队列槽位内完成探测校验，确保返回的 URL 是真实可用的图片。
  * - 全部失败返回空串，调用方进入“待重试”状态或使用本地兜底图。
  */
@@ -447,8 +452,7 @@ export const generateEvolutionImage = async (
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const attempts: PollinationsAttempt[] = [
-    { model: "sana", seedKey: `${seedSalt}:s1` },
-    { model: undefined, seedKey: `${seedSalt}:s2` },
+    { model: "flux", seedKey: `${seedSalt}:s1` },
   ];
   return generateValidatedImage(
     enriched,
@@ -482,8 +486,7 @@ export const generateEvolutionUltimateImage = async (
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const attempts: PollinationsAttempt[] = [
-    { model: "sana", seedKey: `${seedSalt}:u1` },
-    { model: undefined, seedKey: `${seedSalt}:u2` },
+    { model: "flux", seedKey: `${seedSalt}:u1` },
   ];
   return generateValidatedImage(
     enriched,

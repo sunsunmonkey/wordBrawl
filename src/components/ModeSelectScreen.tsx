@@ -316,7 +316,7 @@ interface ModeCardProps {
   onClick: () => void;
   icon: React.ReactNode;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   description: string;
   accent: string;
   highlight?: boolean;
