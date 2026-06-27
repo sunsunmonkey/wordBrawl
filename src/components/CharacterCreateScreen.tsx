@@ -552,13 +552,13 @@ export const CharacterCreateScreen: React.FC = () => {
     const sourceDescription = description.trim();
 
     try {
-      setAvatarHint("正在并行生成角色与头像...");
-      const [charData, avatar] = await Promise.all([
-        generateCharacter(cfg, sourceDescription),
-        loadGeneratedAvatar(() =>
-          generateCharacterImage(cfg, sourceDescription, player),
-        ),
-      ]);
+      setAvatarHint("正在生成头像...");
+      const avatar = await loadGeneratedAvatar(() =>
+        generateCharacterImage(cfg, sourceDescription, player),
+      );
+
+      setAvatarHint("头像就绪，正在生成角色数值...");
+      const charData = await generateCharacter(cfg, sourceDescription);
 
       charData.imageUrl = avatar.ready
         ? await cacheImageUrlAsDataUrl(avatar.url)
