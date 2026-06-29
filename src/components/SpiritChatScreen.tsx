@@ -22,7 +22,11 @@ import {
 } from "../store/useSpiritChatStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { requestSpiritChat } from "../utils/spiritChat";
-import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
+import {
+  applyTrainingXp,
+  evolutionLabel,
+  levelAscensionLabel,
+} from "../utils/towerProgress";
 
 const QUICK_PROMPTS = [
   "我今天有点累，陪我聊会儿。",
@@ -46,8 +50,18 @@ const moodColor = (bond: number) => {
 };
 
 export const SpiritChatScreen: React.FC = () => {
-  const { apiKey, baseUrl, model, apiMode, setPhase } = useGameStore();
+  const {
+    apiKey,
+    baseUrl,
+    model,
+    apiMode,
+    setPhase,
+    setBattleMode,
+    setTowerRosterId,
+    setTowerLayer,
+  } = useGameStore();
   const roster = useRosterStore((s) => s.roster);
+  const updateCharacter = useRosterStore((s) => s.updateCharacter);
   const lastSummary = useTowerStore((s) => s.lastSummary);
   const lastRosterId = useTowerStore((s) => s.lastRosterId);
   const openRosterId = useSpiritChatStore((s) => s.openRosterId);
@@ -150,6 +164,7 @@ export const SpiritChatScreen: React.FC = () => {
         {
           role: "spirit",
           content: result.reply,
+          xpGranted: result.xpGranted,
         },
         {
           mood: result.mood,
@@ -158,8 +173,16 @@ export const SpiritChatScreen: React.FC = () => {
           playerFacts: result.playerFacts,
           promises: result.promises,
           lastSuggestedAction: result.lastSuggestedAction,
+          triggerEvent: result.triggerEvent,
         },
       );
+
+      if (result.xpGranted && result.xpGranted > 0) {
+        updateCharacter(
+          selected.rosterId,
+          (char) => applyTrainingXp(char, result.xpGranted!).character,
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "词灵暂时没有回应。");
     } finally {
@@ -492,6 +515,64 @@ export const SpiritChatScreen: React.FC = () => {
                         name={selected.name}
                       />
                     ))}
+
+                    {chat.triggerEvent && !isSending && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="my-4 flex flex-col items-center justify-center p-4 rounded-xl border-2 bg-[#1F2833]/60 backdrop-blur-md"
+                        style={{
+                          borderColor:
+                            chat.triggerEvent.type === "TOWER_CHALLENGE"
+                              ? "#FFD700"
+                              : "#FF003C",
+                          boxShadow: `0 0 24px ${chat.triggerEvent.type === "TOWER_CHALLENGE" ? "rgba(255,215,0,0.15)" : "rgba(255,0,60,0.15)"}`,
+                        }}
+                      >
+                        <div className="mb-2 text-xs font-black tracking-widest text-[#C5C6C7]">
+                          {chat.triggerEvent.type === "TOWER_CHALLENGE"
+                            ? "🔥 九层塔挑战邀请"
+                            : "⚔️ 切磋对战邀请"}
+                        </div>
+                        <div className="mb-4 text-[11px] text-[#8a8d91] italic">
+                          “{chat.triggerEvent.description}”
+                        </div>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                chat.triggerEvent?.type === "TOWER_CHALLENGE"
+                              ) {
+                                setTowerRosterId(selected.rosterId);
+                                setTowerLayer(
+                                  chat.triggerEvent.layer ||
+                                    selected.tower.nextLayer ||
+                                    1,
+                                );
+                                setBattleMode("pve_tower");
+                                setPhase("TOWER_HUB");
+                              } else {
+                                setBattleMode("pvp");
+                                setPhase("PLAYER1_CREATE");
+                              }
+                            }}
+                            className="flex items-center gap-2 rounded px-6 py-2 text-xs font-black tracking-widest transition-all hover:scale-105"
+                            style={{
+                              backgroundColor:
+                                chat.triggerEvent.type === "TOWER_CHALLENGE"
+                                  ? "#FFD700"
+                                  : "#FF003C",
+                              color: "#0B0C10",
+                            }}
+                          >
+                            <Swords size={14} />
+                            接受挑战
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+
                     {isSending && (
                       <motion.div
                         key="typing"
@@ -659,8 +740,15 @@ const ChatBubble: React.FC<{
         >
           {message.content}
         </div>
-        <div className="mt-1 text-[9px] tracking-widest text-[#8a8d91]">
+        <div
+          className={`mt-1 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
+        >
           {isPlayer ? "YOU" : name} · {formatTime(message.createdAt)}
+          {!isPlayer && message.xpGranted && message.xpGranted > 0 && (
+            <span className="flex items-center gap-1 rounded bg-[#7FFF9F]/10 px-1 py-0.5 text-[#7FFF9F] border border-[#7FFF9F]/30">
+              <Zap size={8} /> +{message.xpGranted} XP
+            </span>
+          )}
         </div>
       </div>
     </motion.div>

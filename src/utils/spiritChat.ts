@@ -20,6 +20,12 @@ export interface SpiritChatResult {
   playerFacts: string[];
   promises: string[];
   lastSuggestedAction?: string;
+  triggerEvent?: {
+    type: "TOWER_CHALLENGE" | "PVP_SPARRING";
+    description: string;
+    layer?: number;
+  } | null;
+  xpGranted?: number;
 }
 
 const stripJsonFences = (raw: string): string => {
@@ -60,7 +66,11 @@ const normalizeList = (
 ): string[] => {
   if (!Array.isArray(value)) return fallback;
   const list = value
-    .map((item) => String(item || "").trim().slice(0, maxLength))
+    .map((item) =>
+      String(item || "")
+        .trim()
+        .slice(0, maxLength),
+    )
     .filter(Boolean)
     .slice(0, maxItems);
   return list.length > 0 ? list : fallback;
@@ -163,16 +173,22 @@ const normalizeResult = (
       current.memorySummary,
       600,
     ),
-    playerFacts: normalizeList(
-      data.playerFacts,
-      current.playerFacts,
-      12,
-      80,
-    ),
+    playerFacts: normalizeList(data.playerFacts, current.playerFacts, 12, 80),
     promises: normalizeList(data.promises, current.promises, 12, 80),
     lastSuggestedAction: data.lastSuggestedAction
       ? normalizeText(data.lastSuggestedAction, "", 80)
       : current.lastSuggestedAction,
+    triggerEvent:
+      data.triggerEvent &&
+      typeof data.triggerEvent === "object" &&
+      "type" in data.triggerEvent
+        ? (data.triggerEvent as {
+            type: "TOWER_CHALLENGE" | "PVP_SPARRING";
+            description: string;
+            layer?: number;
+          })
+        : null,
+    xpGranted: clampInt(data.xpGranted, 0, 50, 0),
   };
 };
 
@@ -186,8 +202,21 @@ const SYSTEM_PROMPT = `你是《词灵乱斗》里的一个“词灵”，不是
 - 可以轻松聊天、开玩笑、安慰、追问、表达好奇，也可以偶尔主动分享自己的想法。
 - 不要自称 AI，不要跳出游戏世界，不要解释你在根据 prompt 回答。
 - 不要替玩家做现实世界承诺；如果玩家要求现实建议，可以用角色口吻温和回应。
-- 不要直接修改数值、发放奖励或承诺系统未实现的效果。
+- 不要直接修改数值、发放奖励或承诺系统未实现的效果（经验值除外）。
 - 如果玩家只是闲聊，不需要强行总结成重大约定；只有稳定事实、情绪偏好、重要承诺才写入长期记忆。
+
+核心机制（重要）：
+1. 战斗邀请：如果对话中玩家有意挑衅你，或者你们聊到了热血沸腾的话题，或者你极度渴望向玩家证明自己的实力，你可以主动发起一场战斗！
+你可以通过填写 JSON 的 \`triggerEvent\` 字段来发起战斗：
+场景1：去打怪证明自己。设为 {"type": "TOWER_CHALLENGE", "description": "简短的宣战口号", "layer": 推荐层数(默认比当前最高层高1)}。
+场景2：被玩家激怒或想和玩家本人的投影切磋。设为 {"type": "PVP_SPARRING", "description": "简短的切磋理由"}。
+如果没有这种冲动，或者氛围不适合战斗，\`triggerEvent\` 必须为 null。不要频繁触发，仅在战意高昂时触发！
+
+2. 经验获取：词灵可以通过有意义的对话获得实战经验（XP）！
+- 普通闲聊：0 XP
+- 深入探讨战术/复盘战斗：10-20 XP
+- 情感突破、解开心结或定下重大约定：30-50 XP
+请将你决定赋予的经验值填入 \`xpGranted\` 字段。
 
 你必须返回合法 JSON，不能包含 markdown、注释或额外文字：
 {
@@ -197,7 +226,9 @@ const SYSTEM_PROMPT = `你是《词灵乱斗》里的一个“词灵”，不是
   "memorySummary": "更新后的长期关系记忆，保留最重要事实和情感，不超过180字",
   "playerFacts": ["关于玩家/契约者的稳定事实"],
   "promises": ["玩家和词灵之间的重要约定"],
-  "lastSuggestedAction": "词灵自然提出的下一步行动，可为空"
+  "lastSuggestedAction": "词灵自然提出的下一步行动，可为空",
+  "triggerEvent": null, // 仅在主动发起战斗时填写对应的对象
+  "xpGranted": 0 // 本次对话赋予角色的经验值（0-50）
 }
 bond 是更新后的总羁绊值 0-100，可根据本轮互动微调，普通聊天 +0 到 +2，真诚安慰/战后复盘可 +1 到 +4。`;
 

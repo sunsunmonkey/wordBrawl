@@ -8,6 +8,13 @@ export interface SpiritChatMessage {
   role: SpiritChatRole;
   content: string;
   createdAt: number;
+  xpGranted?: number;
+}
+
+export interface SpiritChatTriggerEvent {
+  type: "TOWER_CHALLENGE" | "PVP_SPARRING";
+  description: string;
+  layer?: number;
 }
 
 export interface SpiritChatRecord {
@@ -19,6 +26,7 @@ export interface SpiritChatRecord {
   playerFacts: string[];
   promises: string[];
   lastSuggestedAction?: string;
+  triggerEvent?: SpiritChatTriggerEvent | null;
   updatedAt: number;
 }
 
@@ -45,6 +53,7 @@ interface SpiritChatStore {
         | "playerFacts"
         | "promises"
         | "lastSuggestedAction"
+        | "triggerEvent"
       >
     >,
   ) => void;
@@ -100,6 +109,7 @@ const normalizeRecord = (
     lastSuggestedAction: value.lastSuggestedAction
       ? String(value.lastSuggestedAction).slice(0, 80)
       : undefined,
+    triggerEvent: value.triggerEvent || null,
     updatedAt:
       typeof value.updatedAt === "number" ? value.updatedAt : Date.now(),
   };
@@ -113,6 +123,7 @@ const toMessage = (
   role: message.role,
   content: message.content.trim(),
   createdAt: message.createdAt ?? Date.now(),
+  xpGranted: message.xpGranted,
 });
 
 export const useSpiritChatStore = create<SpiritChatStore>()(
@@ -179,8 +190,14 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                     : current.promises,
                 lastSuggestedAction:
                   updates.lastSuggestedAction !== undefined
-                    ? String(updates.lastSuggestedAction).slice(0, 80)
+                    ? updates.lastSuggestedAction
+                      ? String(updates.lastSuggestedAction).slice(0, 80)
+                      : undefined
                     : current.lastSuggestedAction,
+                triggerEvent:
+                  updates.triggerEvent !== undefined
+                    ? updates.triggerEvent
+                    : current.triggerEvent,
                 updatedAt: Date.now(),
               },
             },
