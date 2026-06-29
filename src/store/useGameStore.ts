@@ -103,7 +103,6 @@ export type GamePhase =
   | "GAME_OVER"
   | "ROSTER_VIEW"
   | "SPIRIT_CHAT"
-  | "TRAINING_GROUND"
   | "TOWER_HUB"
   | "TOWER_RESULT";
 export type ApiMode = "free" | "custom";
