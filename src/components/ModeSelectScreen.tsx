@@ -10,7 +10,6 @@ import {
   Shield,
   Gauge,
   Plus,
-  Gamepad2,
   RotateCcw,
   FlaskConical,
   Lock,
@@ -162,10 +161,6 @@ export const ModeSelectScreen: React.FC = () => {
     setTowerRosterId(selectedRoster.rosterId);
     setTowerLayer(selectedRoster.tower.nextLayer ?? 1);
     setPhase("TOWER_HUB");
-  };
-
-  const startTraining = () => {
-    setPhase("TRAINING_GROUND");
   };
 
   const startSpiritChat = () => {
@@ -613,7 +608,7 @@ export const ModeSelectScreen: React.FC = () => {
                   </div>
                 )}
 
-                <div className="mt-auto grid shrink-0 gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+                <div className="mt-auto grid shrink-0 gap-2 sm:grid-cols-[1fr_auto_auto]">
                   <button
                     type="button"
                     onClick={startTower}
@@ -631,18 +626,10 @@ export const ModeSelectScreen: React.FC = () => {
                     type="button"
                     onClick={startSpiritChat}
                     disabled={!selectedRoster || selectedUnavailable}
-                    className="flex items-center justify-center gap-2 rounded border border-[#FFD700]/55 px-4 py-3 text-xs font-black tracking-[0.2em] text-[#FFD700] transition-all hover:bg-[#FFD700]/10 disabled:opacity-45"
+                    className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/55 px-4 py-3 text-xs font-black tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10 disabled:opacity-45"
                   >
                     <MessageCircle size={15} />
-                    交谈
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startTraining}
-                    className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/55 px-4 py-3 text-xs font-black tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10"
-                  >
-                    <Gamepad2 size={15} />
-                    训练场
+                    进入会客室
                   </button>
                   <button
                     type="button"
@@ -679,12 +666,14 @@ export const ModeSelectScreen: React.FC = () => {
               highlight
             />
             <ModeCard
-              onClick={startTraining}
-              icon={<Gamepad2 size={30} />}
-              title="娱乐训练场"
-              subtitle="小游戏 · 角色升级"
+              onClick={startSpiritChat}
+              disabled={!selectedRoster || selectedUnavailable}
+              icon={<MessageCircle size={30} />}
+              title="词灵会客室"
+              subtitle="独立记忆 · 灵契羁绊"
               accent="#66FCF1"
-              description="玩贪吃蛇和扫雷，分数结算为角色 XP。"
+              description="与当前核心角色进行深度交流，培养羁绊，沉淀只属于你们的灵魂记忆。"
+              highlight
             />
             <ModeCard
               onClick={goRoster}
@@ -735,6 +724,7 @@ interface ModeCardProps {
   description: string;
   accent: string;
   highlight?: boolean;
+  disabled?: boolean;
 }
 
 const ModeCard: React.FC<ModeCardProps> = ({
@@ -745,18 +735,23 @@ const ModeCard: React.FC<ModeCardProps> = ({
   description,
   accent,
   highlight,
+  disabled,
 }) => {
   return (
     <motion.button
       onClick={onClick}
-      whileHover={{ scale: 1.03, y: -4 }}
-      whileTap={{ scale: 0.98 }}
-      className="relative flex flex-col items-start gap-3 p-6 bg-[#1F2833]/70 border-2 rounded-lg text-left transition-all"
+      disabled={disabled}
+      whileHover={disabled ? {} : { scale: 1.03, y: -4 }}
+      whileTap={disabled ? {} : { scale: 0.98 }}
+      className={`relative flex flex-col items-start gap-3 p-6 bg-[#1F2833]/70 border-2 rounded-lg text-left transition-all ${
+        disabled ? "opacity-50 cursor-not-allowed grayscale-[0.5]" : ""
+      }`}
       style={{
-        borderColor: highlight ? accent : `${accent}55`,
-        boxShadow: highlight
-          ? `0 0 30px ${accent}40, inset 0 0 20px ${accent}20`
-          : `0 0 14px ${accent}20`,
+        borderColor: highlight && !disabled ? accent : `${accent}55`,
+        boxShadow:
+          highlight && !disabled
+            ? `0 0 30px ${accent}40, inset 0 0 20px ${accent}20`
+            : `0 0 14px ${accent}20`,
       }}
     >
       <div
