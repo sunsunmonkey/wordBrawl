@@ -142,6 +142,12 @@ const getBestSupportValue = (c: CharacterData): number => {
   return Math.max(0, ...c.skills.map((s) => Math.max(s.healPercent || 0, s.buffPercent || 0)));
 };
 
+const pickOne = (items?: string[]): string => {
+  const list = (items || []).filter(Boolean);
+  if (list.length === 0) return '';
+  return list[Math.floor(Math.random() * list.length)];
+};
+
 const estimateCombatPower = (c: CharacterData): number => {
   return (
     c.maxHp * 0.12 +
@@ -369,9 +375,38 @@ export class BattleEngine {
     return `临场状态：【${this.p1.name}】${this.p1BattleState.name}（${this.p1BattleState.description}）；【${this.p2.name}】${this.p2BattleState.name}（${this.p2BattleState.description}）。${underdogText}`;
   }
 
+  private formatSpiritIntro(c: CharacterData): string | null {
+    const profile = c.spiritProfile;
+    if (!profile) return null;
+    const anchors = profile.worldAnchors?.length
+      ? `世界锚点：${profile.worldAnchors.slice(0, 2).join('；')}。`
+      : '';
+    return `词灵档案：【${c.name}】${profile.archetype}。${profile.temperament}；${profile.speechStyle}。${anchors}`;
+  }
+
+  private formatVoice(c: CharacterData, intent: 'skill' | 'ultimate' | 'win' | 'loss'): string {
+    const profile = c.spiritProfile;
+    if (!profile) return '';
+    const line =
+      intent === 'ultimate'
+        ? profile.battleCry || pickOne(profile.catchphrases)
+        : intent === 'win'
+          ? profile.victoryLine
+          : intent === 'loss'
+            ? profile.defeatLine
+            : pickOne(profile.catchphrases);
+    return line ? `“${line}”` : '';
+  }
+
+  private formatDefeatMessage(defender: CharacterData, attacker: CharacterData): string {
+    const winnerVoice = this.formatVoice(attacker, 'win');
+    const loserVoice = this.formatVoice(defender, 'loss');
+    return `【${defender.name}】倒下了！${loserVoice ? `${defender.name}低声道：${loserVoice}` : ''}${winnerVoice ? ` ${attacker.name}宣告：${winnerVoice}` : ''}`;
+  }
+
   /** 生成战斗开场日志。手动塔战和自动模拟共用同一份开场信息。 */
   createOpeningLogs(): BattleEvent[] {
-    return [
+    const logs: BattleEvent[] = [
       {
         id: `turn-${this.instanceId}-0-start`,
         turn: 0,
@@ -385,6 +420,25 @@ export class BattleEngine {
         message: this.formatStateSummary(),
       },
     ];
+    const p1Intro = this.formatSpiritIntro(this.p1);
+    const p2Intro = this.formatSpiritIntro(this.p2);
+    if (p1Intro) {
+      logs.push({
+        id: `turn-${this.instanceId}-0-p1-spirit`,
+        turn: 0,
+        attacker: 'system',
+        message: p1Intro,
+      });
+    }
+    if (p2Intro) {
+      logs.push({
+        id: `turn-${this.instanceId}-0-p2-spirit`,
+        turn: 0,
+        attacker: 'system',
+        message: p2Intro,
+      });
+    }
+    return logs;
   }
 
   private maybeApplyUnderdogClutch(defender: CharacterData, attacker: CharacterData, incomingDamage: number, isUlt: boolean, isFinisher: boolean): { damage: number; suffix: string } {
@@ -441,7 +495,8 @@ export class BattleEngine {
       const healAmount = Math.floor(attacker.maxHp * (skill.healPercent || 20) / 100 * healSwing);
       attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmount);
       heal = healAmount;
-      logMessage = `【${attacker.name}】释放了【${skill.name}】，恢复了 ${healAmount} 点生命！`;
+      const voice = this.formatVoice(attacker, 'skill');
+      logMessage = `【${attacker.name}】${voice}释放了【${skill.name}】，恢复了 ${healAmount} 点生命！`;
     } else if (skill.type === 'buff') {
       const buffAmount = Math.floor((skill.buffPercent || 30) * (0.9 + Math.random() * 0.45));
       if (Math.random() < 0.5) {
@@ -450,7 +505,8 @@ export class BattleEngine {
         attacker.defenseBuff = buffAmount;
       }
       attacker.buffTurnsLeft = skill.buffTurns || 2;
-      logMessage = `【${attacker.name}】蓄力释放【${skill.name}】，自身战力提升 ${buffAmount}%！`;
+      const voice = this.formatVoice(attacker, 'skill');
+      logMessage = `【${attacker.name}】${voice}蓄力释放【${skill.name}】，自身战力提升 ${buffAmount}%！`;
     } else if (skill.type === 'debuff') {
       const debuffAmount = Math.floor((skill.buffPercent || 25) * (0.9 + Math.random() * 0.5));
       defender.attackBuff = -debuffAmount;
@@ -466,7 +522,8 @@ export class BattleEngine {
       actualDmg = clutch.damage;
       defender.hp = Math.max(0, defender.hp - actualDmg);
       damage = actualDmg;
-      logMessage = `【${attacker.name}】施放【${skill.name}】削弱对手 ${debuffAmount}%，并造成 ${actualDmg} 点伤害！${isFinisher ? '天命一击，直接击穿胜负线！' : ''}${clutch.suffix}`;
+      const voice = this.formatVoice(attacker, 'skill');
+      logMessage = `【${attacker.name}】${voice}施放【${skill.name}】削弱对手 ${debuffAmount}%，并造成 ${actualDmg} 点伤害！${isFinisher ? '天命一击，直接击穿胜负线！' : ''}${clutch.suffix}`;
     } else {
       // attack / ultimate
       const baseDamage = this.getEffectiveAttack(attacker) * skill.damageMultiplier;
@@ -488,10 +545,12 @@ export class BattleEngine {
       damage = finalDamage;
 
       if (isUlt) {
-        logMessage = `【${attacker.name}】爆气释放大招【${skill.name}】！${skill.description} 对【${defender.name}】造成毁灭性 ${finalDamage} 点伤害！${isFinisher ? '天命一击，一招定胜负！' : ''}${clutch.suffix}`;
+        const voice = this.formatVoice(attacker, 'ultimate');
+        logMessage = `【${attacker.name}】${voice}爆气释放大招【${skill.name}】！${skill.description} 对【${defender.name}】造成毁灭性 ${finalDamage} 点伤害！${isFinisher ? '天命一击，一招定胜负！' : ''}${clutch.suffix}`;
         attacker.ultimateCharge = 0;
       } else {
-        logMessage = `【${attacker.name}】使出【${skill.name}】！${isCrit ? '触发暴击，' : ''}对【${defender.name}】造成 ${finalDamage} 点伤害。${isFinisher ? '天命一击，瞬间清场！' : ''}${clutch.suffix}`;
+        const voice = this.formatVoice(attacker, 'skill');
+        logMessage = `【${attacker.name}】${voice}使出【${skill.name}】！${isCrit ? '触发暴击，' : ''}对【${defender.name}】造成 ${finalDamage} 点伤害。${isFinisher ? '天命一击，瞬间清场！' : ''}${clutch.suffix}`;
       }
     }
 
@@ -560,6 +619,19 @@ export class BattleEngine {
     return this.p1.hp > 0 ? 'player1' : 'player2';
   }
 
+  createDefeatLog(defenderId?: 'player1' | 'player2'): BattleEvent {
+    const resolvedDefenderId =
+      defenderId ?? (this.p1.hp <= 0 ? 'player1' : 'player2');
+    const defender = resolvedDefenderId === 'player1' ? this.p1 : this.p2;
+    const attacker = resolvedDefenderId === 'player1' ? this.p2 : this.p1;
+    return {
+      id: `turn-${this.instanceId}-${this.currentTurn}-end`,
+      turn: this.currentTurn,
+      attacker: 'system',
+      message: this.formatDefeatMessage(defender, attacker),
+    };
+  }
+
   /** 自动模拟整场战斗（自动模式用） */
   public simulateBattle(): { logs: BattleEvent[], winner: 'player1' | 'player2' } {
     this.logs.push(...this.createOpeningLogs());
@@ -575,12 +647,7 @@ export class BattleEngine {
       this.executeSkill(attackerId, skill);
 
       if (defender.hp <= 0) {
-        this.logs.push({
-          id: `turn-${this.instanceId}-${this.currentTurn}-end`,
-          turn: this.currentTurn,
-          attacker: 'system',
-          message: `【${defender.name}】倒下了！`
-        });
+        this.logs.push(this.createDefeatLog(p1Turn ? 'player2' : 'player1'));
         break;
       }
 

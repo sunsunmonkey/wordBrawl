@@ -11,10 +11,12 @@ import { CharacterDetailModal } from './CharacterDetailModal';
 import { ParticleField } from './ParticleField';
 import { evolutionStars, levelAscensionLabel } from '../utils/towerProgress';
 import { BackButton } from './BackButton';
+import { useSpiritChatStore } from '../store/useSpiritChatStore';
 
 export const RosterScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
   const { roster, removeCharacter } = useRosterStore();
+  const setOpenSpiritRosterId = useSpiritChatStore((s) => s.setOpenRosterId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const themeColor = '#66FCF1';
   const themeRgb = '102, 252, 241';
@@ -177,6 +179,11 @@ export const RosterScreen: React.FC = () => {
             key={selected.rosterId}
             character={selected}
             onClose={() => setSelectedId(null)}
+            onChat={() => {
+              setOpenSpiritRosterId(selected.rosterId);
+              setSelectedId(null);
+              setPhase('SPIRIT_CHAT');
+            }}
             onRemove={() => {
               handleRemoveCharacter(selected.rosterId, selected.name);
             }}

@@ -24,6 +24,27 @@ export interface Skill {
   buffTurns?: number;
 }
 
+export interface SpiritProfile {
+  /** 词灵原型：类似角色卡里的身份定位 */
+  archetype: string;
+  /** 性格底色：影响战斗叙事语气 */
+  temperament: string;
+  /** 说话方式：短句、古风、机械播报、嘲讽等 */
+  speechStyle: string;
+  /** 战斗中可穿插的短台词 */
+  catchphrases: string[];
+  /** 释放大招或关键行动时的宣言 */
+  battleCry: string;
+  /** 胜利时的收束台词 */
+  victoryLine: string;
+  /** 落败时的收束台词 */
+  defeatLine: string;
+  /** 世界观锚点：角色来自哪里、信奉什么、背负什么规则 */
+  worldAnchors: string[];
+  /** 记忆种子：后续成长和塔战叙事可复用的长期动机 */
+  memorySeeds: string[];
+}
+
 export interface CharacterData {
   name: string;
   hp: number;
@@ -45,6 +66,8 @@ export interface CharacterData {
   critBonus?: number;
   /** 生成时的原始描述文本，便于赛后收入麾下时回写 */
   sourceDescription?: string;
+  /** custom API 生成的词灵人格卡，不参与数值计算，只驱动叙事表现 */
+  spiritProfile?: SpiritProfile;
   /** 来自预设角色，不参与赛后收入麾下 */
   isPreset?: boolean;
 }
@@ -79,6 +102,7 @@ export type GamePhase =
   | "BATTLE_ARENA"
   | "GAME_OVER"
   | "ROSTER_VIEW"
+  | "SPIRIT_CHAT"
   | "TRAINING_GROUND"
   | "TOWER_HUB"
   | "TOWER_RESULT";
