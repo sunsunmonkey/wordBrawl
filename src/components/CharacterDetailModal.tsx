@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Zap, Shield, Gauge, Trash2, Sparkles, Flame, Swords, type LucideIcon } from 'lucide-react';
-import type { Skill } from '../store/useGameStore';
+import { Heart, Zap, Shield, Gauge, Trash2, Sparkles, Flame, Swords, MessageCircle, BookOpen, Brain, type LucideIcon } from 'lucide-react';
+import type { Skill, SpiritProfile } from '../store/useGameStore';
 import { ULTIMATE_TYPES } from '../data/ultimateTypes';
 import type { EvolutionStage, FormHistoryEntry, TowerRunRecord } from '../store/useRosterStore';
 import { evolutionLabel, evolutionStars, getNextEvolutionProgress, levelAscensionLabel, xpProgress } from '../utils/towerProgress';
@@ -15,6 +15,7 @@ export interface DisplayCharacter {
   speed: number;
   skills: Skill[];
   sourceDescription?: string;
+  spiritProfile?: SpiritProfile;
   recruitedAt?: number;
   rosterId?: string;
   level?: number;
@@ -57,6 +58,7 @@ interface CharacterDetailModalProps {
   character: DisplayCharacter;
   onClose: () => void;
   onRemove?: () => void;
+  onChat?: () => void;
   themeColor?: string;
 }
 
@@ -64,11 +66,16 @@ export const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   character,
   onClose,
   onRemove,
+  onChat,
   themeColor = '#66FCF1',
 }) => {
   const [imgFailed, setImgFailed] = useState(false);
   const hasGrowth = typeof character.level === 'number';
   const [activeTab, setActiveTab] = useState<'profile' | 'growth'>('profile');
+  const spirit = character.spiritProfile;
+  const catchphrases = spirit?.catchphrases ?? [];
+  const worldAnchors = spirit?.worldAnchors ?? [];
+  const memorySeeds = spirit?.memorySeeds ?? [];
 
   const level = character.level ?? 1;
   const xp = character.xp ?? 0;
@@ -181,6 +188,85 @@ export const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                 <StatRow icon={<Shield size={14} />} label="防御" value={character.defense} color="#66FCF1" />
                 <StatRow icon={<Gauge size={14} />} label="速度" value={character.speed} color="#7FFF9F" />
               </div>
+
+              {spirit && (
+                <div className="mb-6 rounded border bg-[#0B0C10]/60 p-4" style={{ borderColor: `${themeColor}44` }}>
+                  <div className="mb-3 flex items-center gap-2 text-xs font-bold tracking-wider" style={{ color: themeColor }}>
+                    <Brain size={14} />
+                    ▸ 词灵档案 · SPIRIT CARD
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded border border-[#45A29E]/20 bg-[#1F2833]/45 p-3">
+                      <div className="text-[10px] tracking-widest text-[#8a8d91]">原型</div>
+                      <div className="mt-1 text-sm font-bold text-[#C5C6C7]">{spirit.archetype}</div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-[#C5C6C7]">
+                        {spirit.temperament}
+                      </div>
+                    </div>
+                    <div className="rounded border border-[#45A29E]/20 bg-[#1F2833]/45 p-3">
+                      <div className="flex items-center gap-1 text-[10px] tracking-widest text-[#8a8d91]">
+                        <MessageCircle size={11} />
+                        语气
+                      </div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
+                        {spirit.speechStyle}
+                      </div>
+                      {spirit.battleCry && (
+                        <div className="mt-2 text-xs font-bold" style={{ color: themeColor }}>
+                          “{spirit.battleCry}”
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {catchphrases.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {catchphrases.map((line, idx) => (
+                        <span
+                          key={idx}
+                          className="rounded border px-2 py-1 text-[10px] leading-none text-[#C5C6C7]"
+                          style={{ borderColor: `${themeColor}55`, background: `${themeColor}11` }}
+                        >
+                          “{line}”
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(worldAnchors.length > 0 || memorySeeds.length > 0) && (
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {worldAnchors.length > 0 && (
+                        <div>
+                          <div className="mb-1 flex items-center gap-1 text-[10px] tracking-widest text-[#8a8d91]">
+                            <BookOpen size={11} />
+                            世界锚点
+                          </div>
+                          <div className="space-y-1">
+                            {worldAnchors.map((anchor, idx) => (
+                              <div key={idx} className="text-[11px] leading-relaxed text-[#C5C6C7]">
+                                <span style={{ color: themeColor }}>▸</span> {anchor}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {memorySeeds.length > 0 && (
+                        <div>
+                          <div className="mb-1 flex items-center gap-1 text-[10px] tracking-widest text-[#8a8d91]">
+                            <Sparkles size={11} />
+                            记忆种子
+                          </div>
+                          <div className="space-y-1">
+                            {memorySeeds.map((seed, idx) => (
+                              <div key={idx} className="text-[11px] leading-relaxed text-[#C5C6C7]">
+                                <span style={{ color: themeColor }}>▸</span> {seed}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <div className="text-xs font-bold tracking-wider mb-2" style={{ color: themeColor }}>
@@ -387,6 +473,15 @@ export const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
           >
             返回
           </button>
+          {onChat && (
+            <button
+              type="button"
+              onClick={onChat}
+              className="flex items-center gap-1.5 px-4 py-2.5 border-2 rounded text-xs font-display tracking-widest text-[#FFD700] border-[#FFD700]/70 hover:bg-[#FFD700]/10 transition-all"
+            >
+              <MessageCircle size={12} /> 交谈
+            </button>
+          )}
           {onRemove && (
             <button
               type="button"

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { CharacterData, Skill } from "../store/useGameStore";
+import { CharacterData, Skill, SpiritProfile } from "../store/useGameStore";
 import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from "../data/ultimateTypes";
 import {
   isPollinationsUrl,
@@ -59,6 +59,48 @@ const clampNumber = (
   return Math.min(max, Math.max(min, numeric));
 };
 
+const normalizeText = (
+  value: unknown,
+  fallback: string,
+  maxLength: number,
+): string => {
+  const text = String(value || "").trim();
+  return (text || fallback).slice(0, maxLength);
+};
+
+const normalizeTextList = (
+  value: unknown,
+  maxItems: number,
+  maxLength: number,
+): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").trim().slice(0, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+};
+
+const normalizeSpiritProfile = (value: unknown): SpiritProfile | undefined => {
+  const profile = asRecord(value);
+  if (Object.keys(profile).length === 0) return undefined;
+
+  const catchphrases = normalizeTextList(profile.catchphrases, 4, 32);
+  const worldAnchors = normalizeTextList(profile.worldAnchors, 4, 48);
+  const memorySeeds = normalizeTextList(profile.memorySeeds, 4, 48);
+
+  return {
+    archetype: normalizeText(profile.archetype, "未明词灵", 32),
+    temperament: normalizeText(profile.temperament, "冷静而好战", 36),
+    speechStyle: normalizeText(profile.speechStyle, "短促、有画面感", 48),
+    catchphrases,
+    battleCry: normalizeText(profile.battleCry, "此刻，词意成真。", 48),
+    victoryLine: normalizeText(profile.victoryLine, "胜负已经写进词根。", 48),
+    defeatLine: normalizeText(profile.defeatLine, "这次败北，会成为下一次咒文。", 48),
+    worldAnchors,
+    memorySeeds,
+  };
+};
+
 const normalizeCharacterData = (value: unknown): CharacterData => {
   const data = asRecord(value);
   const rawSkills = Array.isArray(data.skills) ? data.skills : [];
@@ -107,6 +149,7 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
   });
 
   const hp = clampInt(data.hp, 120, 900, 260);
+  const spiritProfile = normalizeSpiritProfile(data.spiritProfile);
 
   return {
     ...data,
@@ -124,6 +167,7 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     attackBuff: 0,
     defenseBuff: 0,
     buffTurnsLeft: 0,
+    ...(spiritProfile ? { spiritProfile } : {}),
   };
 };
 
@@ -188,6 +232,11 @@ export const generateCharacter = async (
 - 强力攻击技能倍率要按定位分层：坦克 1.6-2.2，均衡角色 2.0-2.5，玻璃炮/刺客 2.5-2.8。
 - 大招倍率也要分层：坦克/消耗型 4.0-5.8，均衡强者 5.5-6.6，玻璃炮/脆皮爆发 6.6-7.5。
 
+词灵人格卡要求（仅 custom API 生效）：
+- 额外生成 spiritProfile，类似角色卡，不参与数值计算，只用于让词灵在战斗、详情和成长叙事中更生动。
+- spiritProfile 要紧扣用户输入，不要泛泛而谈；每个字段都要短、鲜明、可直接显示。
+- catchphrases 是战斗短台词，适合穿插到出招日志里；worldAnchors 是角色世界观锚点；memorySeeds 是后续成长可复用的长期动机。
+
 JSON 结构如下：
 {
   "name": "角色名称（根据描述提取或生成一个响亮的名字）",
@@ -203,10 +252,21 @@ JSON 结构如下：
     { "name": "减益技能名", "description": "技能描述", "damageMultiplier": 0.8, "type": "debuff", "buffPercent": 45, "buffTurns": 3 },
     { "name": "大招名称（要霸气）", "description": "详细的华丽特效描述", "damageMultiplier": 5.5, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
   ],
+  "spiritProfile": {
+    "archetype": "词灵原型，例如：失控的星际讼师 / 铁锈圣骑 / 电台幽魂",
+    "temperament": "性格底色，例如：嘴硬、护短、爱装酷但怕孤独",
+    "speechStyle": "说话方式，例如：短句断裂、法庭宣判腔、古风咒语、机械播报",
+    "catchphrases": ["短台词1", "短台词2", "短台词3"],
+    "battleCry": "关键出招或大招前的宣言",
+    "victoryLine": "胜利时说的话",
+    "defeatLine": "失败时说的话",
+    "worldAnchors": ["来自哪个世界/组织/传说", "背负的规则或禁忌"],
+    "memorySeeds": ["长期执念或未完成目标", "会影响未来进化的记忆"]
+  },
   "imagePrompt": "用于生成头像的英文提示词，pixel art 或 cyberpunk 风格"
 }
 数值范围要求：hp 120-900，attack 20-140，defense 5-85，speed 1-140。请根据角色设定拉开差距，不要所有角色都给中庸数值；玻璃大炮、重装坦克、极速刺客、低速 Boss 都可以很极端。
-技能名称和描述要紧扣用户输入的角色主题，要有创意、有画面感、有中二气息。`;
+技能名称、描述和 spiritProfile 要互相呼应，让角色像真正的词灵，而不是只有数值和技能名。`;
 
   const response = await client.chat.completions.create({
     model: cfg.model,

@@ -12,6 +12,7 @@ import {
   Sparkles,
   ArrowRight,
   Loader2,
+  MessageCircle,
   RotateCcw,
   Castle,
   Zap as ZapIcon,
@@ -28,6 +29,7 @@ import {
   type TowerRunRecord,
 } from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
+import { useSpiritChatStore } from "../store/useSpiritChatStore";
 import { ParticleField } from "./ParticleField";
 import { getScaledTowerBoss, getTowerBossMeta } from "../data/towerBosses";
 import {
@@ -118,6 +120,8 @@ export const TowerResultScreen: React.FC = () => {
   const updateCharacter = useRosterStore((s) => s.updateCharacter);
   const appendTowerRun = useRosterStore((s) => s.appendTowerRun);
   const appendSkill = useRosterStore((s) => s.appendSkill);
+  const setOpenSpiritRosterId = useSpiritChatStore((s) => s.setOpenRosterId);
+  const spiritChats = useSpiritChatStore((s) => s.chats);
 
   const rosterChar = useMemo(
     () => roster.find((c) => c.rosterId === towerRosterId) || null,
@@ -277,7 +281,21 @@ export const TowerResultScreen: React.FC = () => {
         { apiKey, baseUrl, model, apiMode },
         char,
         summary,
-        { layer: towerLayer, level: char.level },
+        {
+          layer: towerLayer,
+          level: char.level,
+          relationship: spiritChats[char.rosterId]
+            ? {
+                mood: spiritChats[char.rosterId].mood,
+                bond: spiritChats[char.rosterId].bond,
+                memorySummary: spiritChats[char.rosterId].memorySummary,
+                playerFacts: spiritChats[char.rosterId].playerFacts,
+                promises: spiritChats[char.rosterId].promises,
+                lastSuggestedAction:
+                  spiritChats[char.rosterId].lastSuggestedAction,
+              }
+            : undefined,
+        },
       );
       if (skillRes.candidates.length > 0) {
         setSkillCandidates(skillRes.candidates);
@@ -689,6 +707,16 @@ export const TowerResultScreen: React.FC = () => {
           >
             <ArrowRight size={16} />
             返回塔层选择
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpenSpiritRosterId(rosterChar.rosterId);
+              setPhase("SPIRIT_CHAT");
+            }}
+            className="flex items-center justify-center gap-2 py-3 px-4 rounded font-display tracking-[0.24em] text-[#FFD700] hover:text-[#0B0C10] border-2 border-[#FFD700] hover:bg-[#FFD700] transition-all"
+          >
+            <MessageCircle size={14} /> 聊聊这一战
           </button>
           <button
             type="button"

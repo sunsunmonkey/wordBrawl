@@ -14,6 +14,7 @@ import {
   RotateCcw,
   FlaskConical,
   Lock,
+  MessageCircle,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -27,6 +28,7 @@ import {
   type RosterCharacter,
 } from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
+import { useSpiritChatStore } from "../store/useSpiritChatStore";
 import { ParticleField } from "./ParticleField";
 import {
   buildLocalEvolution,
@@ -104,6 +106,7 @@ export const ModeSelectScreen: React.FC = () => {
   const setDebugForcedEvolutionStage = useTowerStore(
     (s) => s.setDebugForcedEvolutionStage,
   );
+  const setOpenSpiritRosterId = useSpiritChatStore((s) => s.setOpenRosterId);
   const resetTowerPending = useTowerStore((s) => s.resetPending);
   const rosterCount = roster.length;
   const lead = roster[0] ?? null;
@@ -163,6 +166,12 @@ export const ModeSelectScreen: React.FC = () => {
 
   const startTraining = () => {
     setPhase("TRAINING_GROUND");
+  };
+
+  const startSpiritChat = () => {
+    if (!selectedRoster || selectedUnavailable) return;
+    setOpenSpiritRosterId(selectedRoster.rosterId);
+    setPhase("SPIRIT_CHAT");
   };
 
   const goRoster = () => {
@@ -604,7 +613,7 @@ export const ModeSelectScreen: React.FC = () => {
                   </div>
                 )}
 
-                <div className="mt-auto grid shrink-0 gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <div className="mt-auto grid shrink-0 gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
                   <button
                     type="button"
                     onClick={startTower}
@@ -617,6 +626,15 @@ export const ModeSelectScreen: React.FC = () => {
                         ? `${selectedRoster.name} · 暂不可用`
                         : `${selectedRoster.name} · 进入九层塔`
                       : "进入九层塔"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startSpiritChat}
+                    disabled={!selectedRoster || selectedUnavailable}
+                    className="flex items-center justify-center gap-2 rounded border border-[#FFD700]/55 px-4 py-3 text-xs font-black tracking-[0.2em] text-[#FFD700] transition-all hover:bg-[#FFD700]/10 disabled:opacity-45"
+                  >
+                    <MessageCircle size={15} />
+                    交谈
                   </button>
                   <button
                     type="button"

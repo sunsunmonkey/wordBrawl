@@ -152,7 +152,8 @@ export interface EvolveResult {
 
 const SYSTEM_PROMPT_BASE = `你是一个游戏角色养成顾问。
 玩家在 PVE 九层塔中带着自己的角色挑战 Boss，请基于角色当前数值与一场战斗的聚合摘要，输出严格的 JSON 结果。
-你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。`;
+你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。
+如果角色资料包含 spiritProfile，请让技能命名、进化 lore 和大招描述延续它的原型、语气、世界锚点和记忆种子。`;
 
 const INTENT_PROMPTS: Record<Intent, string> = {
   skill: `请为这个角色生成 3 个互补且差异化的【非大招】技能候选，必须用于弥补当前短板（如缺治疗/缺控制/缺爆发）。
@@ -230,7 +231,10 @@ const parseJsonLoose = (raw: string): unknown => {
   }
 };
 
-const sanitizeCharacterForPrompt = (char: CharacterData) => ({
+const sanitizeCharacterForPrompt = (
+  char: CharacterData,
+  includeSpirit = false,
+) => ({
   name: char.name,
   hp: char.maxHp,
   attack: char.attack,
@@ -246,6 +250,19 @@ const sanitizeCharacterForPrompt = (char: CharacterData) => ({
     buffTurns: s.buffTurns,
     isUltimate: s.isUltimate,
   })),
+  ...(includeSpirit && char.spiritProfile
+    ? {
+        spiritProfile: {
+          archetype: char.spiritProfile.archetype,
+          temperament: char.spiritProfile.temperament,
+          speechStyle: char.spiritProfile.speechStyle,
+          catchphrases: char.spiritProfile.catchphrases,
+          battleCry: char.spiritProfile.battleCry,
+          worldAnchors: char.spiritProfile.worldAnchors,
+          memorySeeds: char.spiritProfile.memorySeeds,
+        },
+      }
+    : {}),
 });
 
 export interface GrowthReportPayload<T> {
@@ -332,7 +349,7 @@ async function requestCustomOpenAI<T>(
   const systemPrompt = `${SYSTEM_PROMPT_BASE}\n\n${INTENT_PROMPTS[intent]}`;
   const userPrompt = [
     `意图：${intent}`,
-    `角色：${JSON.stringify(sanitizeCharacterForPrompt(character))}`,
+    `角色：${JSON.stringify(sanitizeCharacterForPrompt(character, true))}`,
     `战斗摘要：${JSON.stringify(summary)}`,
     context ? `补充：${JSON.stringify(context)}` : '',
   ]

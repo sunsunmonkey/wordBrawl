@@ -83,6 +83,8 @@ const CharacterCard: React.FC<{
     (s) => s.isUltimate || s.type === "ultimate",
   );
   const nonUltimateSkills = char.skills.filter((s) => !isUltimateSkill(s));
+  const spiritLine =
+    char.spiritProfile?.catchphrases?.[0] || char.spiritProfile?.archetype;
   const [skillPage, setSkillPage] = useState(0);
   const skillPageSize = 4;
   const skillPageCount = Math.max(
@@ -231,11 +233,22 @@ const CharacterCard: React.FC<{
 
       <h3
         data-text={char.name}
-        className="text-xl xl:text-2xl font-black italic mb-2 font-display tracking-wider"
+        className="mb-1 text-xl xl:text-2xl font-black italic font-display tracking-wider"
         style={{ color: themeColor, textShadow: `0 0 12px ${themeColor}` }}
       >
         {char.name}
       </h3>
+      {spiritLine && (
+        <div
+          className="mb-2 w-full rounded border px-2 py-1 text-center text-[10px] leading-snug text-[#C5C6C7] line-clamp-2"
+          style={{
+            borderColor: `rgba(${themeRgb},0.28)`,
+            background: `rgba(${themeRgb},0.08)`,
+          }}
+        >
+          “{spiritLine}”
+        </div>
+      )}
 
       {/* HP Bar */}
       <div className="w-full mb-2">
@@ -1542,18 +1555,22 @@ export const BattleScreen: React.FC = () => {
   );
 
   const appendDefeatLog = useCallback(
-    (defenderName: string) => {
-      const turn =
-        manualEngineRef.current?.getState().currentTurn ??
-        manualLogsRef.current.length;
+    (defenderId: "player1" | "player2") => {
+      const engine = manualEngineRef.current;
+      if (engine) {
+        appendManualLog(engine.createDefeatLog(defenderId));
+        return;
+      }
+      const defenderName =
+        defenderId === "player1" ? player1?.name : player2?.name;
       appendManualLog({
-        id: `manual-${Date.now()}-${defenderName}-down`,
-        turn,
+        id: `manual-${Date.now()}-${defenderId}-down`,
+        turn: manualLogsRef.current.length,
         attacker: "system",
-        message: `【${defenderName}】倒下了！`,
+        message: `【${defenderName || "词灵"}】倒下了！`,
       });
     },
-    [appendManualLog],
+    [appendManualLog, player1?.name, player2?.name],
   );
 
   const finishManualBattle = useCallback(
@@ -1648,7 +1665,7 @@ export const BattleScreen: React.FC = () => {
       prefetchTurnRef.current += 1;
 
       if (engine.isBattleOver()) {
-        appendDefeatLog(engine.p2.name);
+        appendDefeatLog("player2");
         const finalResult = engine.getWinner() === "player1" ? "win" : "loss";
         const finalState = engine.getState();
         const finalSummary = summarizeBattle(
@@ -1682,7 +1699,7 @@ export const BattleScreen: React.FC = () => {
       }
 
       if (engine.isBattleOver()) {
-        appendDefeatLog(engine.p1.name);
+        appendDefeatLog("player1");
         const finalResult = engine.getWinner() === "player1" ? "win" : "loss";
         const finalState = engine.getState();
         const finalSummary = summarizeBattle(
