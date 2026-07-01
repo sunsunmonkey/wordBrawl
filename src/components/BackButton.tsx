@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface BackButtonProps {
   onClick: () => void;
@@ -14,27 +15,28 @@ export const BackButton: React.FC<BackButtonProps> = ({
   color = '#FFD700',
   className = '',
 }) => (
-  <button
+  <motion.button
     type="button"
     onClick={onClick}
-    className={`group flex items-center gap-2 rounded-md border-2 bg-[#0B0C10]/85 px-5 py-3 text-sm font-black font-display tracking-[0.22em] backdrop-blur-sm transition-all hover:text-[#0B0C10] ${className}`}
+    whileHover={{ scale: 1.05, y: -2 }}
+    whileTap={{ scale: 0.95 }}
+    title={label}
+    aria-label={label}
+    className={`group flex items-center justify-center rounded-lg border bg-[#1F2833]/70 p-2.5 backdrop-blur-sm transition-all ${className}`}
     style={{
-      borderColor: color,
-      color,
-      boxShadow: `0 0 18px ${color}66, inset 0 0 18px ${color}14`,
+      borderColor: `${color}66`,
+      color: color,
+      boxShadow: `0 0 14px ${color}22`,
     }}
     onMouseEnter={(event) => {
-      event.currentTarget.style.backgroundColor = color;
-      event.currentTarget.style.color = '#0B0C10';
-      event.currentTarget.style.boxShadow = `0 0 26px ${color}aa`;
+      event.currentTarget.style.backgroundColor = `${color}22`;
+      event.currentTarget.style.boxShadow = `0 0 20px ${color}44`;
     }}
     onMouseLeave={(event) => {
-      event.currentTarget.style.backgroundColor = 'rgba(11,12,16,0.85)';
-      event.currentTarget.style.color = color;
-      event.currentTarget.style.boxShadow = `0 0 18px ${color}66, inset 0 0 18px ${color}14`;
+      event.currentTarget.style.backgroundColor = 'rgba(31,40,51,0.7)';
+      event.currentTarget.style.boxShadow = `0 0 14px ${color}22`;
     }}
   >
-    <ArrowLeft size={20} className="transition-transform group-hover:-translate-x-1" />
-    {label}
-  </button>
+    <ArrowLeft size={20} className="transition-transform group-hover:-translate-x-0.5" />
+  </motion.button>
 );

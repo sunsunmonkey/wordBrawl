@@ -155,7 +155,7 @@ export const isRosterCharacterUnavailable = (
 const createPendingRecruitCharacter = (
   sourceDescription: string,
 ): CharacterData => ({
-  name: "招募中",
+  name: "创造中",
   hp: 1,
   maxHp: 1,
   attack: 0,
@@ -244,7 +244,7 @@ const ensureGrowthFields = (
       description: rawRecruitLock.description,
       startedAt: rawRecruitLock.startedAt,
       error: stale
-        ? "后台生成已中断，请移除后重新招募。"
+        ? "后台生成已中断，请移除后重新创造。"
         : typeof rawRecruitLock.error === "string"
           ? rawRecruitLock.error
           : undefined,
@@ -409,7 +409,7 @@ export const useRosterStore = create<RosterStore>()(
             char.rosterId === rosterId
               ? {
                   ...char,
-                  name: char.name === "招募中" ? "招募失败" : char.name,
+                  name: char.name === "创造中" ? "创造失败" : char.name,
                   recruitLock: {
                     status: "failed" as const,
                     description:

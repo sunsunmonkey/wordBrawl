@@ -9,6 +9,7 @@ import { RosterScreen } from "./components/RosterScreen";
 import { TowerScreen } from "./components/TowerScreen";
 import { TowerResultScreen } from "./components/TowerResultScreen";
 import { SpiritChatScreen } from "./components/SpiritChatScreen";
+import { SpiritStoryScreen } from "./components/SpiritStoryScreen";
 
 function App() {
   const { phase } = useGameStore();
@@ -24,6 +25,7 @@ function App() {
       {phase === "GAME_OVER" && <GameOverScreen />}
       {phase === "ROSTER_VIEW" && <RosterScreen />}
       {phase === "SPIRIT_CHAT" && <SpiritChatScreen />}
+      {phase === "SPIRIT_STORY" && <SpiritStoryScreen />}
       {phase === "TOWER_HUB" && <TowerScreen />}
       {phase === "TOWER_RESULT" && <TowerResultScreen />}
     </div>

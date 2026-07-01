@@ -89,7 +89,7 @@ export const CharacterCreateScreen: React.FC = () => {
   const isRecruitMode = phase === "RECRUIT_CREATE";
   const isPlayer1 = phase === "PLAYER1_CREATE";
   const playerName = isRecruitMode
-    ? "招募新角色"
+    ? "创造新角色"
     : isPlayer1
       ? "PLAYER 1"
       : "PLAYER 2";
@@ -273,7 +273,7 @@ export const CharacterCreateScreen: React.FC = () => {
     if (isRosterCharacterRecruitLocked(saved)) {
       setError(
         saved.recruitLock?.status === "failed"
-          ? saved.recruitLock.error || "该角色生成失败，请移除后重新招募。"
+          ? saved.recruitLock.error || "该角色生成失败，请移除后重新创造。"
           : "该角色正在后台生成中，完成后才能出战。",
       );
       return;
@@ -721,7 +721,7 @@ export const CharacterCreateScreen: React.FC = () => {
                 className="block text-sm font-semibold mb-2 tracking-wider"
                 style={{ color: themeColor }}
               >
-                ▸ 描述要招募的核心角色
+                ▸ 描述要创造的核心角色
               </label>
               <textarea
                 rows={4}
@@ -782,7 +782,7 @@ export const CharacterCreateScreen: React.FC = () => {
                   <Sparkles size={18} />
                   {cooldownLeftMs > 0
                     ? `冷却中 ${cooldownLeftSec}s`
-                    : "后台招募"}
+                    : "后台创造"}
                   <Sparkles size={18} />
                 </>
               )}
@@ -805,7 +805,7 @@ export const CharacterCreateScreen: React.FC = () => {
           </div>
         ) : (
           <div className="rounded-lg border border-[#45A29E]/30 bg-[#0B0C10]/60 p-4 text-xs text-[#8a8d91] leading-relaxed">
-            PVP 是切磋模式。要生成并培养自己的角色，请从主页进入「招募新角色」。
+            PVP 是切磋模式。要生成并培养自己的角色，请从主页进入「创造新角色」。
           </div>
         )}
 
@@ -931,7 +931,7 @@ export const CharacterCreateScreen: React.FC = () => {
                       className="h-24 rounded-lg border border-dashed flex items-center justify-center text-xs text-[#8a8d91]"
                       style={{ borderColor: `rgba(${themeColorHex}, 0.25)` }}
                     >
-                      暂无麾下角色 · 请先回主页招募
+                      暂无麾下角色 · 请先回主页创造
                     </div>
                   )}
                 </motion.div>

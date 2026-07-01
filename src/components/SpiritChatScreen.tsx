@@ -113,7 +113,7 @@ export const SpiritChatScreen: React.FC = () => {
         <div className="rounded-xl border border-[#66FCF1]/40 bg-[#1F2833]/75 p-8 text-center">
           <div className="text-xl font-black text-[#66FCF1]">暂无词灵</div>
           <div className="mt-2 text-sm text-[#8a8d91]">
-            先招募一个角色，再进入会客室。
+            先创造一个角色，再进入会客室。
           </div>
         </div>
       </div>
@@ -197,8 +197,6 @@ export const SpiritChatScreen: React.FC = () => {
     void sendMessage(input);
   };
 
-  const introMessage =
-    spirit?.battleCry || spirit?.catchphrases?.[0] || "我在这里。你说，我听。";
   const fillQuickPrompt = (prompt: string) => {
     setInput((current) =>
       current.trim() ? `${current.trim()}\n${prompt}` : prompt,
@@ -206,7 +204,7 @@ export const SpiritChatScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen grid-bg relative overflow-x-hidden overflow-y-auto p-4 md:p-6">
+    <div className="h-screen grid-bg relative overflow-hidden p-3 md:p-4">
       <ParticleField count={28} colors={[themeColor, "#66FCF1", "#FFD700"]} />
       <BackButton
         onClick={() => setPhase("MODE_SELECT")}
@@ -221,15 +219,11 @@ export const SpiritChatScreen: React.FC = () => {
         style={{ backgroundColor: themeColor }}
       />
 
-      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-2rem)] max-w-[90rem] flex-col pt-16 md:min-h-[calc(100vh-3rem)]">
-        <div className="mb-6 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-[10px] font-black tracking-[0.36em] text-[#8a8d91]">
-              <MessageCircle size={13} style={{ color: themeColor }} />
-              SPIRIT LOUNGE
-            </div>
+      <div className="relative z-10 mx-auto flex h-full max-w-[90rem] flex-col pt-12">
+        <div className="mb-3 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-baseline gap-3">
             <h1
-              className="mt-2 text-3xl font-black tracking-wider font-display md:text-5xl"
+              className="text-2xl font-black tracking-wider font-display md:text-3xl"
               style={{
                 color: themeColor,
                 textShadow: `0 0 18px ${themeColor}`,
@@ -237,6 +231,10 @@ export const SpiritChatScreen: React.FC = () => {
             >
               词灵会客室
             </h1>
+            <div className="hidden items-center gap-2 text-[10px] font-black tracking-[0.36em] text-[#8a8d91] sm:flex">
+              <MessageCircle size={13} style={{ color: themeColor }} />
+              SPIRIT LOUNGE
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {roster.slice(0, 8).map((char) => {
@@ -272,8 +270,8 @@ export const SpiritChatScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid flex-1 items-stretch gap-6 lg:grid-cols-12 pb-6">
-          <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:col-span-4 xl:col-span-3">
+        <div className="grid min-h-0 flex-1 items-stretch gap-4 lg:grid-cols-12">
+          <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30 lg:col-span-4 lg:flex xl:col-span-3">
             <div
               className="group relative overflow-hidden rounded-2xl border bg-[#0B0C10] scanlines transition-all"
               style={{
@@ -281,7 +279,7 @@ export const SpiritChatScreen: React.FC = () => {
                 boxShadow: `0 0 24px ${themeColor}22`,
               }}
             >
-              <div className="aspect-[4/3] w-full">
+              <div className="aspect-[3/4] w-full">
                 {selected.imageUrl ? (
                   <img
                     src={selected.imageUrl}
@@ -297,7 +295,7 @@ export const SpiritChatScreen: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#05070A] via-[#05070A]/90 to-transparent p-5 pt-12">
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#05070A] via-[#05070A]/92 to-transparent p-4 pt-10">
                 <div
                   className="text-2xl font-black font-display tracking-wider"
                   style={{
@@ -315,43 +313,32 @@ export const SpiritChatScreen: React.FC = () => {
                   <span className="text-[#8a8d91]">·</span>
                   <span>{evolutionLabel(selected.evolutionStage)}</span>
                 </div>
-                <div
-                  className="mt-3 border-l-2 pl-3 text-xs leading-relaxed italic text-[#8a8d91]"
-                  style={{ borderColor: themeColor }}
-                >
-                  “{introMessage}”
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] tracking-wider">
+                  <MiniStat
+                    icon={<Heart size={11} />}
+                    value={selected.maxHp}
+                    color="#FF6B9D"
+                  />
+                  <MiniStat
+                    icon={<Zap size={11} />}
+                    value={selected.attack}
+                    color="#FFD700"
+                  />
+                  <MiniStat
+                    icon={<Swords size={11} />}
+                    value={
+                      selected.tower.highestEndlessLayer ??
+                      selected.tower.highestCleared
+                    }
+                    color="#66FCF1"
+                  />
+                  <MiniStat
+                    icon={<Sparkles size={11} />}
+                    value={selected.skills.length}
+                    color="#7FFF9F"
+                  />
                 </div>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-[10px]">
-              <MiniInfo
-                icon={<Heart size={12} />}
-                label="生命"
-                value={selected.maxHp}
-                color="#FF6B9D"
-              />
-              <MiniInfo
-                icon={<Zap size={12} />}
-                label="攻击"
-                value={selected.attack}
-                color="#FFD700"
-              />
-              <MiniInfo
-                icon={<Swords size={12} />}
-                label="塔层"
-                value={
-                  selected.tower.highestEndlessLayer ??
-                  selected.tower.highestCleared
-                }
-                color="#66FCF1"
-              />
-              <MiniInfo
-                icon={<Sparkles size={12} />}
-                label="技能"
-                value={selected.skills.length}
-                color="#7FFF9F"
-              />
             </div>
 
             <div className="rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
@@ -440,8 +427,8 @@ export const SpiritChatScreen: React.FC = () => {
             </div>
           </aside>
 
-          <main className="flex flex-col overflow-hidden rounded-2xl border border-[#45A29E]/35 bg-[#0B0C10]/80 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md lg:col-span-8 xl:col-span-9 h-[700px] lg:h-[800px] xl:h-[calc(100vh-6rem)] xl:min-h-[850px]">
-            <div className="flex shrink-0 items-center justify-between border-b border-[#45A29E]/25 bg-[#1F2833]/80 px-5 py-4 backdrop-blur-sm">
+          <main className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#45A29E]/35 bg-[#0B0C10]/80 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md lg:col-span-8 xl:col-span-9">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#45A29E]/25 bg-[#1F2833]/80 px-5 py-3 backdrop-blur-sm">
               <div className="flex items-center gap-3">
                 <div
                   className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border"
@@ -596,18 +583,18 @@ export const SpiritChatScreen: React.FC = () => {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-[#45A29E]/25 bg-[#05070A]/95 p-4 backdrop-blur-xl">
+            <div className="shrink-0 border-t border-[#45A29E]/25 bg-[#05070A]/95 p-3 backdrop-blur-xl">
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mb-3 flex items-center gap-2 rounded-lg border border-[#FF003C]/45 bg-[#FF003C]/10 px-4 py-2.5 text-[11px] tracking-wide text-[#FF6B9D]"
+                  className="mb-2 flex items-center gap-2 rounded-lg border border-[#FF003C]/45 bg-[#FF003C]/10 px-4 py-2 text-[11px] tracking-wide text-[#FF6B9D]"
                 >
                   <Zap size={14} className="shrink-0" />
                   {error}
                 </motion.div>
               )}
-              <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+              <form onSubmit={handleSubmit} className="flex flex-col gap-2">
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                   {QUICK_PROMPTS.map((prompt) => (
                     <button
@@ -622,19 +609,19 @@ export const SpiritChatScreen: React.FC = () => {
                   ))}
                 </div>
 
-                <div className="relative flex items-end gap-3">
+                <div className="relative flex items-center gap-3">
                   <div className="relative flex-1">
                     <textarea
                       value={input}
                       onChange={(event) => setInput(event.target.value)}
                       disabled={isSending}
-                      rows={3}
+                      rows={2}
                       placeholder={
                         isReady
                           ? `与 ${selected.name} 交谈... (Enter 发送, Shift+Enter 换行)`
                           : "请先在首页选择免费体验或填写 custom API"
                       }
-                      className="w-full resize-none rounded-xl border border-[#45A29E]/40 bg-black/60 px-4 py-3 text-sm leading-relaxed text-[#C5C6C7] outline-none transition-all placeholder:text-[#8a8d91]/50 focus:border-[#66FCF1] focus:bg-black/80 focus:shadow-[0_0_20px_rgba(102,252,241,0.15)] disabled:opacity-50"
+                      className="w-full resize-none rounded-xl border border-[#45A29E]/40 bg-black/60 px-4 py-2.5 text-sm leading-relaxed text-[#C5C6C7] outline-none transition-all placeholder:text-[#8a8d91]/50 focus:border-[#66FCF1] focus:bg-black/80 focus:shadow-[0_0_20px_rgba(102,252,241,0.15)] disabled:opacity-50"
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
@@ -679,20 +666,14 @@ export const SpiritChatScreen: React.FC = () => {
   );
 };
 
-const MiniInfo: React.FC<{
+const MiniStat: React.FC<{
   icon: React.ReactNode;
-  label: string;
   value: number | string;
   color: string;
-}> = ({ icon, label, value, color }) => (
-  <div className="rounded border border-[#45A29E]/20 bg-[#0B0C10]/55 p-2">
-    <div className="flex items-center gap-1 text-[#8a8d91]">
-      <span style={{ color }}>{icon}</span>
-      {label}
-    </div>
-    <div className="mt-1 text-sm font-black" style={{ color }}>
-      {value}
-    </div>
+}> = ({ icon, value, color }) => (
+  <div className="flex items-center gap-1" style={{ color }}>
+    {icon}
+    <span className="font-black">{value}</span>
   </div>
 );
 
@@ -764,7 +745,7 @@ const InfoBlock: React.FC<{
   empty: string;
   items: string[];
 }> = ({ icon, title, color, empty, items }) => (
-  <div className="mt-4 rounded border border-[#45A29E]/30 bg-[#0B0C10]/55 p-3">
+  <div className="rounded border border-[#45A29E]/30 bg-[#0B0C10]/55 p-3">
     <div
       className="flex items-center gap-2 text-[10px] font-black tracking-[0.26em]"
       style={{ color }}

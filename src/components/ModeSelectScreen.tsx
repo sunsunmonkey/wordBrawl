@@ -14,6 +14,7 @@ import {
   FlaskConical,
   Lock,
   MessageCircle,
+  Clapperboard,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -169,6 +170,13 @@ export const ModeSelectScreen: React.FC = () => {
     setPhase("SPIRIT_CHAT");
   };
 
+  const startSpiritStory = () => {
+    if (roster.filter((char) => !isRosterCharacterUnavailable(char)).length < 2) {
+      return;
+    }
+    setPhase("SPIRIT_STORY");
+  };
+
   const goRoster = () => {
     setPhase("ROSTER_VIEW");
   };
@@ -319,6 +327,21 @@ export const ModeSelectScreen: React.FC = () => {
         className="absolute left-6 top-6 z-20"
       />
 
+      <div className="absolute right-6 top-6 z-20 flex items-center gap-3">
+        <IconButton
+          onClick={goRoster}
+          icon={<UsersRound size={18} />}
+          label={`我的麾下 · ${rosterCount}`}
+          accent="#66FCF1"
+        />
+        <IconButton
+          onClick={startPvP}
+          icon={<Swords size={18} />}
+          label="切磋 PVP"
+          accent="#FF003C"
+        />
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -337,7 +360,58 @@ export const ModeSelectScreen: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid items-start gap-5 md:grid-cols-[1.45fr_0.75fr]">
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ModeCard
+              onClick={startTower}
+              disabled={!selectedRoster || selectedUnavailable}
+              icon={<Castle size={30} />}
+              title="九层塔"
+              subtitle={
+                selectedRoster
+                  ? selectedUnavailable
+                    ? `${selectedRoster.name} · 暂不可用`
+                    : `${selectedRoster.name} · 第${selectedRoster.tower.nextLayer ?? 1}层`
+                  : "先选择出战词灵"
+              }
+              accent="#FFD700"
+              description="挑战九层塔累积修炼 XP，达标后触发进化。"
+              highlight
+            />
+            <ModeCard
+              onClick={startRecruit}
+              icon={<Sparkles size={30} />}
+              title="创造新角色"
+              subtitle="AI 生成 · 收入麾下"
+              accent="#FFD700"
+              description="描述一个想长期培养的角色，生成后进入本地麾下。"
+              highlight
+            />
+            <ModeCard
+              onClick={startSpiritChat}
+              disabled={!selectedRoster || selectedUnavailable}
+              icon={<MessageCircle size={30} />}
+              title="词灵会客室"
+              subtitle="独立记忆 · 灵契羁绊"
+              accent="#66FCF1"
+              description="与选中词灵深度交流，沉淀专属灵魂记忆。"
+              highlight
+            />
+            <ModeCard
+              onClick={startSpiritStory}
+              disabled={
+                roster.filter((char) => !isRosterCharacterUnavailable(char))
+                  .length < 2
+              }
+              icon={<Clapperboard size={30} />}
+              title="多人故事"
+              subtitle="群像对话 · 世界记忆"
+              accent="#66FCF1"
+              description="选择多名词灵同场互动，让它们互相推进一段故事。"
+              highlight
+            />
+          </div>
+
           <div
             className="flex flex-col rounded-xl border-2 bg-[#1F2833]/75 p-5"
             style={{
@@ -351,7 +425,7 @@ export const ModeSelectScreen: React.FC = () => {
                   ROSTER CORE
                 </div>
                 <div className="mt-1 text-2xl font-black font-display text-[#FFD700]">
-                  {lead ? "核心队列" : "尚未招募"}
+                  {lead ? "核心队列" : "尚未创造"}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -382,7 +456,7 @@ export const ModeSelectScreen: React.FC = () => {
 
             {lead ? (
               <div className="flex flex-1 flex-col gap-4">
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
                   {rosterPreview.map((char) => {
                     const isSelected =
                       char.rosterId === selectedRoster?.rosterId;
@@ -397,8 +471,8 @@ export const ModeSelectScreen: React.FC = () => {
                     );
                     const nextEvoText = recruitLocked
                       ? char.recruitLock?.status === "failed"
-                        ? "招募失败"
-                        : "后台招募中"
+                        ? "创造失败"
+                        : "后台创造中"
                       : evolutionLocked
                         ? "进化更新中"
                         : nextEvo.nextStage
@@ -445,8 +519,8 @@ export const ModeSelectScreen: React.FC = () => {
                                 <Lock size={10} className="mr-1 inline" />
                                 {recruitLocked
                                   ? char.recruitLock?.status === "failed"
-                                    ? "招募失败"
-                                    : "招募中"
+                                    ? "创造失败"
+                                    : "创造中"
                                   : "进化更新中"}
                               </div>
                             </div>
@@ -461,9 +535,24 @@ export const ModeSelectScreen: React.FC = () => {
                             L{highestLayer}
                           </div>
                           {isSelected && !evolutionLocked && !recruitLocked && (
-                            <div className="absolute right-1.5 bottom-10 rounded bg-[#FFD700] px-1.5 py-0.5 text-[9px] font-black text-[#0B0C10]">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startTower();
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  startTower();
+                                }
+                              }}
+                              className="absolute right-1.5 bottom-10 cursor-pointer rounded bg-[#FFD700] px-1.5 py-0.5 text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(255,215,0,0.65)] transition-all hover:bg-[#FFEA55] hover:scale-105"
+                            >
                               出战
-                            </div>
+                            </span>
                           )}
                           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
                             <div className="truncate text-xs font-black font-display text-[#FFD700]">
@@ -577,7 +666,7 @@ export const ModeSelectScreen: React.FC = () => {
                     </div>
                     {selectedRoster.recruitLock?.status === "failed"
                       ? selectedRoster.recruitLock.error ||
-                        "后台招募失败，请移除后重新招募。"
+                        "后台创造失败，请移除后重新创造。"
                       : `${selectedRoster.recruitLock?.description || "新角色"} 正在后台生成，完成后会自动解锁。`}
                   </div>
                 )}
@@ -608,36 +697,20 @@ export const ModeSelectScreen: React.FC = () => {
                   </div>
                 )}
 
-                <div className="mt-auto grid shrink-0 gap-2 sm:grid-cols-[1fr_auto_auto]">
-                  <button
-                    type="button"
-                    onClick={startTower}
-                    disabled={!selectedRoster || selectedUnavailable}
-                    className="flex items-center justify-center gap-2 rounded border-2 border-[#FFD700] py-3 font-black tracking-[0.25em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#FFD700]"
-                  >
-                    <Castle size={16} />
-                    {selectedRoster
-                      ? selectedUnavailable
-                        ? `${selectedRoster.name} · 暂不可用`
-                        : `${selectedRoster.name} · 进入九层塔`
-                      : "进入九层塔"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startSpiritChat}
-                    disabled={!selectedRoster || selectedUnavailable}
-                    className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/55 px-4 py-3 text-xs font-black tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10 disabled:opacity-45"
-                  >
-                    <MessageCircle size={15} />
-                    进入会客室
-                  </button>
+                <div className="mt-auto flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-[10px] leading-relaxed text-[#8a8d91]">
+                    {selectedRoster && !selectedUnavailable
+                      ? `已选中 ${selectedRoster.name}，上方三大核心入口将对其生效。`
+                      : "选择一名词灵作为出战核心。"}
+                  </div>
                   <button
                     type="button"
                     onClick={goRoster}
-                    className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/45 px-4 py-3 text-xs font-bold tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10"
+                    className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/45 px-4 py-2.5 text-xs font-bold tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10"
                   >
                     <UsersRound size={15} />
-                    全部{hiddenRosterCount > 0 ? ` +${hiddenRosterCount}` : ""}
+                    查看全部
+                    {hiddenRosterCount > 0 ? ` +${hiddenRosterCount}` : ""}
                   </button>
                 </div>
               </div>
@@ -645,57 +718,20 @@ export const ModeSelectScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={startRecruit}
-                className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#FFD700]/45 bg-[#0B0C10]/55 text-[#FFD700] transition-all hover:bg-[#FFD700]/10"
+                className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#FFD700]/45 bg-[#0B0C10]/55 py-12 text-[#FFD700] transition-all hover:bg-[#FFD700]/10"
               >
                 <Plus size={30} />
                 <span className="font-black tracking-[0.25em]">
-                  招募第一个角色
+                  创造第一个角色
                 </span>
               </button>
             )}
-          </div>
-
-          <div className="grid gap-4">
-            <ModeCard
-              onClick={startRecruit}
-              icon={<Sparkles size={30} />}
-              title="招募新角色"
-              subtitle="AI 生成 · 收入麾下"
-              accent="#FFD700"
-              description="描述一个想长期培养的角色，生成后进入本地麾下，1 分钟冷却。"
-              highlight
-            />
-            <ModeCard
-              onClick={startSpiritChat}
-              disabled={!selectedRoster || selectedUnavailable}
-              icon={<MessageCircle size={30} />}
-              title="词灵会客室"
-              subtitle="独立记忆 · 灵契羁绊"
-              accent="#66FCF1"
-              description="与当前核心角色进行深度交流，培养羁绊，沉淀只属于你们的灵魂记忆。"
-              highlight
-            />
-            <ModeCard
-              onClick={goRoster}
-              icon={<UsersRound size={30} />}
-              title="我的麾下"
-              subtitle={`已收纳 ${rosterCount} 名角色`}
-              accent="#66FCF1"
-              description="查看档案、形态时间轴和最近塔战记录。"
-            />
-            <ModeCard
-              onClick={startPvP}
-              icon={<Swords size={30} />}
-              title="切磋 PVP"
-              accent="#FF003C"
-              description="用已有/预设角色打一场娱乐对战，不作为养成主入口。"
-            />
           </div>
         </div>
       </motion.div>
 
       <div className="absolute bottom-4 left-0 right-0 text-center text-[10px] text-[#8a8d91]/50 tracking-widest">
-        ▼ 招募 · 修炼 · 进化 ▼
+        ▼ 创造 · 修炼 · 进化 ▼
       </div>
     </div>
   );
@@ -716,6 +752,31 @@ const MiniStat: React.FC<{
   </div>
 );
 
+const IconButton: React.FC<{
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  accent: string;
+}> = ({ onClick, icon, label, accent }) => (
+  <motion.button
+    type="button"
+    onClick={onClick}
+    whileHover={{ scale: 1.05, y: -2 }}
+    whileTap={{ scale: 0.96 }}
+    aria-label={label}
+    title={label}
+    className="group flex items-center gap-2 rounded-lg border bg-[#1F2833]/70 px-3 py-2 text-[11px] font-bold tracking-widest transition-all"
+    style={{
+      borderColor: `${accent}66`,
+      color: accent,
+      boxShadow: `0 0 14px ${accent}22`,
+    }}
+  >
+    {icon}
+    <span className="hidden sm:inline">{label}</span>
+  </motion.button>
+);
+
 interface ModeCardProps {
   onClick: () => void;
   icon: React.ReactNode;
@@ -725,6 +786,7 @@ interface ModeCardProps {
   accent: string;
   highlight?: boolean;
   disabled?: boolean;
+  compact?: boolean;
 }
 
 const ModeCard: React.FC<ModeCardProps> = ({
@@ -736,6 +798,7 @@ const ModeCard: React.FC<ModeCardProps> = ({
   accent,
   highlight,
   disabled,
+  compact,
 }) => {
   return (
     <motion.button
@@ -743,9 +806,10 @@ const ModeCard: React.FC<ModeCardProps> = ({
       disabled={disabled}
       whileHover={disabled ? {} : { scale: 1.03, y: -4 }}
       whileTap={disabled ? {} : { scale: 0.98 }}
-      className={`relative flex flex-col items-start gap-3 p-6 bg-[#1F2833]/70 border-2 rounded-lg text-left transition-all ${
-        disabled ? "opacity-50 cursor-not-allowed grayscale-[0.5]" : ""
-      }`}
+      transition={{ type: "tween", duration: 0.12, ease: "easeOut" }}
+      className={`relative flex flex-col items-start gap-3 bg-[#1F2833]/70 border-2 rounded-lg text-left transition-all ${
+        compact ? "p-4" : "p-6"
+      } ${disabled ? "opacity-50 cursor-not-allowed grayscale-[0.5]" : ""}`}
       style={{
         borderColor: highlight && !disabled ? accent : `${accent}55`,
         boxShadow:
@@ -763,7 +827,9 @@ const ModeCard: React.FC<ModeCardProps> = ({
       <div style={{ color: accent }}>{icon}</div>
       <div>
         <div
-          className="text-2xl font-black tracking-wider font-display"
+          className={`font-black tracking-wider font-display ${
+            compact ? "text-xl" : "text-2xl"
+          }`}
           style={{ color: accent }}
         >
           {title}
