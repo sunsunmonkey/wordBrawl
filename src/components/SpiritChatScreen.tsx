@@ -197,12 +197,6 @@ export const SpiritChatScreen: React.FC = () => {
     void sendMessage(input);
   };
 
-  const fillQuickPrompt = (prompt: string) => {
-    setInput((current) =>
-      current.trim() ? `${current.trim()}\n${prompt}` : prompt,
-    );
-  };
-
   return (
     <div className="h-screen grid-bg relative overflow-hidden p-3 md:p-4">
       <ParticleField count={28} colors={[themeColor, "#66FCF1", "#FFD700"]} />
@@ -600,7 +594,7 @@ export const SpiritChatScreen: React.FC = () => {
                     <button
                       key={prompt}
                       type="button"
-                      onClick={() => fillQuickPrompt(prompt)}
+                      onClick={() => void sendMessage(prompt)}
                       disabled={isSending}
                       className="shrink-0 rounded-full border border-[#45A29E]/40 bg-[#1F2833]/60 px-4 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-all hover:border-[#66FCF1] hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] disabled:opacity-40 disabled:hover:border-[#45A29E]/40 disabled:hover:bg-[#1F2833]/60 disabled:hover:text-[#8a8d91]"
                     >

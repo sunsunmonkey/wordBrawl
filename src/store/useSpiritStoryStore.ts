@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type SpiritStoryRole = "player" | "narrator" | "spirit";
+export type SpiritStoryPlayerMode = "participant" | "observer";
 
 export interface SpiritStoryMessage {
   id: string;
@@ -30,6 +31,7 @@ export interface SpiritStoryRoom {
   id: string;
   title: string;
   participantRosterIds: string[];
+  playerMode: SpiritStoryPlayerMode;
   messages: SpiritStoryMessage[];
   storySummary: string;
   scene: string;
@@ -49,6 +51,7 @@ interface SpiritStoryStore {
     roomId?: string | null,
   ) => SpiritStoryRoom;
   setRoomParticipants: (roomId: string, participantRosterIds: string[]) => void;
+  setPlayerMode: (roomId: string, mode: SpiritStoryPlayerMode) => void;
   appendMessage: (
     roomId: string,
     message: Omit<SpiritStoryMessage, "id" | "createdAt"> &
@@ -148,6 +151,7 @@ const createDefaultRoom = (
     id: roomId || makeNewSpiritStoryRoomId(),
     title: String(title || "未命名故事").slice(0, 40),
     participantRosterIds: ids,
+    playerMode: "observer",
     messages: [],
     storySummary: "",
     scene: "初次集结",
@@ -206,6 +210,10 @@ const normalizeRoom = (
     id: roomId,
     title: String(value.title || "未命名故事").slice(0, 40),
     participantRosterIds,
+    playerMode:
+      value.playerMode === "observer" || value.playerMode === "participant"
+        ? value.playerMode
+        : "observer",
     messages: Array.isArray(value.messages)
       ? value.messages
           .map((message) => normalizeMessage(message))
@@ -284,6 +292,21 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
                   ids,
                   current.participantStates,
                 ),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+      setPlayerMode: (roomId, mode) => {
+        set((state) => {
+          const current = normalizeRoom(roomId, state.rooms[roomId]);
+          return {
+            rooms: {
+              ...state.rooms,
+              [roomId]: {
+                ...current,
+                playerMode: mode,
                 updatedAt: Date.now(),
               },
             },

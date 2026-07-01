@@ -159,7 +159,7 @@ export const WelcomeScreen: React.FC = () => {
             <div className="relative">
               <img
                 src="/logo.png"
-                alt="词灵乱斗"
+                alt="词灵世界"
                 className="w-40 h-40 md:w-52 md:h-52 object-contain drop-shadow-[0_0_20px_rgba(102,252,241,0.6)]"
               />
               <motion.div
@@ -178,17 +178,17 @@ export const WelcomeScreen: React.FC = () => {
             </div>
           </motion.div>
           <h1
-            data-text="词灵乱斗"
+            data-text="词灵世界"
             className="text-6xl md:text-7xl font-black tracking-wider mb-2 glitch-text font-display"
             style={{
               color: "#66FCF1",
               textShadow: "0 0 18px #66FCF1, 0 0 40px rgba(102, 252, 241, 0.4)",
             }}
           >
-            词灵乱斗
+            词灵世界
           </h1>
           <p className="text-xl font-bold tracking-[0.35em] text-[#C5C6C7] mt-2 text-glow-cyan">
-            输入成灵 · 一言开战
+            输入成灵 · 创造世界
           </p>
           <div className="flex items-center justify-center gap-2 mt-3 text-xs text-[#8a8d91]">
             <Zap size={12} className="text-yellow-400" />

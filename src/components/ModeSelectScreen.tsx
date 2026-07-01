@@ -171,7 +171,9 @@ export const ModeSelectScreen: React.FC = () => {
   };
 
   const startSpiritStory = () => {
-    if (roster.filter((char) => !isRosterCharacterUnavailable(char)).length < 2) {
+    if (
+      roster.filter((char) => !isRosterCharacterUnavailable(char)).length < 2
+    ) {
       return;
     }
     setPhase("SPIRIT_STORY");
@@ -363,22 +365,6 @@ export const ModeSelectScreen: React.FC = () => {
         <div className="flex flex-col gap-5">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ModeCard
-              onClick={startTower}
-              disabled={!selectedRoster || selectedUnavailable}
-              icon={<Castle size={30} />}
-              title="九层塔"
-              subtitle={
-                selectedRoster
-                  ? selectedUnavailable
-                    ? `${selectedRoster.name} · 暂不可用`
-                    : `${selectedRoster.name} · 第${selectedRoster.tower.nextLayer ?? 1}层`
-                  : "先选择出战词灵"
-              }
-              accent="#FFD700"
-              description="挑战九层塔累积修炼 XP，达标后触发进化。"
-              highlight
-            />
-            <ModeCard
               onClick={startRecruit}
               icon={<Sparkles size={30} />}
               title="创造新角色"
@@ -410,6 +396,22 @@ export const ModeSelectScreen: React.FC = () => {
               description="选择多名词灵同场互动，让它们互相推进一段故事。"
               highlight
             />
+            <ModeCard
+              onClick={startTower}
+              disabled={!selectedRoster || selectedUnavailable}
+              icon={<Castle size={30} />}
+              title="九层塔"
+              subtitle={
+                selectedRoster
+                  ? selectedUnavailable
+                    ? `${selectedRoster.name} · 暂不可用`
+                    : `${selectedRoster.name} · 第${selectedRoster.tower.nextLayer ?? 1}层`
+                  : "先选择出战词灵"
+              }
+              accent="#FFD700"
+              description="挑战九层塔累积修炼 XP，达标后触发进化。"
+              highlight
+            />
           </div>
 
           <div
@@ -425,7 +427,7 @@ export const ModeSelectScreen: React.FC = () => {
                   ROSTER CORE
                 </div>
                 <div className="mt-1 text-2xl font-black font-display text-[#FFD700]">
-                  {lead ? "核心队列" : "尚未创造"}
+                  {lead ? "麾下角色" : "尚未创造"}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2">
