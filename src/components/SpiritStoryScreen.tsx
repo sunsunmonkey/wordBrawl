@@ -39,6 +39,8 @@ const QUICK_SCENES = [
   "让气氛轻松一点，大家围坐下来聊一次真心话。",
 ];
 
+const MAX_STORY_PARTICIPANTS = 10;
+
 const formatTime = (ts: number) => {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -98,6 +100,10 @@ export const SpiritStoryScreen: React.FC = () => {
         .filter((char): char is RosterCharacter => Boolean(char)),
     [activeIds, availableRoster],
   );
+  const activeRosterIdSet = useMemo(
+    () => new Set(participants.map((char) => char.rosterId)),
+    [participants],
+  );
   const room = activeRoom ?? null;
   const playerMode = room?.playerMode ?? "observer";
   const themeColor = storyColor(room?.tension ?? 24);
@@ -119,12 +125,14 @@ export const SpiritStoryScreen: React.FC = () => {
 
   useEffect(() => {
     if (!activeRoom) return;
-    setDraftIds(activeRoom.participantRosterIds.slice(0, 4));
+    setDraftIds(activeRoom.participantRosterIds.slice(0, MAX_STORY_PARTICIPANTS));
   }, [activeRoom]);
 
   useEffect(() => {
     const validIds = new Set(availableRoster.map((char) => char.rosterId));
-    const next = activeIds.filter((id) => validIds.has(id)).slice(0, 4);
+    const next = activeIds
+      .filter((id) => validIds.has(id))
+      .slice(0, MAX_STORY_PARTICIPANTS);
     if (!activeRoom && next.length !== draftIds.length) setDraftIds(next);
     if (activeRoom && next.length >= 2 && next.length !== activeIds.length) {
       setRoomParticipants(activeRoom.id, next);
@@ -145,7 +153,11 @@ export const SpiritStoryScreen: React.FC = () => {
       if (current.length <= 2) return;
       next = current.filter((id) => id !== rosterId);
     } else {
-      next = current.length >= 4 ? [...current.slice(1), rosterId] : [...current, rosterId];
+      if (current.length >= MAX_STORY_PARTICIPANTS) {
+        setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
+        return;
+      }
+      next = [...current, rosterId];
     }
     if (activeRoom) {
       setRoomParticipants(activeRoom.id, next);
@@ -315,7 +327,7 @@ export const SpiritStoryScreen: React.FC = () => {
                   出场词灵
                 </div>
                 <div className="text-[10px] text-[#8a8d91]">
-                  {participants.length}/4
+                  {participants.length}/{MAX_STORY_PARTICIPANTS}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -492,7 +504,7 @@ export const SpiritStoryScreen: React.FC = () => {
                     群像故事开场
                   </div>
                   <div className="mt-3 max-w-md text-xs leading-relaxed text-[#8a8d91]">
-                    选择 2-4 名词灵，直接给出场景、事件或一句话命令。它们会在同一个世界里互相回应，而不是分别和你单聊。
+                    选择 2-{MAX_STORY_PARTICIPANTS} 名词灵，直接给出场景、事件或一句话命令。它们会在同一个世界里互相回应，而不是分别和你单聊。
                   </div>
                 </div>
               ) : (
@@ -502,7 +514,8 @@ export const SpiritStoryScreen: React.FC = () => {
                       <StoryBubble
                         key={message.id}
                         message={message}
-                        participants={participants}
+                        allRoster={roster}
+                        activeRosterIds={activeRosterIdSet}
                         themeColor={themeColor}
                       />
                     ))}
@@ -644,15 +657,20 @@ export const SpiritStoryScreen: React.FC = () => {
 
 const StoryBubble: React.FC<{
   message: SpiritStoryMessage;
-  participants: RosterCharacter[];
+  allRoster: RosterCharacter[];
+  activeRosterIds: Set<string>;
   themeColor: string;
-}> = ({ message, participants, themeColor }) => {
+}> = ({ message, allRoster, activeRosterIds, themeColor }) => {
   const isPlayer = message.role === "player";
   const isNarrator = message.role === "narrator";
   const isBackground = isPlayer && message.speakerName === "背景";
   const speaker = message.speakerRosterId
-    ? participants.find((char) => char.rosterId === message.speakerRosterId)
+    ? allRoster.find((char) => char.rosterId === message.speakerRosterId)
     : null;
+  const isActiveSpeaker = message.speakerRosterId
+    ? activeRosterIds.has(message.speakerRosterId)
+    : false;
+  const speakerName = speaker?.name || message.speakerName || "词灵";
   const color = isNarrator ? "#8a8d91" : isPlayer ? "#FFD700" : themeColor;
 
   if (isNarrator || isBackground) {
@@ -682,7 +700,9 @@ const StoryBubble: React.FC<{
     >
       {!isPlayer && (
         <div
-          className="h-10 w-10 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
+          className={`h-10 w-10 shrink-0 overflow-hidden rounded border bg-[#0B0C10] ${
+            isActiveSpeaker ? "" : "opacity-70 grayscale"
+          }`}
           style={{ borderColor: color }}
         >
           {speaker?.imageUrl ? (
@@ -696,7 +716,7 @@ const StoryBubble: React.FC<{
               className="flex h-full w-full items-center justify-center text-xs font-black"
               style={{ color }}
             >
-              {(speaker?.name || message.speakerName || "?")[0]}
+              {speakerName[0]}
             </div>
           )}
         </div>
@@ -715,11 +735,16 @@ const StoryBubble: React.FC<{
         <div
           className={`mt-1 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
         >
-          {isPlayer ? "YOU" : speaker?.name || message.speakerName || "词灵"} ·{" "}
-          {formatTime(message.createdAt)}
+          {isPlayer ? "YOU" : speakerName} · {formatTime(message.createdAt)}
           {!isPlayer && (
-            <span className="flex items-center gap-1 rounded bg-[#66FCF1]/10 px-1 py-0.5 text-[#66FCF1] border border-[#66FCF1]/30">
-              <Swords size={8} /> 群像
+            <span
+              className={`flex items-center gap-1 rounded px-1 py-0.5 border ${
+                isActiveSpeaker
+                  ? "bg-[#66FCF1]/10 text-[#66FCF1] border-[#66FCF1]/30"
+                  : "bg-[#8a8d91]/10 text-[#8a8d91] border-[#8a8d91]/30"
+              }`}
+            >
+              <Swords size={8} /> {isActiveSpeaker ? "群像" : "已离场"}
             </span>
           )}
         </div>

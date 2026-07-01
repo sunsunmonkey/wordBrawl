@@ -74,7 +74,7 @@ interface SpiritStoryStore {
 }
 
 const MAX_MESSAGES = 80;
-const MAX_PARTICIPANTS = 4;
+const MAX_PARTICIPANTS = 10;
 const MAX_GOALS = 5;
 
 export const makeNewSpiritStoryRoomId = () =>
