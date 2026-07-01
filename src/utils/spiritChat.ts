@@ -239,9 +239,20 @@ export async function requestSpiritChat(
   userMessage: string,
   context?: SpiritChatContext,
 ): Promise<SpiritChatResult> {
-  if ((cfg.apiMode || "custom") !== "custom") {
-    throw new Error("词灵会客室需要 custom API。");
+  const payload = {
+    scene: context?.scene || "idle",
+    character: sanitizeCharacter(character),
+    relationship: sanitizeChat(chat),
+    recentBattle: context?.recentBattle || null,
+    recentMessages: sanitizeMessages(chat.messages),
+    userMessage,
+  };
+
+  const apiMode = cfg.apiMode || "custom";
+  if (apiMode === "free") {
+    return requestSpiritChatFreeTrial(payload, chat, userMessage);
   }
+
   if (!cfg.apiKey) throw new Error("请先填写 API Key");
   if (!cfg.baseUrl) throw new Error("请先填写 Base URL");
   if (!cfg.model) throw new Error("请先填写 Model");
@@ -251,15 +262,6 @@ export async function requestSpiritChat(
     baseURL: cfg.baseUrl,
     dangerouslyAllowBrowser: true,
   });
-
-  const payload = {
-    scene: context?.scene || "idle",
-    character: sanitizeCharacter(character),
-    relationship: sanitizeChat(chat),
-    recentBattle: context?.recentBattle || null,
-    recentMessages: sanitizeMessages(chat.messages),
-    userMessage,
-  };
 
   const response = await client.chat.completions.create({
     model: cfg.model,
@@ -285,4 +287,39 @@ export async function requestSpiritChat(
       lastSuggestedAction: chat.lastSuggestedAction,
     };
   }
+}
+
+async function requestSpiritChatFreeTrial(
+  payload: Record<string, unknown>,
+  chat: SpiritChatRecord,
+  userMessage: string,
+): Promise<SpiritChatResult> {
+  let response: Response;
+  try {
+    response = await fetch("/api/spirit-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error("词灵会客室免费接口暂时不可用，请稍后再试。");
+  }
+
+  const raw = await response.json().catch(() => ({}));
+  const data = asRecord(raw);
+  if (!response.ok) {
+    throw new Error(String(data.error || "词灵会客室免费接口暂时不可用"));
+  }
+  if (!data.result) {
+    return {
+      reply: "我听见了。只是这句话还需要一点时间在我心里成形。",
+      mood: chat.mood || "倾听",
+      bond: Math.min(100, chat.bond + 1),
+      memorySummary: mergeFallbackMemory(chat, userMessage),
+      playerFacts: chat.playerFacts,
+      promises: chat.promises,
+      lastSuggestedAction: chat.lastSuggestedAction,
+    };
+  }
+  return normalizeResult(data.result, chat);
 }

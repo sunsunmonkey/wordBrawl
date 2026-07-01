@@ -122,6 +122,8 @@ export const SpiritChatScreen: React.FC = () => {
 
   const themeColor = moodColor(chat.bond);
   const isCustomReady = apiMode === "custom" && apiKey && baseUrl && model;
+  const isFreeMode = apiMode === "free";
+  const isReady = isFreeMode || isCustomReady;
   const isRecentBattle =
     lastRosterId === selected.rosterId && Boolean(lastSummary);
   const spirit = selected.spiritProfile;
@@ -130,9 +132,9 @@ export const SpiritChatScreen: React.FC = () => {
   const sendMessage = async (content: string) => {
     const text = content.trim();
     if (!text || isSending) return;
-    if (!isCustomReady) {
+    if (!isReady) {
       setError(
-        "词灵会客室需要 custom API，请先在首页填写 API Key、Base URL 和 Model。",
+        "词灵会客室需要先在首页选择免费体验或填写 custom API（Key / Base URL / Model）。",
       );
       return;
     }
@@ -628,9 +630,9 @@ export const SpiritChatScreen: React.FC = () => {
                       disabled={isSending}
                       rows={3}
                       placeholder={
-                        isCustomReady
+                        isReady
                           ? `与 ${selected.name} 交谈... (Enter 发送, Shift+Enter 换行)`
-                          : "需要 custom API 才能聊天"
+                          : "请先在首页选择免费体验或填写 custom API"
                       }
                       className="w-full resize-none rounded-xl border border-[#45A29E]/40 bg-black/60 px-4 py-3 text-sm leading-relaxed text-[#C5C6C7] outline-none transition-all placeholder:text-[#8a8d91]/50 focus:border-[#66FCF1] focus:bg-black/80 focus:shadow-[0_0_20px_rgba(102,252,241,0.15)] disabled:opacity-50"
                       onKeyDown={(event) => {
@@ -643,17 +645,17 @@ export const SpiritChatScreen: React.FC = () => {
                   </div>
                   <button
                     type="submit"
-                    disabled={!input.trim() || isSending || !isCustomReady}
+                    disabled={!input.trim() || isSending || !isReady}
                     className="group flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 transition-all disabled:opacity-40 disabled:hover:bg-transparent"
                     style={{
                       borderColor: themeColor,
                       color: themeColor,
                       backgroundColor:
-                        input.trim() && !isSending && isCustomReady
+                        input.trim() && !isSending && isReady
                           ? `${themeColor}15`
                           : "transparent",
                       boxShadow:
-                        input.trim() && !isSending && isCustomReady
+                        input.trim() && !isSending && isReady
                           ? `0 0 15px ${themeColor}33`
                           : "none",
                     }}
