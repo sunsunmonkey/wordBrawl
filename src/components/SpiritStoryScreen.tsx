@@ -9,6 +9,8 @@ import {
   Send,
   Sparkles,
   Swords,
+  UserRound,
+  Eye,
   UsersRound,
   Zap,
 } from "lucide-react";
@@ -66,6 +68,7 @@ export const SpiritStoryScreen: React.FC = () => {
   const setActiveRoomId = useSpiritStoryStore((s) => s.setActiveRoomId);
   const getOrCreateRoom = useSpiritStoryStore((s) => s.getOrCreateRoom);
   const setRoomParticipants = useSpiritStoryStore((s) => s.setRoomParticipants);
+  const setPlayerMode = useSpiritStoryStore((s) => s.setPlayerMode);
   const appendMessage = useSpiritStoryStore((s) => s.appendMessage);
   const applyStoryTurn = useSpiritStoryStore((s) => s.applyStoryTurn);
   const clearRoom = useSpiritStoryStore((s) => s.clearRoom);
@@ -96,6 +99,7 @@ export const SpiritStoryScreen: React.FC = () => {
     [activeIds, availableRoster],
   );
   const room = activeRoom ?? null;
+  const playerMode = room?.playerMode ?? "observer";
   const themeColor = storyColor(room?.tension ?? 24);
   const isCustomReady = apiMode === "custom" && apiKey && baseUrl && model;
   const isReady = apiMode === "free" || isCustomReady;
@@ -171,7 +175,8 @@ export const SpiritStoryScreen: React.FC = () => {
     const playerMessage = appendMessage(currentRoom.id, {
       role: "player",
       content: text,
-      speakerName: "YOU",
+      speakerName:
+        currentRoom.playerMode === "observer" ? "背景" : "YOU",
     });
     const latestRoom =
       useSpiritStoryStore.getState().rooms[currentRoom.id] ?? currentRoom;
@@ -214,10 +219,13 @@ export const SpiritStoryScreen: React.FC = () => {
     void sendMessage(input);
   };
 
-  const fillQuickScene = (prompt: string) => {
-    setInput((current) =>
-      current.trim() ? `${current.trim()}\n${prompt}` : prompt,
-    );
+  const continueStory = () => {
+    if (isSending || !isReady || participants.length < 2) return;
+    const prompt =
+      playerMode === "observer"
+        ? "请根据当前场景自然推进下一幕。优先让最该行动或说话的词灵推动剧情，不需要全员发言。"
+        : "契约者暂时沉默观察。请根据当前场景自然推进下一幕，让最该行动或说话的词灵回应局势。";
+    void sendMessage(prompt);
   };
 
   const recentRooms = Object.values(rooms)
@@ -444,22 +452,24 @@ export const SpiritStoryScreen: React.FC = () => {
                   ))}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (room && window.confirm(`清空《${room.title}》的故事记忆吗？`)) {
-                    clearRoom(room.id);
-                  }
-                }}
-                disabled={!room}
-                className="group flex shrink-0 items-center gap-1.5 rounded-lg border border-[#8a8d91]/30 bg-black/20 px-3 py-1.5 text-[10px] tracking-widest text-[#8a8d91] transition-all hover:border-[#FF003C]/60 hover:bg-[#FF003C]/10 hover:text-[#FF003C] disabled:opacity-40"
-              >
-                <RotateCcw
-                  size={12}
-                  className="transition-transform group-hover:-rotate-180"
-                />
-                重置故事
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (room && window.confirm(`清空《${room.title}》的故事记忆吗？`)) {
+                      clearRoom(room.id);
+                    }
+                  }}
+                  disabled={!room}
+                  className="group flex items-center gap-1.5 rounded-lg border border-[#8a8d91]/30 bg-black/20 px-3 py-1.5 text-[10px] tracking-widest text-[#8a8d91] transition-all hover:border-[#FF003C]/60 hover:bg-[#FF003C]/10 hover:text-[#FF003C] disabled:opacity-40"
+                >
+                  <RotateCcw
+                    size={12}
+                    className="transition-transform group-hover:-rotate-180"
+                  />
+                  重置故事
+                </button>
+              </div>
             </div>
 
             <div
@@ -534,7 +544,7 @@ export const SpiritStoryScreen: React.FC = () => {
                     <button
                       key={prompt}
                       type="button"
-                      onClick={() => fillQuickScene(prompt)}
+                      onClick={() => void sendMessage(prompt)}
                       disabled={isSending}
                       className="shrink-0 rounded-full border border-[#45A29E]/40 bg-[#1F2833]/60 px-4 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-all hover:border-[#66FCF1] hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] disabled:opacity-40"
                     >
@@ -551,7 +561,9 @@ export const SpiritStoryScreen: React.FC = () => {
                     rows={2}
                     placeholder={
                       isReady
-                        ? "输入场景、行动或台词... (Enter 发送, Shift+Enter 换行)"
+                        ? playerMode === "observer"
+                          ? "输入背景、场景变化或世界事件... (Enter 发送, Shift+Enter 换行)"
+                          : "输入契约者行动、台词或命令... (Enter 发送, Shift+Enter 换行)"
                         : "请先在首页选择免费体验或填写 custom API"
                     }
                     className="w-full resize-none rounded-xl border border-[#45A29E]/40 bg-black/60 px-4 py-2.5 text-sm leading-relaxed text-[#C5C6C7] outline-none transition-all placeholder:text-[#8a8d91]/50 focus:border-[#66FCF1] focus:bg-black/80 focus:shadow-[0_0_20px_rgba(102,252,241,0.15)] disabled:opacity-50"
@@ -594,6 +606,33 @@ export const SpiritStoryScreen: React.FC = () => {
                     )}
                   </button>
                 </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex w-full rounded-lg border border-[#45A29E]/35 bg-black/25 p-1 sm:w-auto">
+                    <ModeToggleButton
+                      active={playerMode === "observer"}
+                      icon={<Eye size={12} />}
+                      label="旁观背景"
+                      color={themeColor}
+                      onClick={() => room && setPlayerMode(room.id, "observer")}
+                    />
+                    <ModeToggleButton
+                      active={playerMode === "participant"}
+                      icon={<UserRound size={12} />}
+                      label="契约者参与"
+                      color={themeColor}
+                      onClick={() => room && setPlayerMode(room.id, "participant")}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={continueStory}
+                    disabled={isSending || !isReady || participants.length < 2}
+                    className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#FFD700]/55 bg-[#FFD700]/10 px-4 text-[10px] font-black tracking-wider text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-40 disabled:hover:bg-[#FFD700]/10 disabled:hover:text-[#FFD700]"
+                  >
+                    <Sparkles size={12} />
+                    继续故事
+                  </button>
+                </div>
               </form>
             </div>
           </main>
@@ -610,12 +649,13 @@ const StoryBubble: React.FC<{
 }> = ({ message, participants, themeColor }) => {
   const isPlayer = message.role === "player";
   const isNarrator = message.role === "narrator";
+  const isBackground = isPlayer && message.speakerName === "背景";
   const speaker = message.speakerRosterId
     ? participants.find((char) => char.rosterId === message.speakerRosterId)
     : null;
   const color = isNarrator ? "#8a8d91" : isPlayer ? "#FFD700" : themeColor;
 
-  if (isNarrator) {
+  if (isNarrator || isBackground) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -623,7 +663,11 @@ const StoryBubble: React.FC<{
         exit={{ opacity: 0 }}
         className="mx-auto max-w-3xl rounded-lg border border-[#45A29E]/25 bg-[#1F2833]/40 px-4 py-3 text-center text-sm italic leading-relaxed text-[#C5C6C7]"
       >
-        <Sparkles size={13} className="mr-2 inline text-[#66FCF1]" />
+        {isBackground ? (
+          <Eye size={13} className="mr-2 inline text-[#FFD700]" />
+        ) : (
+          <Sparkles size={13} className="mr-2 inline text-[#66FCF1]" />
+        )}
         {message.content}
       </motion.div>
     );
@@ -683,6 +727,28 @@ const StoryBubble: React.FC<{
     </motion.div>
   );
 };
+
+const ModeToggleButton: React.FC<{
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+  onClick: () => void;
+}> = ({ active, icon, label, color, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-black tracking-widest transition-all"
+    style={{
+      color: active ? "#0B0C10" : "#8a8d91",
+      background: active ? color : "transparent",
+      boxShadow: active ? `0 0 12px ${color}44` : "none",
+    }}
+  >
+    {icon}
+    {label}
+  </button>
+);
 
 const InfoBlock: React.FC<{
   icon: React.ReactNode;

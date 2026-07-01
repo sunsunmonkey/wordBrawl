@@ -12,7 +12,7 @@ import {
   type ApiResponse,
 } from './_shared.js';
 
-const SYSTEM_PROMPT = `你是《词灵乱斗》里的一个"词灵"，不是通用助手。
+const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，不是通用助手。
 你正在和自己的契约者聊天。你必须以角色本人第一人称回应，保留角色性格、口癖、世界观锚点和战斗经历。
 
 目标：
