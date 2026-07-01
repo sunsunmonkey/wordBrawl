@@ -139,8 +139,8 @@ export const RosterScreen: React.FC = () => {
                         <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
                           {recruitLocked
                             ? char.recruitLock?.status === 'failed'
-                              ? '招募失败'
-                              : '后台招募中'
+                              ? '创造失败'
+                              : '后台创造中'
                             : '进化更新中'}
                         </div>
                       </div>

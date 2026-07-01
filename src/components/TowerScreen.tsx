@@ -208,7 +208,7 @@ export const TowerScreen: React.FC = () => {
           {roster.length === 0 ? (
             <div className="rounded-lg border border-dashed border-[#FFD700]/30 p-8 text-center text-sm text-[#8a8d91]">
               <Sword size={28} className="mx-auto opacity-40 mb-2" />
-              当前没有麾下角色。请先回到修炼主页，使用「招募新角色」收入麾下。
+              当前没有麾下角色。请先回到修炼主页，使用「创造新角色」收入麾下。
             </div>
           ) : (
             <>
@@ -237,8 +237,8 @@ export const TowerScreen: React.FC = () => {
                       );
                       const nextEvoText = recruitLocked
                         ? char.recruitLock?.status === "failed"
-                          ? "招募失败"
-                          : "后台招募中"
+                          ? "创造失败"
+                          : "后台创造中"
                         : char.pendingEvolutionReplay
                           ? "进化演出待回放"
                           : evolutionLocked
@@ -296,8 +296,8 @@ export const TowerScreen: React.FC = () => {
                                   <Lock size={10} className="mr-1 inline" />
                                   {recruitLocked
                                     ? char.recruitLock?.status === "failed"
-                                      ? "招募失败"
-                                      : "招募中"
+                                      ? "创造失败"
+                                      : "创造中"
                                     : "进化更新中"}
                                 </div>
                               </div>
