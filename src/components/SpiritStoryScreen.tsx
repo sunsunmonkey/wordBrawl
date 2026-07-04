@@ -5,6 +5,7 @@ import {
   Clapperboard,
   Loader2,
   MessageSquareText,
+  Plus,
   RotateCcw,
   Send,
   Sparkles,
@@ -12,6 +13,7 @@ import {
   UserRound,
   Eye,
   UsersRound,
+  X,
   Zap,
 } from "lucide-react";
 import { BackButton } from "./BackButton";
@@ -23,21 +25,14 @@ import {
   type RosterCharacter,
 } from "../store/useRosterStore";
 import {
-  makeNewSpiritStoryRoomId,
+  DEFAULT_STORY_SCENARIO_ID,
+  SPIRIT_STORY_SCENARIOS,
+  getScenarioPreset,
   useSpiritStoryStore,
   type SpiritStoryMessage,
 } from "../store/useSpiritStoryStore";
 import { requestSpiritStory } from "../utils/spiritStory";
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
-
-const QUICK_SCENES = [
-  "夜里训练场突然停电，只有词灵身上的光还亮着。",
-  "一封没有署名的挑战书落到桌上，目标写着你们所有人的名字。",
-  "让他们讨论一下谁最适合担任这次行动的队长。",
-  "我带你们去一个完全陌生的城市，先自由行动。",
-  "有人说这里的规则可以被一句话改写，看看他们怎么反应。",
-  "让气氛轻松一点，大家围坐下来聊一次真心话。",
-];
 
 const MAX_STORY_PARTICIPANTS = 10;
 
@@ -53,46 +48,42 @@ const storyColor = (tension: number) => {
   return "#66FCF1";
 };
 
-const roomTitleFor = (participants: RosterCharacter[]) => {
-  if (participants.length === 0) return "词灵群像";
-  return participants
-    .slice(0, 3)
-    .map((char) => char.name)
-    .join(" / ")
-    .slice(0, 40);
-};
-
 export const SpiritStoryScreen: React.FC = () => {
   const { apiKey, baseUrl, model, apiMode, setPhase } = useGameStore();
   const roster = useRosterStore((s) => s.roster);
   const rooms = useSpiritStoryStore((s) => s.rooms);
   const activeRoomId = useSpiritStoryStore((s) => s.activeRoomId);
   const setActiveRoomId = useSpiritStoryStore((s) => s.setActiveRoomId);
-  const getOrCreateRoom = useSpiritStoryStore((s) => s.getOrCreateRoom);
+  const createRoom = useSpiritStoryStore((s) => s.createRoom);
+  const updateRoomScenario = useSpiritStoryStore((s) => s.updateRoomScenario);
   const setRoomParticipants = useSpiritStoryStore((s) => s.setRoomParticipants);
   const setPlayerMode = useSpiritStoryStore((s) => s.setPlayerMode);
   const appendMessage = useSpiritStoryStore((s) => s.appendMessage);
   const applyStoryTurn = useSpiritStoryStore((s) => s.applyStoryTurn);
   const clearRoom = useSpiritStoryStore((s) => s.clearRoom);
+  const deleteRoom = useSpiritStoryStore((s) => s.deleteRoom);
+
   const availableRoster = roster.filter(
     (char) => !isRosterCharacterUnavailable(char),
   );
-  const [draftIds, setDraftIds] = useState<string[]>(() =>
-    availableRoster.slice(0, 3).map((char) => char.rosterId),
-  );
+
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const activeRoom = activeRoomId ? rooms[activeRoomId] : null;
-  const activeIds =
-    activeRoom?.participantRosterIds?.length &&
-    activeRoom.participantRosterIds.every((id) =>
-      availableRoster.some((char) => char.rosterId === id),
-    )
-      ? activeRoom.participantRosterIds
-      : draftIds;
 
+  // Draft state (新建故事时使用)
+  const [draftIds, setDraftIds] = useState<string[]>(() =>
+    availableRoster.slice(0, 3).map((char) => char.rosterId),
+  );
+  const [draftScenarioId, setDraftScenarioId] = useState<string>(
+    DEFAULT_STORY_SCENARIO_ID,
+  );
+
+  const activeRoom = activeRoomId ? rooms[activeRoomId] : null;
+  const isComposing = !activeRoom;
+
+  const activeIds = activeRoom ? activeRoom.participantRosterIds : draftIds;
   const participants = useMemo(
     () =>
       activeIds
@@ -104,10 +95,15 @@ export const SpiritStoryScreen: React.FC = () => {
     () => new Set(participants.map((char) => char.rosterId)),
     [participants],
   );
-  const room = activeRoom ?? null;
-  const playerMode = room?.playerMode ?? "observer";
-  const themeColor = storyColor(room?.tension ?? 24);
-  const isCustomReady = apiMode === "custom" && apiKey && baseUrl && model;
+
+  const scenarioId = activeRoom ? activeRoom.scenarioId : draftScenarioId;
+  const scenarioPreset = getScenarioPreset(scenarioId);
+  const themeColor = storyColor(
+    activeRoom?.tension ?? scenarioPreset.suggestedTension,
+  );
+  const playerMode = activeRoom?.playerMode ?? "observer";
+  const isCustomReady =
+    apiMode === "custom" && !!apiKey && !!baseUrl && !!model;
   const isReady = apiMode === "free" || isCustomReady;
 
   const cfg = useMemo(
@@ -116,79 +112,99 @@ export const SpiritStoryScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    if (activeRoomId || availableRoster.length < 2) return;
-    const ids = draftIds.length >= 2
-      ? draftIds
-      : availableRoster.slice(0, 3).map((char) => char.rosterId);
-    getOrCreateRoom(ids, roomTitleFor(availableRoster), makeNewSpiritStoryRoomId());
-  }, [activeRoomId, availableRoster, draftIds, getOrCreateRoom]);
-
-  useEffect(() => {
-    if (!activeRoom) return;
-    setDraftIds(activeRoom.participantRosterIds.slice(0, MAX_STORY_PARTICIPANTS));
-  }, [activeRoom]);
-
-  useEffect(() => {
-    const validIds = new Set(availableRoster.map((char) => char.rosterId));
-    const next = activeIds
-      .filter((id) => validIds.has(id))
-      .slice(0, MAX_STORY_PARTICIPANTS);
-    if (!activeRoom && next.length !== draftIds.length) setDraftIds(next);
-    if (activeRoom && next.length >= 2 && next.length !== activeIds.length) {
-      setRoomParticipants(activeRoom.id, next);
-    }
-  }, [activeIds, activeRoom, availableRoster, draftIds.length, setRoomParticipants]);
-
-  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [room?.messages.length, isSending]);
+  }, [activeRoom?.messages.length, isSending]);
+
+  useEffect(() => {
+    if (!isComposing) return;
+    // Auto-select first few available when nothing chosen yet
+    if (draftIds.length === 0 && availableRoster.length >= 2) {
+      setDraftIds(availableRoster.slice(0, 3).map((c) => c.rosterId));
+    }
+  }, [isComposing, availableRoster, draftIds.length]);
+
+  const startNewComposing = () => {
+    setActiveRoomId(null);
+    setError("");
+    setInput("");
+    setDraftIds(availableRoster.slice(0, 3).map((c) => c.rosterId));
+    setDraftScenarioId(DEFAULT_STORY_SCENARIO_ID);
+  };
 
   const toggleParticipant = (rosterId: string) => {
     setError("");
-    const current = activeIds;
-    let next = current;
-    if (current.includes(rosterId)) {
-      if (current.length <= 2) return;
-      next = current.filter((id) => id !== rosterId);
-    } else {
-      if (current.length >= MAX_STORY_PARTICIPANTS) {
-        setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
-        return;
-      }
-      next = [...current, rosterId];
-    }
-    if (activeRoom) {
-      setRoomParticipants(activeRoom.id, next);
+    if (isComposing) {
+      setDraftIds((current) => {
+        if (current.includes(rosterId)) {
+          if (current.length <= 1) return current;
+          return current.filter((id) => id !== rosterId);
+        }
+        if (current.length >= MAX_STORY_PARTICIPANTS) {
+          setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
+          return current;
+        }
+        return [...current, rosterId];
+      });
       return;
     }
-    setDraftIds(next);
+    if (!activeRoom) return;
+    const current = activeRoom.participantRosterIds;
+    if (current.includes(rosterId)) {
+      if (current.length <= 2) return;
+      setRoomParticipants(
+        activeRoom.id,
+        current.filter((id) => id !== rosterId),
+      );
+      return;
+    }
+    if (current.length >= MAX_STORY_PARTICIPANTS) {
+      setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
+      return;
+    }
+    setRoomParticipants(activeRoom.id, [...current, rosterId]);
+  };
+
+  const updateScenarioId = (id: string) => {
+    if (activeRoom) {
+      updateRoomScenario(activeRoom.id, { scenarioId: id });
+      return;
+    }
+    setDraftScenarioId(id);
+  };
+
+  const ensureRoom = () => {
+    if (activeRoom) return activeRoom;
+    if (draftIds.length < 2) return null;
+    const created = createRoom({
+      participantRosterIds: draftIds,
+      scenarioId: draftScenarioId,
+    });
+    return created;
   };
 
   const sendMessage = async (content: string) => {
     const text = content.trim();
-    if (!text || isSending || participants.length < 2) return;
+    if (!text || isSending) return;
+    if (participants.length < 2) {
+      setError("至少选择 2 名词灵才能开始。");
+      return;
+    }
     if (!isReady) {
       setError("多人故事需要先在首页选择免费体验或填写 custom API。");
       return;
     }
 
-    const currentRoom =
-      room ??
-      getOrCreateRoom(
-        participants.map((char) => char.rosterId),
-        roomTitleFor(participants),
-        makeNewSpiritStoryRoomId(),
-      );
+    const currentRoom = ensureRoom();
+    if (!currentRoom) return;
 
     setError("");
     setInput("");
     const playerMessage = appendMessage(currentRoom.id, {
       role: "player",
       content: text,
-      speakerName:
-        currentRoom.playerMode === "observer" ? "背景" : "YOU",
+      speakerName: currentRoom.playerMode === "observer" ? "背景" : "YOU",
     });
     const latestRoom =
       useSpiritStoryStore.getState().rooms[currentRoom.id] ?? currentRoom;
@@ -240,10 +256,9 @@ export const SpiritStoryScreen: React.FC = () => {
     void sendMessage(prompt);
   };
 
-  const recentRooms = Object.values(rooms)
-    .filter((entry) => entry.participantRosterIds.length >= 2)
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, 4);
+  const roomList = Object.values(rooms).sort(
+    (a, b) => b.updatedAt - a.updatedAt,
+  );
 
   if (availableRoster.length < 2) {
     return (
@@ -293,28 +308,68 @@ export const SpiritStoryScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {recentRooms.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={() => {
-                  setActiveRoomId(entry.id);
-                }}
-                className="shrink-0 rounded border px-3 py-1.5 text-[10px] font-bold tracking-widest transition-all"
-                style={{
-                  borderColor:
-                    entry.id === room?.id ? themeColor : "rgba(102,252,241,0.25)",
-                  color: entry.id === room?.id ? themeColor : "#8a8d91",
-                  background:
-                    entry.id === room?.id
-                      ? `${themeColor}18`
-                      : "rgba(11,12,16,0.55)",
-                }}
-              >
-                {entry.title}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={startNewComposing}
+              className="flex items-center gap-1.5 rounded-full border border-[#66FCF1]/60 bg-[#66FCF1]/10 px-3 py-1.5 text-[10px] font-black tracking-[0.24em] text-[#66FCF1] transition-all hover:bg-[#66FCF1] hover:text-[#0B0C10]"
+            >
+              <Plus size={12} />
+              新建故事
+            </button>
+            <div className="flex max-w-[52vw] gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {roomList.map((entry) => {
+                const isActive = entry.id === activeRoom?.id;
+                const preset = getScenarioPreset(entry.scenarioId);
+                return (
+                  <div key={entry.id} className="group relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setActiveRoomId(entry.id)}
+                      className="flex items-center gap-1.5 rounded border py-1.5 pl-3 pr-8 text-[10px] font-bold tracking-widest transition-all"
+                      style={{
+                        borderColor: isActive
+                          ? themeColor
+                          : "rgba(102,252,241,0.25)",
+                        color: isActive ? themeColor : "#8a8d91",
+                        background: isActive
+                          ? `${themeColor}18`
+                          : "rgba(11,12,16,0.55)",
+                      }}
+                    >
+                      <span
+                        className="rounded px-1 py-[1px] text-[8px]"
+                        style={{
+                          background: isActive
+                            ? `${themeColor}30`
+                            : "rgba(255,255,255,0.05)",
+                          color: isActive ? themeColor : "#8a8d91",
+                        }}
+                      >
+                        {preset.label}
+                      </span>
+                      <span className="max-w-[9rem] truncate">
+                        {entry.title}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (window.confirm(`删除故事《${entry.title}》？`)) {
+                          deleteRoom(entry.id);
+                        }
+                      }}
+                      aria-label="删除故事"
+                      title="删除故事"
+                      className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-sm text-[#8a8d91]/40 opacity-0 transition-all hover:bg-[#FF003C]/15 hover:text-[#FF3B6E] group-hover:opacity-100 focus:opacity-100"
+                    >
+                      <X size={10} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -366,99 +421,124 @@ export const SpiritStoryScreen: React.FC = () => {
                             {char.name}
                           </div>
                           <div className="truncate text-[9px] text-[#8a8d91]">
-                            Lv.{char.level} · {evolutionLabel(char.evolutionStage)}
+                            Lv.{char.level} ·{" "}
+                            {evolutionLabel(char.evolutionStage)}
                           </div>
                         </div>
-                        {active && (
-                          <div
-                            className="absolute right-1.5 top-1.5 rounded px-1.5 py-0.5 text-[9px] font-black text-[#0B0C10]"
-                            style={{ backgroundColor: themeColor }}
-                          >
-                            IN
-                          </div>
-                        )}
                       </div>
                     </button>
                   );
                 })}
               </div>
+              <div className="mt-3 text-[10px] leading-relaxed text-[#8a8d91]/70">
+                每位词灵在剧本里的真实身份由 AI
+                悄悄安排，你需要在剧情中自己判断谁是敌友。
+              </div>
             </section>
 
-            <section className="rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
-              <div className="mb-4 flex items-center justify-between text-[10px] tracking-[0.24em] text-[#8a8d91]">
-                <div className="flex items-center gap-1.5">
-                  <Zap size={12} style={{ color: themeColor }} />
-                  故事张力
+            <ScenarioSection
+              scenarioId={scenarioId}
+              onChange={updateScenarioId}
+              themeColor={themeColor}
+              isComposing={isComposing}
+            />
+
+            {activeRoom && (
+              <section className="rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
+                <div className="mb-4 flex items-center justify-between text-[10px] tracking-[0.24em] text-[#8a8d91]">
+                  <div className="flex items-center gap-1.5">
+                    <Zap size={12} style={{ color: themeColor }} />
+                    故事张力
+                  </div>
+                  <span style={{ color: themeColor }}>
+                    {activeRoom.tension}/100
+                  </span>
                 </div>
-                <span style={{ color: themeColor }}>{room?.tension ?? 20}/100</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[#0B0C10] border border-white/5">
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{
-                    background: themeColor,
-                    boxShadow: `0 0 12px ${themeColor}`,
-                  }}
-                  animate={{ width: `${room?.tension ?? 20}%` }}
+                <div className="h-1.5 overflow-hidden rounded-full bg-[#0B0C10] border border-white/5">
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{
+                      background: themeColor,
+                      boxShadow: `0 0 12px ${themeColor}`,
+                    }}
+                    animate={{ width: `${activeRoom.tension}%` }}
+                  />
+                </div>
+                <InfoBlock
+                  icon={<Clapperboard size={14} />}
+                  title="当前场景"
+                  color={themeColor}
+                  empty="故事尚未开场。"
+                  items={activeRoom.scene ? [activeRoom.scene] : []}
                 />
-              </div>
-              <InfoBlock
-                icon={<Clapperboard size={14} />}
-                title="当前场景"
-                color={themeColor}
-                empty="故事尚未开场。"
-                items={room?.scene ? [room.scene] : []}
-              />
-              <InfoBlock
-                icon={<BookOpen size={14} />}
-                title="世界记忆"
-                color="#66FCF1"
-                empty="还没有沉淀故事记忆。"
-                items={room?.storySummary ? [room.storySummary] : []}
-              />
-              <div className="mt-4 space-y-2">
-                {participants.map((char) => {
-                  const state = room?.participantStates[char.rosterId];
-                  return (
-                    <div
-                      key={char.rosterId}
-                      className="rounded border border-[#45A29E]/25 bg-[#0B0C10]/55 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="truncate text-xs font-black text-[#C5C6C7]">
-                          {char.name}
+                <InfoBlock
+                  icon={<BookOpen size={14} />}
+                  title="世界记忆"
+                  color="#66FCF1"
+                  empty="还没有沉淀故事记忆。"
+                  items={
+                    activeRoom.storySummary ? [activeRoom.storySummary] : []
+                  }
+                />
+                <div className="mt-4 space-y-2">
+                  {participants.map((char) => {
+                    const state = activeRoom.participantStates[char.rosterId];
+                    return (
+                      <div
+                        key={char.rosterId}
+                        className="rounded border border-[#45A29E]/25 bg-[#0B0C10]/55 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate text-xs font-black text-[#C5C6C7]">
+                            {char.name}
+                          </div>
+                          <div className="shrink-0 text-[10px] text-[#FFD700]">
+                            {state?.mood || "入场"}
+                          </div>
                         </div>
-                        <div className="shrink-0 text-[10px] text-[#FFD700]">
-                          {state?.mood || "入场"}
-                        </div>
+                        {state?.memory && (
+                          <div className="mt-1 text-[10px] leading-relaxed text-[#8a8d91]">
+                            {state.memory}
+                          </div>
+                        )}
                       </div>
-                      {state?.memory && (
-                        <div className="mt-1 text-[10px] leading-relaxed text-[#8a8d91]">
-                          {state.memory}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
           </aside>
 
           <main className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#45A29E]/35 bg-[#0B0C10]/80 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md xl:col-span-8 2xl:col-span-9">
             <div className="flex shrink-0 flex-col gap-3 border-b border-[#45A29E]/25 bg-[#1F2833]/80 px-4 py-3 backdrop-blur-sm lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
-                <div
-                  className="truncate text-[12px] font-black tracking-[0.28em]"
-                  style={{
-                    color: themeColor,
-                    textShadow: `0 0 8px ${themeColor}66`,
-                  }}
-                >
-                  {room?.title || roomTitleFor(participants)}
+                <div className="flex items-center gap-2">
+                  <span
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-black tracking-widest"
+                    style={{
+                      background: `${themeColor}22`,
+                      color: themeColor,
+                      border: `1px solid ${themeColor}55`,
+                    }}
+                  >
+                    {scenarioPreset.label}
+                  </span>
+                  <div
+                    className="truncate text-[12px] font-black tracking-[0.28em]"
+                    style={{
+                      color: themeColor,
+                      textShadow: `0 0 8px ${themeColor}66`,
+                    }}
+                  >
+                    {activeRoom?.title || "尚未开场"}
+                  </div>
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 text-[10px] tracking-widest text-[#8a8d91]">
                   {participants.map((char) => (
-                    <span key={char.rosterId}>
+                    <span
+                      key={char.rosterId}
+                      className="flex items-center gap-1"
+                    >
                       {char.name} · {levelAscensionLabel(char.level)}
                     </span>
                   ))}
@@ -468,11 +548,16 @@ export const SpiritStoryScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    if (room && window.confirm(`清空《${room.title}》的故事记忆吗？`)) {
-                      clearRoom(room.id);
+                    if (
+                      activeRoom &&
+                      window.confirm(
+                        `清空《${activeRoom.title}》的故事记忆吗？`,
+                      )
+                    ) {
+                      clearRoom(activeRoom.id);
                     }
                   }}
-                  disabled={!room}
+                  disabled={!activeRoom}
                   className="group flex items-center gap-1.5 rounded-lg border border-[#8a8d91]/30 bg-black/20 px-3 py-1.5 text-[10px] tracking-widest text-[#8a8d91] transition-all hover:border-[#FF003C]/60 hover:bg-[#FF003C]/10 hover:text-[#FF003C] disabled:opacity-40"
                 >
                   <RotateCcw
@@ -488,29 +573,19 @@ export const SpiritStoryScreen: React.FC = () => {
               ref={scrollRef}
               className="flex-1 overflow-y-auto p-4 md:p-5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30"
             >
-              {!room || room.messages.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center text-center opacity-85">
-                  <div className="relative mb-6">
-                    <div
-                      className="absolute inset-0 animate-ping rounded-full opacity-20 blur-xl"
-                      style={{ backgroundColor: themeColor }}
-                    />
-                    <MessageSquareText size={52} style={{ color: themeColor }} />
-                  </div>
-                  <div
-                    className="text-xl font-black tracking-wider"
-                    style={{ color: themeColor }}
-                  >
-                    群像故事开场
-                  </div>
-                  <div className="mt-3 max-w-md text-xs leading-relaxed text-[#8a8d91]">
-                    选择 2-{MAX_STORY_PARTICIPANTS} 名词灵，直接给出场景、事件或一句话命令。它们会在同一个世界里互相回应，而不是分别和你单聊。
-                  </div>
-                </div>
+              {!activeRoom || activeRoom.messages.length === 0 ? (
+                <ComposingHint
+                  scenarioLabel={scenarioPreset.label}
+                  scenarioBrief={
+                    activeRoom?.scenarioBrief || scenarioPreset.brief
+                  }
+                  themeColor={themeColor}
+                  ready={participants.length >= 2 && isReady}
+                />
               ) : (
                 <div className="space-y-5">
                   <AnimatePresence initial={false}>
-                    {room.messages.map((message) => (
+                    {activeRoom.messages.map((message) => (
                       <StoryBubble
                         key={message.id}
                         message={message}
@@ -553,7 +628,7 @@ export const SpiritStoryScreen: React.FC = () => {
               )}
               <form onSubmit={handleSubmit} className="flex flex-col gap-2">
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                  {QUICK_SCENES.map((prompt) => (
+                  {scenarioPreset.quickScenes.map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
@@ -626,14 +701,21 @@ export const SpiritStoryScreen: React.FC = () => {
                       icon={<Eye size={12} />}
                       label="旁观背景"
                       color={themeColor}
-                      onClick={() => room && setPlayerMode(room.id, "observer")}
+                      onClick={() =>
+                        activeRoom && setPlayerMode(activeRoom.id, "observer")
+                      }
+                      disabled={!activeRoom}
                     />
                     <ModeToggleButton
                       active={playerMode === "participant"}
                       icon={<UserRound size={12} />}
                       label="契约者参与"
                       color={themeColor}
-                      onClick={() => room && setPlayerMode(room.id, "participant")}
+                      onClick={() =>
+                        activeRoom &&
+                        setPlayerMode(activeRoom.id, "participant")
+                      }
+                      disabled={!activeRoom}
                     />
                   </div>
                   <button
@@ -654,6 +736,92 @@ export const SpiritStoryScreen: React.FC = () => {
     </div>
   );
 };
+
+const ScenarioSection: React.FC<{
+  scenarioId: string;
+  onChange: (id: string) => void;
+  themeColor: string;
+  isComposing: boolean;
+}> = ({ scenarioId, onChange, themeColor, isComposing }) => {
+  const preset = getScenarioPreset(scenarioId);
+  return (
+    <section className="rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[10px] font-black tracking-[0.28em] text-[#66FCF1]">
+          <BookOpen size={14} />
+          剧本主题
+        </div>
+        <div className="text-[10px] text-[#8a8d91]">
+          {isComposing ? "开场配置" : "可临时切换"}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {SPIRIT_STORY_SCENARIOS.map((entry) => {
+          const active = entry.id === scenarioId;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => onChange(entry.id)}
+              className="rounded-lg border px-2.5 py-2 text-left transition-all"
+              style={{
+                borderColor: active ? themeColor : "rgba(102,252,241,0.22)",
+                background: active ? `${themeColor}18` : "rgba(11,12,16,0.55)",
+                color: active ? themeColor : "#C5C6C7",
+                boxShadow: active ? `0 0 12px ${themeColor}33` : "none",
+              }}
+            >
+              <div className="text-[11px] font-black tracking-wider">
+                {entry.label}
+              </div>
+              <div className="mt-0.5 truncate text-[9px] text-[#8a8d91]">
+                {entry.summary}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 rounded-lg border border-[#45A29E]/25 bg-[#0B0C10]/55 p-2.5 text-[11px] leading-relaxed text-[#C5C6C7]">
+        <span style={{ color: themeColor }}>▸</span> {preset.brief}
+      </div>
+    </section>
+  );
+};
+
+const ComposingHint: React.FC<{
+  scenarioLabel: string;
+  scenarioBrief: string;
+  themeColor: string;
+  ready: boolean;
+}> = ({ scenarioLabel, scenarioBrief, themeColor, ready }) => (
+  <div className="flex h-full flex-col items-center justify-center text-center opacity-90">
+    <div className="relative mb-6">
+      <div
+        className="absolute inset-0 animate-ping rounded-full opacity-20 blur-xl"
+        style={{ backgroundColor: themeColor }}
+      />
+      <MessageSquareText size={52} style={{ color: themeColor }} />
+    </div>
+    <div
+      className="text-xl font-black tracking-wider"
+      style={{ color: themeColor }}
+    >
+      {scenarioLabel} · 开场
+    </div>
+    <div className="mt-3 max-w-md text-xs leading-relaxed text-[#8a8d91]">
+      {scenarioBrief}
+    </div>
+    <div className="mt-4 max-w-md text-[10px] leading-relaxed text-[#8a8d91]/80">
+      在左侧选择 2-{MAX_STORY_PARTICIPANTS} 名词灵，再输入一句开场事件；AI
+      会依据剧本自动为每位词灵分配立场，并让剧情自然演化。
+      {!ready && (
+        <span className="mt-2 block text-[#FFD700]">
+          （还需要至少 2 名词灵才能开始）
+        </span>
+      )}
+    </div>
+  </div>
+);
 
 const StoryBubble: React.FC<{
   message: SpiritStoryMessage;
@@ -759,11 +927,13 @@ const ModeToggleButton: React.FC<{
   label: string;
   color: string;
   onClick: () => void;
-}> = ({ active, icon, label, color, onClick }) => (
+  disabled?: boolean;
+}> = ({ active, icon, label, color, onClick, disabled }) => (
   <button
     type="button"
     onClick={onClick}
-    className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-black tracking-widest transition-all"
+    disabled={disabled}
+    className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-black tracking-widest transition-all disabled:opacity-40"
     style={{
       color: active ? "#0B0C10" : "#8a8d91",
       background: active ? color : "transparent",
