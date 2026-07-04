@@ -15,6 +15,7 @@ import {
   Lock,
   MessageCircle,
   Clapperboard,
+  ChevronRight,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -29,7 +30,6 @@ import {
 } from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { useSpiritChatStore } from "../store/useSpiritChatStore";
-import { ParticleField } from "./ParticleField";
 import {
   buildLocalEvolution,
   evolutionLabel,
@@ -321,66 +321,155 @@ export const ModeSelectScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden grid-bg">
-      <ParticleField count={32} />
-      <BackButton
-        onClick={() => setPhase("WELCOME")}
-        color="#66FCF1"
-        className="absolute left-6 top-6 z-20"
-      />
-
-      <div className="absolute right-6 top-6 z-20 flex items-center gap-3">
-        <IconButton
-          onClick={goRoster}
-          icon={<UsersRound size={18} />}
-          label={`我的麾下 · ${rosterCount}`}
-          accent="#66FCF1"
+    <div className="min-h-screen relative overflow-hidden bg-[#05060a] text-white">
+      {/* 静态背景层 */}
+      <div className="pointer-events-none absolute inset-0 z-0">
+        <div
+          className="absolute -top-40 -left-40 w-[55vw] h-[55vw] rounded-full opacity-30"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255,215,0,0.25) 0%, transparent 55%)",
+            filter: "blur(60px)",
+          }}
         />
-        <IconButton
-          onClick={startPvP}
-          icon={<Swords size={18} />}
-          label="切磋 PVP"
-          accent="#FF003C"
+        <div
+          className="absolute -bottom-40 -right-40 w-[55vw] h-[55vw] rounded-full opacity-30"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(102,252,241,0.22) 0%, transparent 55%)",
+            filter: "blur(60px)",
+          }}
+        />
+        <div
+          className="absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(102,252,241,1) 1px, transparent 1px), linear-gradient(90deg, rgba(102,252,241,1) 1px, transparent 1px)",
+            backgroundSize: "80px 80px",
+            maskImage:
+              "radial-gradient(ellipse at center, black 40%, transparent 80%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse at center, black 40%, transparent 80%)",
+          }}
         />
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="relative z-10 w-full max-w-5xl"
+      {/* 巨型水印 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden select-none"
       >
-        <div className="text-center mb-8">
-          <h1
-            className="text-4xl md:text-5xl font-black tracking-wider font-display"
-            style={{ color: "#FFD700", textShadow: "0 0 18px #FFD700" }}
-          >
-            修炼主页
-          </h1>
-          <p className="text-xs mt-3 tracking-[0.4em] text-[#8a8d91]">
-            TRAIN YOUR ROSTER
-          </p>
+        <div
+          className="font-display font-black leading-none tracking-tighter text-white/[0.02]"
+          style={{ fontSize: "min(30vw, 520px)", letterSpacing: "-0.06em" }}
+        >
+          HUB
         </div>
+      </div>
+
+      {/* 顶部 HUD */}
+      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+        <div className="flex items-center gap-3">
+          <BackButton
+            onClick={() => setPhase("WELCOME")}
+            color="#66FCF1"
+          />
+          <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
+            <div className="w-6 h-[1px] bg-[#66FCF1]" />
+            <span>WORD-SPIRIT / 002</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <IconButton
+            onClick={goRoster}
+            icon={<UsersRound size={16} />}
+            label={`ROSTER · ${rosterCount}`}
+            accent="#66FCF1"
+          />
+          <IconButton
+            onClick={startPvP}
+            icon={<Swords size={16} />}
+            label="PVP"
+            accent="#FF003C"
+          />
+        </div>
+      </div>
+
+      {/* 主内容 */}
+      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-24 pb-16 max-w-[1400px] mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
+        >
+          {/* 编辑式标题 */}
+          <div className="flex items-end justify-between mb-10 flex-wrap gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-[1px] bg-[#FFD700]" />
+                <span className="text-[10px] tracking-[0.5em] text-[#FFD700]/90 font-mono">
+                  CHAPTER · 01
+                </span>
+              </div>
+              <h1
+                className="font-display font-black leading-[0.9] tracking-tight"
+                style={{
+                  fontSize: "clamp(3rem, 7vw, 5.5rem)",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                <span
+                  className="text-white"
+                  style={{ textShadow: "0 0 30px rgba(255,215,0,0.25)" }}
+                >
+                  词灵
+                </span>
+                <span
+                  className="text-[#FFD700]"
+                  style={{ textShadow: "0 0 30px rgba(255,215,0,0.55)" }}
+                >
+                  枢庭
+                </span>
+              </h1>
+              <div
+                className="mt-2 font-mono font-bold text-white/25"
+                style={{
+                  fontSize: "clamp(0.7rem, 1.1vw, 1rem)",
+                  letterSpacing: "0.4em",
+                }}
+              >
+                S U M M O N · C H A T · S T O R Y · A S C E N D
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-mono tracking-widest text-white/30">
+              <div>ROSTER {String(rosterCount).padStart(2, "0")} / 24</div>
+              <div className="text-[#66FCF1]/70 mt-1">
+                {selectedRoster
+                  ? `SELECTED · ${selectedRoster.name}`
+                  : "NO SELECTION"}
+              </div>
+            </div>
+          </div>
 
         <div className="flex flex-col gap-5">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ModeCard
               onClick={startRecruit}
-              icon={<Sparkles size={30} />}
-              title="创造新角色"
-              subtitle="AI 生成 · 收入麾下"
+              icon={<Sparkles size={22} />}
+              title="召唤词灵"
+              subtitle="一句描述 · 生成一位它"
               accent="#FFD700"
-              description="描述一个想长期培养的角色，生成后进入本地麾下。"
+              description="用文字勾勒外貌与性格，AI 会为你造一位可长期陪伴的词灵。"
               highlight
             />
             <ModeCard
               onClick={startSpiritChat}
               disabled={!selectedRoster || selectedUnavailable}
-              icon={<MessageCircle size={30} />}
-              title="词灵会客室"
-              subtitle="独立记忆 · 灵契羁绊"
+              icon={<MessageCircle size={22} />}
+              title="灵契会客室"
+              subtitle="独立记忆 · 深度陪伴"
               accent="#66FCF1"
-              description="与选中词灵深度交流，沉淀专属灵魂记忆。"
+              description="和选中词灵一对一对话，它会记住你们之间的每一次交流。"
               highlight
             />
             <ModeCard
@@ -389,64 +478,76 @@ export const ModeSelectScreen: React.FC = () => {
                 roster.filter((char) => !isRosterCharacterUnavailable(char))
                   .length < 2
               }
-              icon={<Clapperboard size={30} />}
-              title="多人故事"
-              subtitle="群像对话 · 世界记忆"
-              accent="#66FCF1"
-              description="选择多名词灵同场互动，让它们互相推进一段故事。"
+              icon={<Clapperboard size={22} />}
+              title="群像共叙"
+              subtitle="多灵同场 · 世界故事"
+              accent="#B78BFF"
+              description="召集多位词灵同框互动，让它们自己推进一段属于你的故事。"
               highlight
             />
             <ModeCard
               onClick={startTower}
               disabled={!selectedRoster || selectedUnavailable}
-              icon={<Castle size={30} />}
+              icon={<Castle size={22} />}
               title="九层塔"
               subtitle={
                 selectedRoster
                   ? selectedUnavailable
                     ? `${selectedRoster.name} · 暂不可用`
                     : `${selectedRoster.name} · 第${selectedRoster.tower.nextLayer ?? 1}层`
-                  : "先选择出战词灵"
+                  : "选一位词灵出战"
               }
-              accent="#FFD700"
-              description="挑战九层塔累积修炼 XP，达标后触发进化。"
+              accent="#FF6B9D"
+              description="登塔积累修炼 XP，突破关卡后触发进化，解锁全新形态与技能。"
               highlight
             />
           </div>
 
           <div
-            className="flex flex-col rounded-xl border-2 bg-[#1F2833]/75 p-5"
-            style={{
-              borderColor: "#FFD700",
-              boxShadow: "0 0 28px rgba(255,215,0,0.22)",
-            }}
+            className="relative flex flex-col border border-white/10 bg-black/30 backdrop-blur-sm p-6 overflow-hidden"
           >
-            <div className="mb-4 flex shrink-0 items-center justify-between">
-              <div>
-                <div className="text-xs tracking-[0.35em] text-[#FFD700]">
-                  ROSTER CORE
-                </div>
-                <div className="mt-1 text-2xl font-black font-display text-[#FFD700]">
-                  {lead ? "麾下角色" : "尚未创造"}
-                </div>
+            <span
+              aria-hidden
+              className="absolute top-0 left-0 w-3 h-3 border-t border-l border-[#FFD700]"
+            />
+            <span
+              aria-hidden
+              className="absolute top-0 right-0 w-3 h-3 border-t border-r border-[#FFD700]"
+            />
+            <span
+              aria-hidden
+              className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-[#FFD700]"
+            />
+            <span
+              aria-hidden
+              className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-[#FFD700]"
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-32 -left-32 h-64 w-64 rounded-full blur-3xl opacity-15"
+              style={{ background: "#FFD700" }}
+            />
+            <div className="mb-5 flex shrink-0 items-center justify-between relative pb-3 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-1.5 h-1.5 bg-[#FFD700]" />
+                <span className="text-[10px] font-mono tracking-[0.35em] text-white/60">
+                  ROSTER · CORE
+                </span>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <div className="text-right text-[10px] text-[#8a8d91]">
-                  麾下 {rosterCount}/24
-                </div>
+              <div className="flex items-center gap-4">
+                <span className="text-[10px] font-mono text-white/30">
+                  {String(rosterCount).padStart(2, "0")} / 24
+                </span>
                 {evolutionDebugAvailable && (
                   <button
                     type="button"
                     onClick={() => setEvolutionDebugMode(!evolutionDebugMode)}
-                    className="flex items-center gap-1.5 rounded border px-2.5 py-1 text-[9px] font-black tracking-widest transition-all"
+                    className="flex items-center gap-1.5 px-2 py-1 text-[9px] font-black tracking-widest transition-all border"
                     style={{
                       borderColor: evolutionDebugMode
                         ? "rgba(255,107,157,0.75)"
-                        : "rgba(255,215,0,0.28)",
-                      color: evolutionDebugMode ? "#FF6B9D" : "#8a8d91",
-                      background: evolutionDebugMode
-                        ? "rgba(255,107,157,0.14)"
-                        : "rgba(11,12,16,0.55)",
+                        : "rgba(255,255,255,0.15)",
+                      color: evolutionDebugMode ? "#FF6B9D" : "rgba(255,255,255,0.4)",
                     }}
                   >
                     <FlaskConical size={11} />
@@ -730,10 +831,21 @@ export const ModeSelectScreen: React.FC = () => {
             )}
           </div>
         </div>
-      </motion.div>
+        </motion.div>
 
-      <div className="absolute bottom-4 left-0 right-0 text-center text-[10px] text-[#8a8d91]/50 tracking-widest">
-        ▼ 创造 · 修炼 · 进化 ▼
+        {/* 底部签名 */}
+        <div className="mt-16 pt-6 border-t border-white/5 flex items-center justify-between text-[10px] font-mono tracking-[0.35em] text-white/25">
+          <div className="flex items-center gap-4">
+            <span>01 · CONFIG</span>
+            <span className="w-10 h-[1px] bg-white/15" />
+            <span className="text-[#FFD700]">02 · HUB</span>
+            <span className="w-10 h-[1px] bg-white/10" />
+            <span>03 · ASCEND</span>
+          </div>
+          <span className="hidden md:inline">
+            召唤 · 陪伴 · 共叙 · 进化
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -763,17 +875,17 @@ const IconButton: React.FC<{
   <motion.button
     type="button"
     onClick={onClick}
-    whileHover={{ scale: 1.05, y: -2 }}
-    whileTap={{ scale: 0.96 }}
+    whileHover={{ y: -1 }}
+    whileTap={{ scale: 0.97 }}
     aria-label={label}
     title={label}
-    className="group flex items-center gap-2 rounded-lg border bg-[#1F2833]/70 px-3 py-2 text-[11px] font-bold tracking-widest transition-all"
-    style={{
-      borderColor: `${accent}66`,
-      color: accent,
-      boxShadow: `0 0 14px ${accent}22`,
-    }}
+    className="group flex items-center gap-2 border border-white/10 hover:border-current bg-black/30 backdrop-blur-sm px-3 py-2 text-[10px] font-mono font-bold tracking-[0.3em] transition-all"
+    style={{ color: accent }}
   >
+    <span
+      className="w-1 h-1 rounded-full"
+      style={{ background: accent, boxShadow: `0 0 6px ${accent}` }}
+    />
     {icon}
     <span className="hidden sm:inline">{label}</span>
   </motion.button>
@@ -798,49 +910,108 @@ const ModeCard: React.FC<ModeCardProps> = ({
   subtitle,
   description,
   accent,
-  highlight,
   disabled,
   compact,
 }) => {
+  const modeIndex = React.useMemo(
+    () => Math.floor(Math.random() * 90 + 10).toString(),
+    [],
+  );
   return (
     <motion.button
       onClick={onClick}
       disabled={disabled}
-      whileHover={disabled ? {} : { scale: 1.03, y: -4 }}
-      whileTap={disabled ? {} : { scale: 0.98 }}
-      transition={{ type: "tween", duration: 0.12, ease: "easeOut" }}
-      className={`relative flex flex-col items-start gap-3 bg-[#1F2833]/70 border-2 rounded-lg text-left transition-all ${
-        compact ? "p-4" : "p-6"
-      } ${disabled ? "opacity-50 cursor-not-allowed grayscale-[0.5]" : ""}`}
-      style={{
-        borderColor: highlight && !disabled ? accent : `${accent}55`,
-        boxShadow:
-          highlight && !disabled
-            ? `0 0 30px ${accent}40, inset 0 0 20px ${accent}20`
-            : `0 0 14px ${accent}20`,
-      }}
+      whileHover={disabled ? {} : { y: -4 }}
+      whileTap={disabled ? {} : { scale: 0.99 }}
+      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+      className={`group relative flex flex-col justify-between text-left overflow-hidden bg-black/30 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-colors ${
+        compact ? "p-4 min-h-[180px]" : "p-6 min-h-[220px]"
+      } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
     >
-      <div
-        className="absolute top-4 right-4 text-[10px] tracking-widest"
-        style={{ color: accent }}
-      >
-        ENTER ▸
-      </div>
-      <div style={{ color: accent }}>{icon}</div>
-      <div>
+      {/* 边角刻线 */}
+      <span
+        aria-hidden
+        className="absolute top-0 left-0 w-3 h-3 border-t border-l opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
+      />
+      <span
+        aria-hidden
+        className="absolute top-0 right-0 w-3 h-3 border-t border-r opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
+      />
+      <span
+        aria-hidden
+        className="absolute bottom-0 left-0 w-3 h-3 border-b border-l opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
+      />
+      <span
+        aria-hidden
+        className="absolute bottom-0 right-0 w-3 h-3 border-b border-r opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
+      />
+
+      {/* Hover 时的柔和辉光 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full blur-3xl opacity-0 group-hover:opacity-30 transition-opacity duration-500"
+        style={{ background: accent }}
+      />
+
+      {/* 顶部：编号 + 图标 */}
+      <div className="relative flex items-start justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-mono tracking-widest"
+            style={{ color: accent, opacity: 0.75 }}
+          >
+            N°{modeIndex}
+          </span>
+          <span
+            className="w-6 h-[1px] group-hover:w-10 transition-all"
+            style={{ background: accent }}
+          />
+        </div>
         <div
-          className={`font-black tracking-wider font-display ${
-            compact ? "text-xl" : "text-2xl"
-          }`}
+          className="transition-transform group-hover:scale-110 group-hover:-rotate-6"
           style={{ color: accent }}
+        >
+          {icon}
+        </div>
+      </div>
+
+      {/* 标题 */}
+      <div className="relative">
+        <div
+          className={`font-display font-black leading-tight tracking-tight ${
+            compact ? "text-xl" : "text-2xl md:text-3xl"
+          }`}
+          style={{ color: accent, letterSpacing: "-0.02em" }}
         >
           {title}
         </div>
-        <div className="text-xs text-[#C5C6C7] mt-1">{subtitle}</div>
+        {subtitle && (
+          <div className="text-[11px] text-white/60 mt-1.5 tracking-wide">
+            {subtitle}
+          </div>
+        )}
       </div>
-      <p className="text-[11px] text-[#8a8d91] leading-relaxed">
+
+      {/* 描述 */}
+      <p className="relative text-[11px] text-white/40 leading-relaxed mt-3">
         {description}
       </p>
+
+      {/* 底部：ENTER 指示 */}
+      <div
+        className="relative mt-4 flex items-center justify-between text-[10px] font-mono tracking-[0.35em] pt-3 border-t border-white/10"
+        style={{ color: accent }}
+      >
+        <span>ENTER</span>
+        <ChevronRight
+          size={14}
+          className="transition-transform group-hover:translate-x-1"
+        />
+      </div>
     </motion.button>
   );
 };
