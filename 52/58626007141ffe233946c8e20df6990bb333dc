@@ -1,0 +1,16 @@
+src/components/WelcomeScreen.tsx
+  h_f09a81d3255be5 456
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "5258626007141ffe233946c8e20df6990bb333dc",
+  "prompts": {},
+  "humans": {
+    "h_f09a81d3255be5": {
+      "author": "zhangzuoke.fun <zhangzuoke.fun@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
