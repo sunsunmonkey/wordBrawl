@@ -997,25 +997,7 @@ export const ModeSelectScreen: React.FC = () => {
                             {isSelected &&
                               !evolutionLocked &&
                               !recruitLocked && (
-                                <>
-                                  <span
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startTower();
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        startTower();
-                                      }
-                                    }}
-                                    className="absolute right-1.5 bottom-7 z-10 cursor-pointer rounded bg-[#FFD700] px-1.5 py-0.5 text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(255,215,0,0.65)] transition-all hover:bg-[#FFEA55] hover:scale-105"
-                                  >
-                                    出战
-                                  </span>
+                                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 mt-4 z-10 flex flex-col gap-2">
                                   <span
                                     role="button"
                                     tabIndex={0}
@@ -1032,11 +1014,63 @@ export const ModeSelectScreen: React.FC = () => {
                                         setPhase("SPIRIT_CHAT");
                                       }
                                     }}
-                                    className="absolute right-1.5 bottom-[52px] z-10 cursor-pointer rounded bg-[#66FCF1] px-1.5 py-0.5 text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(102,252,241,0.55)] transition-all hover:bg-[#8FFFF4] hover:scale-105"
+                                    className="cursor-pointer rounded bg-[#66FCF1] px-1.5 py-0.5 text-center text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(102,252,241,0.55)] transition-all hover:scale-105 hover:bg-[#8FFFF4]"
                                   >
                                     聊天
                                   </span>
-                                </>
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startTower();
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        startTower();
+                                      }
+                                    }}
+                                    className="cursor-pointer rounded bg-[#FFD700] px-1.5 py-0.5 text-center text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(255,215,0,0.65)] transition-all hover:scale-105 hover:bg-[#FFEA55]"
+                                  >
+                                    出战
+                                  </span>
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (window.confirm("确认删除该词灵？")) {
+                                        removeCharacter(char.rosterId);
+                                        if (
+                                          selectedRosterId === char.rosterId
+                                        ) {
+                                          setSelectedRosterId(null);
+                                        }
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (
+                                          window.confirm("确认删除该词灵？")
+                                        ) {
+                                          removeCharacter(char.rosterId);
+                                          if (
+                                            selectedRosterId === char.rosterId
+                                          ) {
+                                            setSelectedRosterId(null);
+                                          }
+                                        }
+                                      }
+                                    }}
+                                    className="cursor-pointer rounded bg-[#FF6B9D] px-1.5 py-0.5 text-center text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(255,107,157,0.55)] transition-all hover:scale-105 hover:bg-[#FF8DB5]"
+                                  >
+                                    删除
+                                  </span>
+                                </div>
                               )}
                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
                               <div className="truncate text-xs font-black font-display text-[#FFD700]">
