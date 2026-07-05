@@ -309,7 +309,7 @@ export const GameOverScreen: React.FC = () => {
             })}
           </div>
           <div className="text-[9px] text-[#8a8d91] mt-2 text-center tracking-wider">
-            收入后可在主菜单 · 我的麾下中查看详情
+            收入后可在主菜单 · 我的词灵中查看详情
           </div>
         </div>
 

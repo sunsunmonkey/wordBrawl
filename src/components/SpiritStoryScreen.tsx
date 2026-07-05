@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpen,
+  ChevronDown,
+  ChevronUp,
   Clapperboard,
   Loader2,
   MessageSquareText,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { BackButton } from "./BackButton";
 import { ParticleField } from "./ParticleField";
+import { CharacterAvatar } from "./CharacterAvatar";
 import { useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterUnavailable,
@@ -35,6 +38,7 @@ import { requestSpiritStory } from "../utils/spiritStory";
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
 
 const MAX_STORY_PARTICIPANTS = 10;
+const COLLAPSED_ROSTER_COUNT = 8;
 
 const formatTime = (ts: number) => {
   const d = new Date(ts);
@@ -70,6 +74,7 @@ export const SpiritStoryScreen: React.FC = () => {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Draft state (新建故事时使用)
@@ -386,50 +391,65 @@ export const SpiritStoryScreen: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {availableRoster.slice(0, 24).map((char) => {
-                  const active = activeIds.includes(char.rosterId);
-                  return (
-                    <button
-                      key={char.rosterId}
-                      type="button"
-                      onClick={() => toggleParticipant(char.rosterId)}
-                      className="group overflow-hidden rounded-lg border bg-[#0B0C10]/80 text-left transition-all"
-                      style={{
-                        borderColor: active
-                          ? themeColor
-                          : "rgba(102,252,241,0.22)",
-                        boxShadow: active ? `0 0 14px ${themeColor}33` : "none",
-                      }}
-                    >
-                      <div className="relative aspect-[4/3] overflow-hidden bg-[#111827]">
-                        {char.imageUrl ? (
-                          <img
-                            src={char.imageUrl}
-                            alt={char.name}
-                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                {availableRoster
+                  .slice(0, isRosterExpanded ? 24 : COLLAPSED_ROSTER_COUNT)
+                  .map((char) => {
+                    const active = activeIds.includes(char.rosterId);
+                    return (
+                      <button
+                        key={char.rosterId}
+                        type="button"
+                        onClick={() => toggleParticipant(char.rosterId)}
+                        className="group overflow-hidden rounded-lg border bg-[#0B0C10]/80 text-left transition-all"
+                        style={{
+                          borderColor: active
+                            ? themeColor
+                            : "rgba(102,252,241,0.22)",
+                          boxShadow: active
+                            ? `0 0 14px ${themeColor}33`
+                            : "none",
+                        }}
+                      >
+                        <div className="relative aspect-[4/3] overflow-hidden bg-[#111827]">
+                          <CharacterAvatar
+                            imageUrl={char.imageUrl}
+                            name={char.name}
+                            themeColor={themeColor}
+                            className="h-full w-full transition-transform group-hover:scale-105"
+                            iconSize={36}
                           />
-                        ) : (
-                          <div
-                            className="flex h-full w-full items-center justify-center text-3xl font-black"
-                            style={{ color: themeColor }}
-                          >
-                            {char.name[0]}
-                          </div>
-                        )}
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
-                          <div className="truncate text-xs font-black font-display text-[#C5C6C7]">
-                            {char.name}
-                          </div>
-                          <div className="truncate text-[9px] text-[#8a8d91]">
-                            Lv.{char.level} ·{" "}
-                            {evolutionLabel(char.evolutionStage)}
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
+                            <div className="truncate text-xs font-black font-display text-[#C5C6C7]">
+                              {char.name}
+                            </div>
+                            <div className="truncate text-[9px] text-[#8a8d91]">
+                              Lv.{char.level} ·{" "}
+                              {evolutionLabel(char.evolutionStage)}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
               </div>
+              {availableRoster.length > COLLAPSED_ROSTER_COUNT && (
+                <button
+                  type="button"
+                  onClick={() => setIsRosterExpanded((v) => !v)}
+                  className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-[#45A29E]/25 bg-[#0B0C10]/50 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-colors hover:bg-[#45A29E]/10 hover:text-[#66FCF1]"
+                >
+                  {isRosterExpanded ? (
+                    <>
+                      <ChevronUp size={12} /> 收起
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={12} /> 展开全部 (
+                      {availableRoster.length})
+                    </>
+                  )}
+                </button>
+              )}
               <div className="mt-3 text-[10px] leading-relaxed text-[#8a8d91]/70">
                 每位词灵在剧本里的真实身份由 AI
                 悄悄安排，你需要在剧情中自己判断谁是敌友。

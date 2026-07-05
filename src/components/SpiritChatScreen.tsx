@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { BackButton } from "./BackButton";
 import { ParticleField } from "./ParticleField";
+import { CharacterAvatar } from "./CharacterAvatar";
 import { useGameStore } from "../store/useGameStore";
 import { useRosterStore } from "../store/useRosterStore";
 import {
@@ -248,15 +249,13 @@ export const SpiritChatScreen: React.FC = () => {
                     boxShadow: active ? `0 0 10px ${themeColor}33` : "none",
                   }}
                 >
-                  {char.imageUrl ? (
-                    <img
-                      src={char.imageUrl}
-                      alt={char.name}
-                      className="h-6 w-6 rounded object-cover"
-                    />
-                  ) : (
-                    <span>{char.name[0]}</span>
-                  )}
+                  <CharacterAvatar
+                    imageUrl={char.imageUrl}
+                    name={char.name}
+                    themeColor={themeColor}
+                    className="h-6 w-6 shrink-0 rounded"
+                    iconSize={14}
+                  />
                   {char.name}
                 </button>
               );
@@ -274,20 +273,13 @@ export const SpiritChatScreen: React.FC = () => {
               }}
             >
               <div className="aspect-[3/4] w-full">
-                {selected.imageUrl ? (
-                  <img
-                    src={selected.imageUrl}
-                    alt={selected.name}
-                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                ) : (
-                  <div
-                    className="flex h-full w-full items-center justify-center text-8xl font-black font-display"
-                    style={{ color: themeColor }}
-                  >
-                    {selected.name[0]}
-                  </div>
-                )}
+                <CharacterAvatar
+                  imageUrl={selected.imageUrl}
+                  name={selected.name}
+                  themeColor={themeColor}
+                  className="h-full w-full transition-transform duration-700 group-hover:scale-105"
+                  iconSize={96}
+                />
               </div>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#05070A] via-[#05070A]/92 to-transparent p-4 pt-10">
                 <div
@@ -690,20 +682,13 @@ const ChatBubble: React.FC<{
           className="h-9 w-9 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
           style={{ borderColor: themeColor }}
         >
-          {avatar ? (
-            <img
-              src={avatar}
-              alt={name}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div
-              className="flex h-full w-full items-center justify-center text-xs font-black"
-              style={{ color: themeColor }}
-            >
-              {name[0]}
-            </div>
-          )}
+          <CharacterAvatar
+            imageUrl={avatar}
+            name={name}
+            themeColor={themeColor}
+            className="h-full w-full"
+            iconSize={18}
+          />
         </div>
       )}
       <div className={`max-w-[78%] ${isPlayer ? "text-right" : "text-left"}`}>

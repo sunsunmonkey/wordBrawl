@@ -1,27 +1,38 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Zap, Shield, Gauge, UsersRound, Sword, Trash2 } from 'lucide-react';
-import { useGameStore } from '../store/useGameStore';
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Heart,
+  Zap,
+  Shield,
+  Gauge,
+  UsersRound,
+  Sword,
+  Trash2,
+} from "lucide-react";
+import { useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
   isRosterCharacterRecruitLocked,
   useRosterStore,
-} from '../store/useRosterStore';
-import { CharacterDetailModal } from './CharacterDetailModal';
-import { ParticleField } from './ParticleField';
-import { evolutionStars, levelAscensionLabel } from '../utils/towerProgress';
-import { BackButton } from './BackButton';
-import { useSpiritChatStore } from '../store/useSpiritChatStore';
+} from "../store/useRosterStore";
+import { CharacterAvatar } from "./CharacterAvatar";
+import { CharacterDetailModal } from "./CharacterDetailModal";
+import { ParticleField } from "./ParticleField";
+import { evolutionStars, levelAscensionLabel } from "../utils/towerProgress";
+import { BackButton } from "./BackButton";
+import { useSpiritChatStore } from "../store/useSpiritChatStore";
 
 export const RosterScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
   const { roster, removeCharacter } = useRosterStore();
   const setOpenSpiritRosterId = useSpiritChatStore((s) => s.setOpenRosterId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const themeColor = '#66FCF1';
-  const themeRgb = '102, 252, 241';
+  const themeColor = "#66FCF1";
+  const themeRgb = "102, 252, 241";
 
-  const selected = selectedId ? roster.find((r) => r.rosterId === selectedId) : null;
+  const selected = selectedId
+    ? roster.find((r) => r.rosterId === selectedId)
+    : null;
 
   const handleRemoveCharacter = (rosterId: string, name: string) => {
     if (!window.confirm(`确定要将 ${name} 移出麾下吗？`)) return;
@@ -33,7 +44,7 @@ export const RosterScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-6 relative overflow-hidden grid-bg">
-      <ParticleField count={25} colors={[themeColor, '#FFD700']} />
+      <ParticleField count={25} colors={[themeColor, "#FFD700"]} />
 
       <motion.div
         animate={{ x: [0, 60, 0], y: [0, -30, 0] }}
@@ -44,7 +55,10 @@ export const RosterScreen: React.FC = () => {
 
       <div className="z-10 w-full max-w-5xl">
         <div className="flex items-center gap-3 mb-6">
-          <BackButton onClick={() => setPhase('MODE_SELECT')} color={themeColor} />
+          <BackButton
+            onClick={() => setPhase("MODE_SELECT")}
+            color={themeColor}
+          />
           <div className="ml-auto flex items-center gap-2 text-[#8a8d91] text-[10px] tracking-widest">
             <span className="inline-block w-2 h-2 rounded-full bg-[#66FCF1] animate-pulse" />
             ROSTER ARCHIVE
@@ -65,14 +79,19 @@ export const RosterScreen: React.FC = () => {
               className="text-2xl md:text-3xl font-black tracking-widest font-display glitch-text"
               style={{ color: themeColor }}
             >
-              我的麾下
+              我的词灵
             </h1>
-            <span className="ml-auto text-xs text-[#8a8d91] tracking-widest">{roster.length} / 24</span>
+            <span className="ml-auto text-xs text-[#8a8d91] tracking-widest">
+              {roster.length} / 24
+            </span>
           </div>
-          <div className="text-[10px] text-[#8a8d91] tracking-[0.3em] mb-6">▼ LOCAL ROSTER · CLICK TO INSPECT ▼</div>
+          <div className="text-[10px] text-[#8a8d91] tracking-[0.3em] mb-6">
+            ▼ LOCAL ROSTER · CLICK TO INSPECT ▼
+          </div>
 
           {roster.length === 0 ? (
-            <div className="h-64 rounded-lg border border-dashed flex flex-col items-center justify-center gap-2 text-sm text-[#8a8d91]"
+            <div
+              className="h-64 rounded-lg border border-dashed flex flex-col items-center justify-center gap-2 text-sm text-[#8a8d91]"
               style={{ borderColor: `rgba(${themeRgb}, 0.25)` }}
             >
               <Sword size={28} className="opacity-40" />
@@ -88,7 +107,7 @@ export const RosterScreen: React.FC = () => {
                     key={char.rosterId}
                     onClick={() => setSelectedId(char.rosterId)}
                     onKeyDown={(event) => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
                       setSelectedId(char.rosterId);
                     }}
@@ -111,60 +130,62 @@ export const RosterScreen: React.FC = () => {
                       <Trash2 size={13} />
                     </button>
                     <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
-                    {char.imageUrl ? (
-                      <img
-                        src={char.imageUrl}
-                        alt={char.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                      <CharacterAvatar
+                        imageUrl={char.imageUrl}
+                        name={char.name}
+                        themeColor={themeColor}
+                        className="w-full h-full transition-transform group-hover:scale-110"
+                        iconSize={36}
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-3xl font-black font-display" style={{ color: themeColor }}>
-                        {char.name[0]}
+                      <div className="absolute top-1 right-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
+                        Lv.{char.level}
                       </div>
-                    )}
-                    <div className="absolute top-1 right-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
-                      Lv.{char.level}
-                    </div>
-                    <div className="absolute top-7 right-1 bg-black/70 text-[9px] font-bold px-1.5 py-0.5 rounded text-[#66FCF1]">
-                      {levelAscensionLabel(char.level)}
-                    </div>
-                    {char.evolutionStage > 0 && (
-                      <div className="absolute top-1 left-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
-                        {'★'.repeat(evolutionStars(char.evolutionStage))}
+                      <div className="absolute top-7 right-1 bg-black/70 text-[9px] font-bold px-1.5 py-0.5 rounded text-[#66FCF1]">
+                        {levelAscensionLabel(char.level)}
                       </div>
-                    )}
-                    {(evolutionLocked || recruitLocked) && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/68">
-                        <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
-                          {recruitLocked
-                            ? char.recruitLock?.status === 'failed'
-                              ? '创造失败'
-                              : '后台创造中'
-                            : '进化更新中'}
+                      {char.evolutionStage > 0 && (
+                        <div className="absolute top-1 left-1 bg-black/70 text-[10px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
+                          {"★".repeat(evolutionStars(char.evolutionStage))}
+                        </div>
+                      )}
+                      {(evolutionLocked || recruitLocked) && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/68">
+                          <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
+                            {recruitLocked
+                              ? char.recruitLock?.status === "failed"
+                                ? "创造失败"
+                                : "后台创造中"
+                              : "进化更新中"}
+                          </div>
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 to-transparent p-2">
+                        <div
+                          className="text-xs font-bold font-display truncate"
+                          style={{ color: themeColor }}
+                        >
+                          {char.name}
                         </div>
                       </div>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 to-transparent p-2">
-                      <div className="text-xs font-bold font-display truncate" style={{ color: themeColor }}>
-                        {char.name}
-                      </div>
                     </div>
-                  </div>
-                  <div className="p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Heart size={9} className="text-pink-400" /> {char.maxHp}
-                    </span>
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Zap size={9} className="text-yellow-400" /> {char.attack}
-                    </span>
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Shield size={9} className="text-blue-400" /> {char.defense}
-                    </span>
-                    <span className="flex items-center gap-1 text-[#C5C6C7]">
-                      <Gauge size={9} className="text-green-400" /> {char.speed}
-                    </span>
-                  </div>
+                    <div className="p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+                      <span className="flex items-center gap-1 text-[#C5C6C7]">
+                        <Heart size={9} className="text-pink-400" />{" "}
+                        {char.maxHp}
+                      </span>
+                      <span className="flex items-center gap-1 text-[#C5C6C7]">
+                        <Zap size={9} className="text-yellow-400" />{" "}
+                        {char.attack}
+                      </span>
+                      <span className="flex items-center gap-1 text-[#C5C6C7]">
+                        <Shield size={9} className="text-blue-400" />{" "}
+                        {char.defense}
+                      </span>
+                      <span className="flex items-center gap-1 text-[#C5C6C7]">
+                        <Gauge size={9} className="text-green-400" />{" "}
+                        {char.speed}
+                      </span>
+                    </div>
                   </motion.div>
                 );
               })}
@@ -182,7 +203,7 @@ export const RosterScreen: React.FC = () => {
             onChat={() => {
               setOpenSpiritRosterId(selected.rosterId);
               setSelectedId(null);
-              setPhase('SPIRIT_CHAT');
+              setPhase("SPIRIT_CHAT");
             }}
             onRemove={() => {
               handleRemoveCharacter(selected.rosterId, selected.name);
