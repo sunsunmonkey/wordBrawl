@@ -413,8 +413,41 @@ export const SpiritChatScreen: React.FC = () => {
             </div>
           </aside>
 
-          <main className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#45A29E]/35 bg-[#0B0C10]/80 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md lg:col-span-8 xl:col-span-9">
-            <div className="flex shrink-0 items-center justify-between border-b border-[#45A29E]/25 bg-[#1F2833]/80 px-5 py-3 backdrop-blur-sm">
+          <main
+            className="relative flex min-h-0 flex-col overflow-hidden rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.5)] lg:col-span-8 xl:col-span-9"
+            style={{ borderColor: `${themeColor}38` }}
+          >
+            {selected.imageUrl && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 z-0"
+                style={{
+                  backgroundImage: `url(${selected.imageUrl})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  filter: "blur(56px) saturate(1.35)",
+                  transform: "scale(1.15)",
+                  opacity: 0.4,
+                }}
+              />
+            )}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{
+                background: `linear-gradient(135deg, rgba(11,12,16,0.9) 0%, rgba(11,12,16,0.72) 45%, ${themeColor}20 100%)`,
+              }}
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{
+                background:
+                  "radial-gradient(ellipse at top, rgba(255,255,255,0.04), transparent 60%)",
+              }}
+            />
+
+            <div className="relative z-10 flex shrink-0 items-center justify-between border-b border-[#45A29E]/25 bg-[#0B0C10]/55 px-5 py-3 backdrop-blur-md">
               <div className="flex items-center gap-3">
                 <div
                   className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border"
@@ -456,7 +489,7 @@ export const SpiritChatScreen: React.FC = () => {
 
             <div
               ref={scrollRef}
-              className="flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30"
+              className="relative z-10 flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30"
             >
               {chat.messages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-center opacity-80">
@@ -569,7 +602,7 @@ export const SpiritChatScreen: React.FC = () => {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-[#45A29E]/25 bg-[#05070A]/95 p-3 backdrop-blur-xl">
+            <div className="relative z-10 shrink-0 border-t border-[#45A29E]/25 bg-[#05070A]/85 p-3 backdrop-blur-xl">
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: 5 }}
@@ -693,10 +726,12 @@ const ChatBubble: React.FC<{
       )}
       <div className={`max-w-[78%] ${isPlayer ? "text-right" : "text-left"}`}>
         <div
-          className="rounded-lg border px-3 py-2 text-sm leading-relaxed"
+          className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-md shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
           style={{
             borderColor: isPlayer ? "rgba(255,215,0,0.45)" : `${themeColor}88`,
-            background: isPlayer ? "rgba(255,215,0,0.1)" : `${themeColor}14`,
+            background: isPlayer
+              ? "rgba(255,215,0,0.14)"
+              : "rgba(11,12,16,0.55)",
             color: "#C5C6C7",
           }}
         >
