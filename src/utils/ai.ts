@@ -31,6 +31,44 @@ const stripJsonFences = (raw: string): string => {
   return trimmed;
 };
 
+const extractJsonObject = (raw: string): string | null => {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  return raw.slice(start, end + 1);
+};
+
+const normalizeJsonLikeText = (raw: string): string =>
+  raw
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/，(?=\s*[\]}])/g, ",")
+    .replace(/,\s*([}\]])/g, "$1")
+    .trim();
+
+const parseJsonLoose = (raw: string): unknown => {
+  const cleaned = stripJsonFences(raw);
+  const candidates = [
+    cleaned,
+    extractJsonObject(cleaned),
+    normalizeJsonLikeText(cleaned),
+    extractJsonObject(normalizeJsonLikeText(cleaned)),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const detail =
+    lastError instanceof Error ? `：${lastError.message}` : "";
+  throw new Error(`AI 返回的内容不是合法 JSON${detail}`);
+};
+
 const asRecord = (value: unknown): Record<string, unknown> => {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -126,8 +164,8 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
       damageMultiplier: clampNumber(
         s.damageMultiplier,
         0,
-        isUltimate ? 8 : 3.2,
-        isUltimate ? 5.5 : 1,
+        isUltimate ? 8.8 : 3.5,
+        isUltimate ? 6.2 : 1,
       ),
       type,
       isUltimate,
@@ -148,7 +186,7 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     };
   });
 
-  const hp = clampInt(data.hp, 120, 900, 260);
+  const hp = clampInt(data.hp, 100, 1100, 320);
   const spiritProfile = normalizeSpiritProfile(data.spiritProfile);
 
   return {
@@ -156,9 +194,9 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     name: String(data.name || "未命名角色"),
     hp,
     maxHp: hp,
-    attack: clampInt(data.attack, 20, 140, 45),
-    defense: clampInt(data.defense, 5, 85, 25),
-    speed: clampInt(data.speed, 1, 140, 55),
+    attack: clampInt(data.attack, 15, 170, 62),
+    defense: clampInt(data.defense, 0, 110, 30),
+    speed: clampInt(data.speed, 1, 160, 65),
     imagePrompt: String(
       data.imagePrompt || "cyberpunk game character portrait",
     ),
@@ -211,15 +249,16 @@ export const generateCharacter = async (
   const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 用户会输入一段角色描述，你需要根据这段描述，为角色生成游戏数值和【丰富多样的技能体系】。
 你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。
+重要：所有 JSON key 和字符串必须使用英文半角双引号 "，禁止使用中文弯引号 “ ” 或单引号。
 
 技能体系要求（必须包含 4-5 个技能）：
 1. 一个普通攻击（type="attack"，damageMultiplier 1.0）
-2. 一个强力攻击技能（type="attack"，damageMultiplier 1.6-2.8）
+2. 一个强力攻击技能（type="attack"，damageMultiplier 1.7-3.2）
 3. 一个治疗或增益技能（type="heal" 或 "buff"）
    - heal: healPercent 18-55（按 maxHp 百分比回血）
    - buff: buffPercent 25-95（攻击或防御提升百分比），buffTurns 2-4
 4. 一个减益技能（type="debuff"，buffPercent 25-80 削弱对方，buffTurns 2-4）
-5. 一个终极技能/大招（type="ultimate"，isUltimate=true，damageMultiplier 4.0-7.5）
+5. 一个终极技能/大招（type="ultimate"，isUltimate=true，damageMultiplier 4.4-8.5）
    - 大招必须有 description 字段：详细描述释放时的华丽特效
    - 大招必须有 ultimateType 字段：从以下类型中挑选一个最贴合角色主题的 ID
      可选类型：${ULTIMATE_TYPE_IDS.join(", ")}
@@ -229,8 +268,11 @@ export const generateCharacter = async (
 - 先判断角色定位：玻璃大炮、重装坦克、极速刺客、均衡战士、回复消耗、控制削弱、低速 Boss 等。
 - 每个角色只能有 1-2 个顶级强项，必须有至少 1 个明显短板。不要生成没有弱点的六边形角色。
 - 顶级攻击或顶级速度角色通常要低 HP/低 defense；高 HP/高 defense 角色通常要低 speed 或较低 attack。
-- 强力攻击技能倍率要按定位分层：坦克 1.6-2.2，均衡角色 2.0-2.5，玻璃炮/刺客 2.5-2.8。
-- 大招倍率也要分层：坦克/消耗型 4.0-5.8，均衡强者 5.5-6.6，玻璃炮/脆皮爆发 6.6-7.5。
+- 不要把角色做成“全都偏弱”。除非用户明确描述为弱小/新手/残破，必须至少让一个核心数值进入高阶区间：hp >= 720，或 attack >= 105，或 defense >= 68，或 speed >= 112。
+- 允许并鼓励极端分布：玻璃炮 attack 125-170 但 defense 0-22；重装坦克 hp 760-1100/defense 70-110 但 speed 1-38；极速刺客 speed 120-160/attack 95-145 但 hp 100-360；低速 Boss hp 850-1100/attack 100-150 但 speed 1-25。
+- 均衡角色也不应平庸：通常总要有一个 90+ 的攻击/速度，或 600+ HP，另配一个清晰短板。
+- 强力攻击技能倍率要按定位分层：坦克 1.7-2.35，均衡角色 2.2-2.75，玻璃炮/刺客 2.75-3.2。
+- 大招倍率也要分层：坦克/消耗型 4.4-6.2，均衡强者 6.0-7.2，玻璃炮/脆皮爆发 7.2-8.5。
 
 词灵人格卡要求（仅 custom API 生效）：
 - 额外生成 spiritProfile，类似角色卡，不参与数值计算，只用于让词灵在战斗、详情和成长叙事中更生动。
@@ -240,17 +282,17 @@ export const generateCharacter = async (
 JSON 结构如下：
 {
   "name": "角色名称（根据描述提取或生成一个响亮的名字）",
-  "hp": 200,
-  "attack": 45,
-  "defense": 25,
-  "speed": 50,
+  "hp": 620,
+  "attack": 96,
+  "defense": 42,
+  "speed": 88,
   "skills": [
     { "name": "普通攻击", "description": "基础攻击", "damageMultiplier": 1.0, "type": "attack" },
-    { "name": "专属攻击技能名", "description": "技能描述", "damageMultiplier": 2.2, "type": "attack" },
+    { "name": "专属攻击技能名", "description": "技能描述", "damageMultiplier": 2.6, "type": "attack" },
     { "name": "治疗技能名", "description": "技能描述", "damageMultiplier": 0, "type": "heal", "healPercent": 35 },
     { "name": "增益技能名", "description": "技能描述", "damageMultiplier": 0, "type": "buff", "buffPercent": 60, "buffTurns": 3 },
     { "name": "减益技能名", "description": "技能描述", "damageMultiplier": 0.8, "type": "debuff", "buffPercent": 45, "buffTurns": 3 },
-    { "name": "大招名称（要霸气）", "description": "详细的华丽特效描述", "damageMultiplier": 5.5, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
+    { "name": "大招名称（要霸气）", "description": "详细的华丽特效描述", "damageMultiplier": 6.8, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
   ],
   "spiritProfile": {
     "archetype": "词灵原型，例如：失控的星际讼师 / 铁锈圣骑 / 电台幽魂",
@@ -265,7 +307,7 @@ JSON 结构如下：
   },
   "imagePrompt": "用于生成头像的英文提示词，pixel art 或 cyberpunk 风格"
 }
-数值范围要求：hp 120-900，attack 20-140，defense 5-85，speed 1-140。请根据角色设定拉开差距，不要所有角色都给中庸数值；玻璃大炮、重装坦克、极速刺客、低速 Boss 都可以很极端。
+数值范围要求：hp 100-1100，attack 15-170，defense 0-110，speed 1-160。请根据角色设定拉开差距，不要所有角色都给中庸数值；玻璃大炮、重装坦克、极速刺客、低速 Boss 都可以很极端。强角色可以真的强，但必须用另一个低项换取平衡。
 技能名称、描述和 spiritProfile 要互相呼应，让角色像真正的词灵，而不是只有数值和技能名。`;
 
   const response = await client.chat.completions.create({
@@ -280,17 +322,7 @@ JSON 结构如下：
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error("AI 返回内容为空");
 
-  const cleaned = stripJsonFences(content);
-
-  let data: unknown;
-  try {
-    data = JSON.parse(cleaned);
-  } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match)
-      throw new Error("AI 返回的内容不是合法的 JSON：" + cleaned.slice(0, 100));
-    data = JSON.parse(match[0]);
-  }
+  const data = parseJsonLoose(content);
 
   return normalizeCharacterData(data);
 };
