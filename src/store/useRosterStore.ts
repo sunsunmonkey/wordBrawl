@@ -332,6 +332,7 @@ interface RosterStore {
     sourceDescription?: string,
   ) => RosterCharacter | null;
   failPendingRecruit: (rosterId: string, error: string) => void;
+  retryPendingRecruit: (rosterId: string) => RosterCharacter | null;
   removeCharacter: (rosterId: string) => void;
   /** 替换/更新整个 roster 角色记录 */
   updateCharacter: (
@@ -423,6 +424,29 @@ export const useRosterStore = create<RosterStore>()(
               : char,
           ),
         })),
+      retryPendingRecruit: (rosterId) => {
+        const target = get().roster.find(
+          (entry) => entry.rosterId === rosterId,
+        );
+        if (!target || target.recruitLock?.status !== "failed") return null;
+        const description =
+          target.recruitLock.description || target.sourceDescription || "";
+        const revived: RosterCharacter = {
+          ...target,
+          name: "创造中",
+          recruitLock: {
+            status: "generating" as const,
+            description,
+            startedAt: Date.now(),
+          },
+        };
+        set((state) => ({
+          roster: state.roster.map((char) =>
+            char.rosterId === rosterId ? revived : char,
+          ),
+        }));
+        return revived;
+      },
       removeCharacter: (rosterId) =>
         set((state) => ({
           roster: state.roster.filter((char) => char.rosterId !== rosterId),

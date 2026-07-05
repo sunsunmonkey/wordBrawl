@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
-  Castle,
   Heart,
   Zap as ZapIcon,
   Shield,
@@ -12,6 +11,7 @@ import {
   Sword,
   Bot,
 } from "lucide-react";
+import { CharacterAvatar } from "./CharacterAvatar";
 import { useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
@@ -153,260 +153,411 @@ export const TowerScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 relative overflow-hidden grid-bg">
-      <ParticleField count={28} colors={["#FFD700", "#66FCF1"]} />
+    <div className="min-h-screen relative overflow-hidden bg-[#05060a] text-white">
+      {/* 背景层 */}
+      <div className="pointer-events-none absolute inset-0 z-0">
+        <div
+          className="absolute -top-40 -left-40 w-[55vw] h-[55vw] rounded-full opacity-30"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255,215,0,0.28) 0%, transparent 55%)",
+            filter: "blur(60px)",
+          }}
+        />
+        <div
+          className="absolute -bottom-40 -right-40 w-[55vw] h-[55vw] rounded-full opacity-30"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255,107,157,0.22) 0%, transparent 55%)",
+            filter: "blur(60px)",
+          }}
+        />
+        <div
+          className="absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,215,0,0.7) 1px, transparent 1px), linear-gradient(90deg, rgba(255,215,0,0.7) 1px, transparent 1px)",
+            backgroundSize: "80px 80px",
+            maskImage:
+              "radial-gradient(ellipse at center, black 40%, transparent 80%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse at center, black 40%, transparent 80%)",
+          }}
+        />
+      </div>
 
-      <div className="z-10 w-full max-w-5xl">
-        <div className="flex items-center gap-3 mb-6">
+      <ParticleField count={20} colors={["#FFD700", "#66FCF1"]} />
+
+      {/* 巨型水印 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden select-none"
+      >
+        <div
+          className="font-display font-black leading-none tracking-tighter text-white/[0.02]"
+          style={{ fontSize: "min(30vw, 520px)", letterSpacing: "-0.06em" }}
+        >
+          TOWER
+        </div>
+      </div>
+
+      {/* 顶部 HUD */}
+      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+        <div className="flex items-center gap-3">
           <BackButton onClick={() => setPhase("MODE_SELECT")} color="#FFD700" />
-          <div className="ml-auto flex items-center gap-2 text-[#8a8d91] text-[10px] tracking-widest">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#FFD700] animate-pulse" />
-            TOWER · ENDLESS ASCENSION
+          <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
+            <div className="w-6 h-[1px] bg-[#FFD700]" />
+            <span>WORD-SPIRIT / TOWER</span>
           </div>
         </div>
-
-        <div
-          className="bg-[#1F2833]/80 backdrop-blur-md border-2 rounded-xl p-6 corner-frame"
-          style={{
-            borderColor: "#FFD700",
-            boxShadow:
-              "0 0 30px rgba(255,215,0,0.18), inset 0 0 30px rgba(255,215,0,0.05)",
-          }}
-        >
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <div className="flex items-center gap-2">
-              <Castle size={22} style={{ color: "#FFD700" }} />
-              <h1
-                className="text-2xl md:text-3xl font-black tracking-widest font-display"
-                style={{ color: "#FFD700" }}
-              >
-                九层塔
-              </h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => setTowerAutoMode(!towerAutoMode)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-[10px] font-black tracking-widest transition-all"
-              style={{
-                borderColor: towerAutoMode
-                  ? "rgba(102,252,241,0.6)"
-                  : "rgba(255,215,0,0.35)",
-                color: towerAutoMode ? "#66FCF1" : "#8a8d91",
-                background: towerAutoMode
-                  ? "rgba(102,252,241,0.12)"
-                  : "rgba(11,12,16,0.6)",
-              }}
-            >
-              <Bot size={12} />
-              {towerAutoMode ? "自动模式 ON" : "自动模式 OFF"}
-            </button>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 text-[10px] font-mono tracking-[0.35em] text-[#FFD700]/70">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#FFD700] animate-pulse" />
+            ENDLESS ASCENSION
           </div>
-          <div className="text-[10px] text-[#8a8d91] tracking-[0.3em] mb-6">
-            ▼ 选择麾下角色 · 九层一番 · 无限修炼 ▼
+          <button
+            type="button"
+            onClick={() => setTowerAutoMode(!towerAutoMode)}
+            className="flex items-center gap-1.5 px-3 py-2 border text-[10px] font-mono font-black tracking-[0.28em] transition-all"
+            style={{
+              borderColor: towerAutoMode
+                ? "rgba(102,252,241,0.7)"
+                : "rgba(255,255,255,0.15)",
+              color: towerAutoMode ? "#66FCF1" : "rgba(255,255,255,0.5)",
+              background: towerAutoMode
+                ? "rgba(102,252,241,0.08)"
+                : "rgba(0,0,0,0.3)",
+            }}
+          >
+            <Bot size={12} />
+            AUTO {towerAutoMode ? "ON" : "OFF"}
+          </button>
+        </div>
+      </div>
+
+      {/* 主内容 */}
+      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-20 pb-16 max-w-[1400px] mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
+        >
+          {/* 编辑式标题 */}
+          <div className="flex items-end justify-between mb-8 flex-wrap gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-[1px] bg-[#FFD700]" />
+                <span className="text-[10px] tracking-[0.5em] text-[#FFD700]/90 font-mono">
+                  CHAPTER · 03
+                </span>
+              </div>
+              <h1
+                className="font-display font-black leading-[0.9] tracking-tight"
+                style={{
+                  fontSize: "clamp(2.2rem, 5vw, 4rem)",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                <span
+                  className="text-white"
+                  style={{ textShadow: "0 0 30px rgba(255,215,0,0.25)" }}
+                >
+                  九层
+                </span>
+                <span
+                  className="text-[#FFD700]"
+                  style={{ textShadow: "0 0 30px rgba(255,215,0,0.55)" }}
+                >
+                  塔
+                </span>
+              </h1>
+              <div
+                className="mt-1 font-mono font-bold text-white/25"
+                style={{
+                  fontSize: "clamp(0.6rem, 0.9vw, 0.85rem)",
+                  letterSpacing: "0.4em",
+                }}
+              >
+                A S C E N D · F O R G E · E V O L V E
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-mono tracking-widest text-white/30">
+              <div>ROSTER {String(roster.length).padStart(2, "0")} / 24</div>
+              <div className="text-[#FFD700]/70 mt-1">
+                {selectedChar
+                  ? `SELECTED · ${selectedChar.name}`
+                  : "NO SELECTION"}
+              </div>
+            </div>
           </div>
 
           {roster.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[#FFD700]/30 p-8 text-center text-sm text-[#8a8d91]">
-              <Sword size={28} className="mx-auto opacity-40 mb-2" />
-              当前没有麾下角色。请先回到修炼主页，使用「创造新角色」收入麾下。
+            <div className="rounded-lg border border-dashed border-[#FFD700]/30 p-12 text-center text-sm text-[#8a8d91]">
+              <Sword size={32} className="mx-auto opacity-40 mb-3" />
+              当前没有麣下角色。请先回主页召唤一位词灵。
             </div>
           ) : (
-            <>
-              <div className="mb-5">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-xs text-[#8a8d91] tracking-widest">
-                    出战角色
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+              {/* 左栏：出战角色 + 层选择 */}
+              <div className="flex flex-col gap-5 min-w-0">
+                {/* 出战角色 */}
+                <div className="relative border border-[#FFD700]/30 bg-black/30 backdrop-blur-sm p-4 md:p-5 overflow-hidden">
+                  <span
+                    aria-hidden
+                    className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-[#FFD700]/70"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#FFD700]/70"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#FFD700]/70"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-[#FFD700]/70"
+                  />
+                  <div className="mb-3 flex items-center gap-3 pb-2 border-b border-white/5">
+                    <span className="w-1 h-1 bg-[#FFD700]" />
+                    <span className="text-[9px] font-mono tracking-[0.4em] text-[#FFD700]/75">
+                      N°01 · CHOOSE ROSTER
+                    </span>
+                    <span className="ml-auto text-[9px] font-mono tracking-widest text-white/30">
+                      {roster.length} / 24
+                    </span>
                   </div>
-                  <div className="text-[10px] text-[#8a8d91] tracking-widest">
-                    {roster.length} / 24
-                  </div>
-                </div>
-                <div className="max-h-[420px] overflow-y-auto pr-1">
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6">
-                    {roster.map((char) => {
-                      const isActive = char.rosterId === selectedRosterId;
-                      const evolutionLocked =
-                        isRosterCharacterEvolutionLocked(char);
-                      const recruitLocked =
-                        isRosterCharacterRecruitLocked(char);
-                      const progress = xpProgress(char.level, char.xp);
-                      const nextEvo = getNextEvolutionProgress(
-                        char.level,
-                        char.xp,
-                        char.evolutionStage,
-                      );
-                      const nextEvoText = recruitLocked
-                        ? char.recruitLock?.status === "failed"
-                          ? "创造失败"
-                          : "后台创造中"
-                        : char.pendingEvolutionReplay
-                          ? "进化演出待回放"
-                          : evolutionLocked
-                            ? "进化更新中"
-                            : nextEvo.nextStage
-                              ? nextEvo.ready
-                                ? "进化待触发"
-                                : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
-                              : "最终形态";
-                      return (
-                        <motion.button
-                          key={char.rosterId}
-                          type="button"
-                          onClick={() => {
-                            setSelectedRosterId(char.rosterId);
-                            setSelectedLayer(char.tower.nextLayer || 1);
-                          }}
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.97 }}
-                          className="relative text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
-                          style={{
-                            borderColor: isActive
-                              ? "#FFD700"
-                              : "rgba(255,215,0,0.25)",
-                            boxShadow: isActive
-                              ? "0 0 14px rgba(255,215,0,0.4)"
-                              : "none",
-                          }}
-                        >
-                          <div className="relative aspect-[4/3]">
-                            {char.imageUrl ? (
-                              <img
-                                src={char.imageUrl}
-                                alt={char.name}
-                                className="w-full h-full object-cover"
+                  <div className="max-h-[440px] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                      {roster.map((char) => {
+                        const isActive = char.rosterId === selectedRosterId;
+                        const evolutionLocked =
+                          isRosterCharacterEvolutionLocked(char);
+                        const recruitLocked =
+                          isRosterCharacterRecruitLocked(char);
+                        const progress = xpProgress(char.level, char.xp);
+                        const nextEvo = getNextEvolutionProgress(
+                          char.level,
+                          char.xp,
+                          char.evolutionStage,
+                        );
+                        const nextEvoText = recruitLocked
+                          ? char.recruitLock?.status === "failed"
+                            ? "创造失败"
+                            : "后台创造中"
+                          : char.pendingEvolutionReplay
+                            ? "进化演出待回放"
+                            : evolutionLocked
+                              ? "进化更新中"
+                              : nextEvo.nextStage
+                                ? nextEvo.ready
+                                  ? "进化待触发"
+                                  : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
+                                : "最终形态";
+                        const highestLayer =
+                          char.tower.highestEndlessLayer ??
+                          char.tower.highestCleared;
+                        return (
+                          <motion.button
+                            key={char.rosterId}
+                            type="button"
+                            onClick={() => {
+                              setSelectedRosterId(char.rosterId);
+                              setSelectedLayer(char.tower.nextLayer || 1);
+                            }}
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.97 }}
+                            className="group relative text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
+                            style={{
+                              borderColor: isActive
+                                ? "#FFD700"
+                                : "rgba(255,215,0,0.22)",
+                              boxShadow: isActive
+                                ? "0 0 18px rgba(255,215,0,0.45)"
+                                : "none",
+                            }}
+                          >
+                            <div className="relative aspect-[4/3]">
+                              <CharacterAvatar
+                                imageUrl={char.imageUrl}
+                                name={char.name}
+                                themeColor="#FFD700"
+                                className="w-full h-full transition-transform group-hover:scale-105"
+                                iconSize={32}
                               />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-2xl font-black text-[#FFD700]">
-                                {char.name[0]}
+                              {isActive && (
+                                <div className="absolute inset-0 border-2 border-[#FFD700] shadow-[inset_0_0_18px_rgba(255,215,0,0.35)]" />
+                              )}
+                              <div className="absolute top-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#FFD700]">
+                                Lv.{char.level}
                               </div>
-                            )}
-                            <div className="absolute top-1 right-1 bg-black/70 text-[9px] font-bold px-1.5 py-0.5 rounded">
-                              Lv.{char.level}
-                            </div>
-                            {char.evolutionStage > 0 && (
-                              <div className="absolute top-1 left-1 bg-black/70 text-[9px] font-bold px-1.5 py-0.5 rounded text-[#FFD700]">
-                                {"★".repeat(
-                                  evolutionStars(char.evolutionStage),
-                                )}
+                              {char.evolutionStage > 0 && (
+                                <div className="absolute top-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#FFD700]">
+                                  {"★".repeat(
+                                    evolutionStars(char.evolutionStage),
+                                  )}
+                                </div>
+                              )}
+                              <div className="absolute right-1.5 bottom-9 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#66FCF1]">
+                                L{highestLayer}
                               </div>
-                            )}
-                            {(evolutionLocked || recruitLocked) && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/68">
-                                <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
-                                  <Lock size={10} className="mr-1 inline" />
-                                  {recruitLocked
-                                    ? char.recruitLock?.status === "failed"
-                                      ? "创造失败"
-                                      : "创造中"
-                                    : "进化更新中"}
+                              {(evolutionLocked || recruitLocked) && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/68">
+                                  <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
+                                    <Lock size={10} className="mr-1 inline" />
+                                    {recruitLocked
+                                      ? char.recruitLock?.status === "failed"
+                                        ? "创造失败"
+                                        : "创造中"
+                                      : "进化更新中"}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
+                                <div className="truncate text-xs font-black font-display text-[#FFD700]">
+                                  {char.name}
+                                </div>
+                                <div className="truncate text-[9px] text-[#C5C6C7]">
+                                  {evolutionLabel(char.evolutionStage)}
                                 </div>
                               </div>
-                            )}
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 to-transparent p-2">
-                              <div className="text-xs font-bold truncate text-[#FFD700]">
-                                {char.name}
+                            </div>
+                            <div className="p-2">
+                              <div className="h-1 rounded bg-[#1F2833] overflow-hidden">
+                                <div
+                                  className="h-full bg-[#FFD700]"
+                                  style={{
+                                    width: `${Math.round(progress.ratio * 100)}%`,
+                                  }}
+                                />
                               </div>
-                              <div className="text-[9px] text-[#8a8d91]">
-                                通关{" "}
-                                {char.tower.highestEndlessLayer ??
-                                  char.tower.highestCleared}{" "}
-                                层
+                              <div className="mt-1 flex items-center justify-between text-[9px] text-[#8a8d91] gap-2">
+                                <span className="truncate">{nextEvoText}</span>
+                                <span className="tabular-nums shrink-0 text-[#FFD700]/80">
+                                  {progress.need
+                                    ? `${progress.current}/${progress.need}`
+                                    : "MAX"}
+                                </span>
                               </div>
                             </div>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 层选择 */}
+                <div className="relative border border-[#FFD700]/30 bg-black/30 backdrop-blur-sm p-4 md:p-5 overflow-hidden">
+                  <span
+                    aria-hidden
+                    className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-[#FFD700]/70"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#FFD700]/70"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#FFD700]/70"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-[#FFD700]/70"
+                  />
+                  <div className="mb-3 flex items-center gap-3 pb-2 border-b border-white/5">
+                    <span className="w-1 h-1 bg-[#FFD700]" />
+                    <span className="text-[9px] font-mono tracking-[0.4em] text-[#FFD700]/75">
+                      N°02 · SELECT LAYER
+                    </span>
+                    <span className="ml-auto text-[9px] font-mono tracking-widest text-white/30">
+                      {towerAscensionLabel(selectedLayer)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-9 gap-2">
+                    {towerBossDefs.map((def, index) => {
+                      const localLayer = index + 1;
+                      const baseLayer = selectedChar?.tower.nextLayer ?? 1;
+                      const currentRankStart =
+                        Math.floor(
+                          (Math.max(1, baseLayer) - 1) / TOWER_TOTAL_LAYERS,
+                        ) *
+                          TOWER_TOTAL_LAYERS +
+                        1;
+                      const layer = currentRankStart + index;
+                      const highestEndless =
+                        selectedChar?.tower.highestEndlessLayer ??
+                        selectedChar?.tower.highestCleared ??
+                        0;
+                      const unlocked = selectedChar
+                        ? layer <= highestEndless + 1
+                        : localLayer === 1;
+                      const cleared = selectedChar
+                        ? layer <= highestEndless
+                        : false;
+                      const active = layer === selectedLayer;
+                      void def;
+                      return (
+                        <button
+                          key={layer}
+                          type="button"
+                          disabled={!unlocked}
+                          onClick={() => setSelectedLayer(layer)}
+                          className="relative aspect-square flex flex-col items-center justify-center border transition-all"
+                          style={{
+                            borderColor: active
+                              ? "#FFD700"
+                              : cleared
+                                ? "rgba(102,252,241,0.55)"
+                                : unlocked
+                                  ? "rgba(255,215,0,0.35)"
+                                  : "rgba(255,255,255,0.08)",
+                            background: active
+                              ? "rgba(255,215,0,0.14)"
+                              : cleared
+                                ? "rgba(102,252,241,0.06)"
+                                : "rgba(11,12,16,0.55)",
+                            boxShadow: active
+                              ? "0 0 12px rgba(255,215,0,0.45)"
+                              : "none",
+                            opacity: unlocked ? 1 : 0.35,
+                            cursor: unlocked ? "pointer" : "not-allowed",
+                            color: active
+                              ? "#FFD700"
+                              : cleared
+                                ? "#66FCF1"
+                                : unlocked
+                                  ? "#FFD700"
+                                  : "#8a8d91",
+                          }}
+                        >
+                          <div className="text-lg font-black font-display leading-none">
+                            {localLayer}
                           </div>
-                          <div className="px-2 py-1.5">
-                            <div className="h-1 rounded bg-[#1F2833] overflow-hidden">
-                              <div
-                                className="h-full bg-[#FFD700]"
-                                style={{
-                                  width: `${Math.round(progress.ratio * 100)}%`,
-                                }}
-                              />
-                            </div>
-                            <div className="mt-1 text-[9px] text-[#8a8d91] flex justify-between gap-2">
-                              <span>{evolutionLabel(char.evolutionStage)}</span>
-                              <span>
-                                {progress.need
-                                  ? `${progress.current}/${progress.need}`
-                                  : "MAX"}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 truncate text-[9px] text-[#FFD700]/85">
-                              {nextEvoText}
-                            </div>
+                          <div className="text-[8px] font-mono tracking-widest opacity-70">
+                            L{layer}
                           </div>
-                        </motion.button>
+                          {!unlocked && (
+                            <Lock
+                              size={9}
+                              className="absolute right-1 bottom-1 opacity-70"
+                            />
+                          )}
+                          {cleared && !active && (
+                            <Sparkles
+                              size={9}
+                              className="absolute right-1 bottom-1 text-[#66FCF1]"
+                            />
+                          )}
+                        </button>
                       );
                     })}
                   </div>
                 </div>
               </div>
 
-              <div>
-                <div className="text-xs text-[#8a8d91] mb-2 tracking-widest">
-                  挑战层 · {towerAscensionLabel(selectedLayer)}
-                </div>
-                <div className="grid grid-cols-3 sm:grid-cols-9 gap-2 mb-4">
-                  {towerBossDefs.map((def, index) => {
-                    const localLayer = index + 1;
-                    const baseLayer = selectedChar?.tower.nextLayer ?? 1;
-                    const currentRankStart =
-                      Math.floor(
-                        (Math.max(1, baseLayer) - 1) / TOWER_TOTAL_LAYERS,
-                      ) *
-                        TOWER_TOTAL_LAYERS +
-                      1;
-                    const layer = currentRankStart + index;
-                    const highestEndless =
-                      selectedChar?.tower.highestEndlessLayer ??
-                      selectedChar?.tower.highestCleared ??
-                      0;
-                    const unlocked = selectedChar
-                      ? layer <= highestEndless + 1
-                      : localLayer === 1;
-                    const cleared = selectedChar
-                      ? layer <= highestEndless
-                      : false;
-                    const active = layer === selectedLayer;
-                    return (
-                      <button
-                        key={layer}
-                        type="button"
-                        disabled={!unlocked}
-                        onClick={() => setSelectedLayer(layer)}
-                        className="aspect-square rounded-lg flex flex-col items-center justify-center border-2 transition-all text-[#FFD700]"
-                        style={{
-                          borderColor: active
-                            ? "#FFD700"
-                            : cleared
-                              ? "rgba(102,252,241,0.6)"
-                              : unlocked
-                                ? "rgba(255,215,0,0.4)"
-                                : "rgba(255,255,255,0.1)",
-                          background: cleared
-                            ? "rgba(102,252,241,0.08)"
-                            : active
-                              ? "rgba(255,215,0,0.12)"
-                              : "rgba(11,12,16,0.6)",
-                          opacity: unlocked ? 1 : 0.4,
-                          cursor: unlocked ? "pointer" : "not-allowed",
-                        }}
-                      >
-                        <div className="text-xl font-black font-display">
-                          {localLayer}
-                        </div>
-                        <div className="text-[9px] text-[#8a8d91]">
-                          L{layer}
-                        </div>
-                        {!unlocked && <Lock size={12} className="opacity-70" />}
-                        {cleared && (
-                          <Sparkles size={12} className="text-[#66FCF1]" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
+              {/* 右栏：Boss 信息 + 挑战按钮 */}
+              <div className="flex flex-col gap-4 min-w-0">
                 {(() => {
                   const meta = getTowerBossMeta(selectedLayer);
                   const boss = selectedChar
@@ -414,68 +565,158 @@ export const TowerScreen: React.FC = () => {
                     : getScaledTowerBoss(selectedLayer);
                   if (!meta || !boss) return null;
                   return (
-                    <div className="grid md:grid-cols-2 gap-4 mb-4 p-4 rounded-lg bg-[#0B0C10]/60 border border-[#FFD700]/30">
-                      <div>
-                        <div className="text-xs text-[#8a8d91]">
+                    <div className="relative border border-[#FFD700]/45 bg-black/45 backdrop-blur-sm p-5 overflow-hidden">
+                      <span
+                        aria-hidden
+                        className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-[#FFD700]"
+                      />
+                      <span
+                        aria-hidden
+                        className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#FFD700]"
+                      />
+                      <span
+                        aria-hidden
+                        className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#FFD700]"
+                      />
+                      <span
+                        aria-hidden
+                        className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-[#FFD700]"
+                      />
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute -top-24 -right-24 h-56 w-56 rounded-full blur-3xl opacity-20"
+                        style={{ background: "#FFD700" }}
+                      />
+                      <div className="relative">
+                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/5">
+                          <span className="w-1 h-1 bg-[#FFD700]" />
+                          <span className="text-[9px] font-mono tracking-[0.4em] text-[#FFD700]/75">
+                            N°03 · BOSS INTEL
+                          </span>
+                          <span className="ml-auto text-[9px] font-mono tracking-widest text-white/30">
+                            L{selectedLayer}
+                          </span>
+                        </div>
+                        <div className="text-[10px] tracking-[0.28em] text-[#8a8d91] uppercase">
                           {towerAscensionLabel(selectedLayer)} · 第{" "}
                           {getTowerLayerInAscension(selectedLayer)} 层 ·{" "}
                           {meta.title}
                         </div>
-                        <div className="text-xl font-black tracking-wider font-display text-[#FFD700]">
+                        <div className="mt-1 text-2xl font-black tracking-wider font-display text-[#FFD700]">
                           {meta.name}
                         </div>
-                        <p className="text-[11px] text-[#C5C6C7] mt-2 leading-relaxed">
+                        <p className="mt-2 text-[11px] text-[#C5C6C7] leading-relaxed">
                           {boss.skills.find((s) => s.isUltimate)?.description}
                         </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-[#C5C6C7]">
-                        <Stat
-                          icon={<Heart size={12} className="text-pink-400" />}
-                          label="HP"
-                          value={boss.maxHp}
-                        />
-                        <Stat
-                          icon={
-                            <ZapIcon size={12} className="text-yellow-400" />
-                          }
-                          label="ATK"
-                          value={boss.attack}
-                        />
-                        <Stat
-                          icon={<Shield size={12} className="text-blue-400" />}
-                          label="DEF"
-                          value={boss.defense}
-                        />
-                        <Stat
-                          icon={<Gauge size={12} className="text-green-400" />}
-                          label="SPD"
-                          value={boss.speed}
-                        />
-                        {meta.critBonus && (
-                          <div className="col-span-2 text-[#FFD700] text-[11px]">
-                            ⚡ 暴击加成 +{meta.critBonus}%
-                          </div>
-                        )}
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#C5C6C7]">
+                          <Stat
+                            icon={<Heart size={12} className="text-pink-400" />}
+                            label="HP"
+                            value={boss.maxHp}
+                          />
+                          <Stat
+                            icon={
+                              <ZapIcon size={12} className="text-yellow-400" />
+                            }
+                            label="ATK"
+                            value={boss.attack}
+                          />
+                          <Stat
+                            icon={
+                              <Shield size={12} className="text-blue-400" />
+                            }
+                            label="DEF"
+                            value={boss.defense}
+                          />
+                          <Stat
+                            icon={
+                              <Gauge size={12} className="text-green-400" />
+                            }
+                            label="SPD"
+                            value={boss.speed}
+                          />
+                          {meta.critBonus && (
+                            <div className="col-span-2 rounded border border-[#FFD700]/35 bg-[#FFD700]/10 px-2 py-1 text-[10px] font-black tracking-widest text-[#FFD700]">
+                              ⚡ 暴击加成 +{meta.critBonus}%
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
                 })()}
 
+                {/* 选中角色摘要 */}
+                {selectedChar && (
+                  <div className="relative border border-[#66FCF1]/25 bg-black/30 backdrop-blur-sm p-4 flex items-center gap-3">
+                    <div className="relative w-14 h-14 rounded overflow-hidden border border-[#66FCF1]/40 bg-[#1F2833] shrink-0">
+                      <CharacterAvatar
+                        imageUrl={selectedChar.imageUrl}
+                        name={selectedChar.name}
+                        themeColor="#66FCF1"
+                        className="w-full h-full"
+                        iconSize={22}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[9px] font-mono tracking-[0.35em] text-[#66FCF1]/70">
+                        SELECTED
+                      </div>
+                      <div className="text-sm font-black text-[#66FCF1] truncate font-display">
+                        {selectedChar.name}
+                      </div>
+                      <div className="text-[10px] text-[#8a8d91] mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                        <span>Lv.{selectedChar.level}</span>
+                        <span>
+                          {evolutionLabel(selectedChar.evolutionStage)}
+                        </span>
+                        <span>
+                          通关{" "}
+                          {selectedChar.tower.highestEndlessLayer ??
+                            selectedChar.tower.highestCleared}{" "}
+                          层
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   disabled={!selectedChar || selectedLocked}
                   onClick={startChallenge}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded font-display tracking-[0.3em] font-black border-2 border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#FFD700]"
-                  style={{ boxShadow: "0 0 14px rgba(255,215,0,0.4)" }}
+                  className="relative w-full flex items-center justify-center gap-3 py-4 font-display tracking-[0.3em] font-black text-sm border-2 border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#FFD700] disabled:cursor-not-allowed overflow-hidden group"
+                  style={{
+                    boxShadow:
+                      !selectedChar || selectedLocked
+                        ? "none"
+                        : "0 0 22px rgba(255,215,0,0.45)",
+                  }}
                 >
                   {selectedLocked ? <Lock size={16} /> : <Sword size={16} />}
-                  {selectedLocked
-                    ? "角色暂不可用 · 稍后再试"
-                    : `挑战 L${selectedLayer} · ${towerAscensionLabel(selectedLayer)}`}
+                  <span>
+                    {selectedLocked ? "角色暂不可用" : `挑战 L${selectedLayer}`}
+                  </span>
+                  {!selectedLocked && selectedChar && (
+                    <ArrowRight
+                      size={16}
+                      className="transition-transform group-hover:translate-x-1"
+                    />
+                  )}
                 </button>
               </div>
-            </>
+            </div>
           )}
+        </motion.div>
+
+        {/* 底部签名 */}
+        <div className="mt-16 pt-6 border-t border-white/5 flex items-center justify-between text-[10px] font-mono tracking-[0.35em] text-white/25">
+          <div className="flex items-center gap-4">
+            <span>02 · HUB</span>
+            <span className="w-10 h-[1px] bg-white/15" />
+            <span className="text-[#FFD700]">03 · ASCEND</span>
+          </div>
+          <span className="hidden md:inline">登塔 · 修炼 · 进化</span>
         </div>
       </div>
       <AnimatePresence>

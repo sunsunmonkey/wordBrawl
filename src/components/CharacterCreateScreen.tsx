@@ -15,8 +15,7 @@ import {
 } from "../utils/ai";
 import { cacheImageUrlAsDataUrl } from "../utils/localImage";
 import { presetCharacters } from "../data/presetCharacters";
-import { startEvolutionAssetPrefetch } from "../utils/evolutionPrefetch";
-import { buildLocalEvolution } from "../utils/towerProgress";
+import { runBackgroundRecruit } from "../utils/recruitPipeline";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap,
@@ -36,6 +35,7 @@ import {
 import { ParticleField } from "./ParticleField";
 import { CharacterDetailModal } from "./CharacterDetailModal";
 import { BackButton } from "./BackButton";
+import { CharacterAvatar } from "./CharacterAvatar";
 
 const LOADING_STEPS = [
   { icon: Brain, text: "正在解析灵魂数据..." },
@@ -72,14 +72,8 @@ export const CharacterCreateScreen: React.FC = () => {
     setPhase,
     player1,
   } = useGameStore();
-  const {
-    roster,
-    removeCharacter,
-    recruitCharacter,
-    createPendingRecruit,
-    completePendingRecruit,
-    failPendingRecruit,
-  } = useRosterStore();
+  const { roster, removeCharacter, recruitCharacter, createPendingRecruit } =
+    useRosterStore();
   const cfg: AIConfig = {
     apiKey,
     baseUrl,
@@ -150,53 +144,7 @@ export const CharacterCreateScreen: React.FC = () => {
     rosterId: string,
     sourceDescription: string,
   ) => {
-    void (async () => {
-      try {
-        const charData = await generateCharacter(cfg, sourceDescription);
-        const avatar = await loadGeneratedAvatar(() =>
-          generateCharacterImage(
-            cfg,
-            charData.imagePrompt || sourceDescription,
-            1,
-          ),
-        );
-
-        charData.imageUrl = avatar.ready
-          ? await cacheImageUrlAsDataUrl(avatar.url, { maxSize: 512 })
-          : avatar.url;
-        charData.sourceDescription = sourceDescription;
-
-        const recruited = completePendingRecruit(
-          rosterId,
-          charData,
-          sourceDescription,
-        );
-        if (!recruited) return;
-
-        try {
-          await startEvolutionAssetPrefetch(
-            {
-              rosterId: recruited.rosterId,
-              characterName: recruited.name,
-              stage: 1,
-              level: 5,
-              layer: 1,
-            },
-            async () => buildLocalEvolution(recruited, 1),
-            cfg,
-          );
-        } catch (prefetchErr) {
-          console.warn("recruit stage1 prefetch failed", prefetchErr);
-        }
-      } catch (err: unknown) {
-        failPendingRecruit(
-          rosterId,
-          err instanceof Error
-            ? err.message
-            : "生成失败，请检查 API Key 或网络连接",
-        );
-      }
-    })();
+    runBackgroundRecruit(rosterId, sourceDescription, cfg);
   };
 
   const handleGenerate = async () => {
@@ -423,21 +371,13 @@ export const CharacterCreateScreen: React.FC = () => {
               className="w-full text-left disabled:opacity-50"
             >
               <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
-                {saved.imageUrl ? (
-                  <img
-                    src={saved.imageUrl}
-                    alt={saved.name}
-                    loading="lazy"
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                  />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center text-3xl font-black font-display"
-                    style={{ color: themeColor }}
-                  >
-                    {saved.name[0]}
-                  </div>
-                )}
+                <CharacterAvatar
+                  imageUrl={saved.imageUrl}
+                  name={saved.name}
+                  themeColor={themeColor}
+                  className="w-full h-full transition-transform duration-300 group-hover:scale-110"
+                  iconSize={36}
+                />
                 {/* 顶部选择提示条 */}
                 <div
                   className="absolute top-0 left-0 right-0 h-6 flex items-center px-2 text-[9px] tracking-widest font-display opacity-0 group-hover:opacity-100 transition-opacity"
@@ -559,21 +499,13 @@ export const CharacterCreateScreen: React.FC = () => {
               className="w-full text-left disabled:opacity-50"
             >
               <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
-                {preset.imageUrl ? (
-                  <img
-                    src={preset.imageUrl}
-                    alt={preset.name}
-                    loading="lazy"
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                  />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center text-3xl font-black font-display"
-                    style={{ color: themeColor }}
-                  >
-                    {preset.name[0]}
-                  </div>
-                )}
+                <CharacterAvatar
+                  imageUrl={preset.imageUrl}
+                  name={preset.name}
+                  themeColor={themeColor}
+                  className="w-full h-full transition-transform duration-300 group-hover:scale-110"
+                  iconSize={36}
+                />
                 {/* hover 顶部提示 */}
                 <div
                   className="absolute top-0 left-0 right-0 h-6 flex items-center px-2 text-[9px] tracking-widest font-display opacity-0 group-hover:opacity-100 transition-opacity"
@@ -870,7 +802,7 @@ export const CharacterCreateScreen: React.FC = () => {
                   className="text-xs font-bold tracking-wider"
                   style={{ color: themeColor }}
                 >
-                  我的麾下 · LOCAL ROSTER
+                  我的词灵 · LOCAL ROSTER
                 </h3>
                 <span className="text-[9px] text-[#8a8d91]">
                   {roster.length}/24
