@@ -39,6 +39,44 @@ export const stripJsonFences = (raw: string): string => {
   return trimmed;
 };
 
+const extractJsonObject = (raw: string): string | null => {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  return raw.slice(start, end + 1);
+};
+
+const normalizeJsonLikeText = (raw: string): string =>
+  raw
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/，(?=\s*[\]}])/g, ",")
+    .replace(/,\s*([}\]])/g, "$1")
+    .trim();
+
+export const parseJsonLoose = (raw: string): unknown => {
+  const cleaned = stripJsonFences(raw);
+  const candidates = [
+    cleaned,
+    extractJsonObject(cleaned),
+    normalizeJsonLikeText(cleaned),
+    extractJsonObject(normalizeJsonLikeText(cleaned)),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const detail =
+    lastError instanceof Error ? `：${lastError.message}` : "";
+  throw new Error(`AI 返回的内容不是合法 JSON${detail}`);
+};
+
 export const clamp = (
   value: unknown,
   min: number,

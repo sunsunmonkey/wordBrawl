@@ -6,9 +6,9 @@ import { getTowerAscensionRank } from '../utils/towerProgress';
  * 九层塔 Boss 配置：每个 Boss 的属性、技能与图片路径。
  *
  * 设计原则：
- * - AI 自动生成角色出厂硬上限 hp ≤ 900 / atk ≤ 140 / def ≤ 85 / spd ≤ 140；
- *   Boss 从 L4 开始有意突破上述上限，否则角色升满级后没怪可打。
- * - L9 数值远超 AI 顶配 + 满级 + 三阶进化，需要玩家围绕一名核心练满阵。
+ * - AI 自动生成角色出厂硬上限 hp ≤ 1100 / atk ≤ 170 / def ≤ 110 / spd ≤ 160；
+ *   一番前半段让新角色能推进，后半段逐步要求升级、进化和技能构筑。
+ * - L9 是一番毕业考：纸面强但仍有可打空间，二番开始再通过缩放明显抬强度。
  */
 
 export interface TowerBossDef {
@@ -42,10 +42,10 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 1,
     name: '守墓石像',
     title: '钝肉入门',
-    hp: 720,
-    attack: 95,
-    defense: 55,
-    speed: 35,
+    hp: 560,
+    attack: 72,
+    defense: 38,
+    speed: 28,
     avatarSeed: 9101,
     ultimateType: 'nature',
     imagePrompt:
@@ -54,13 +54,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'stone guardian statue slamming earth, massive seismic shockwave, emerald moss vines erupting from cracks, dust storm, anime key visual',
     skills: [
       { name: '石锤重击', description: '挥下沉重石锤', damageMultiplier: 1.0, type: 'attack' },
-      { name: '苔藓震荡', description: '震碎大地，迸出苔藓藤蔓', damageMultiplier: 1.9, type: 'attack' },
+      { name: '苔藓震荡', description: '震碎大地，迸出苔藓藤蔓', damageMultiplier: 1.75, type: 'attack' },
       {
         name: '守墓誓言',
         description: '凝聚守墓意志，防御暂时硬化',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 50,
+        buffPercent: 42,
         buffTurns: 2,
       },
       {
@@ -68,13 +68,13 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '低语远古封印，削弱对手攻击',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 45,
+        buffPercent: 38,
         buffTurns: 2,
       },
       {
         name: '巨石坟葬',
         description: '召唤墓地巨石压顶，地表下沉',
-        damageMultiplier: 5.5,
+        damageMultiplier: 4.8,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -84,10 +84,10 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 2,
     name: '烈风游侠',
     title: '均衡神射',
-    hp: 820,
-    attack: 118,
-    defense: 50,
-    speed: 118,
+    hp: 620,
+    attack: 88,
+    defense: 36,
+    speed: 112,
     avatarSeed: 9202,
     ultimateType: 'lightning',
     imagePrompt:
@@ -96,13 +96,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'wind ranger unleashing chain lightning arrow storm, sky filled with electric arrows, thunder rings, anime key visual',
     skills: [
       { name: '疾风箭', description: '迅捷射出一支疾风箭', damageMultiplier: 1.0, type: 'attack' },
-      { name: '雷霆穿心', description: '雷光附着箭尖，直贯要害', damageMultiplier: 2.1, type: 'attack' },
+      { name: '雷霆穿心', description: '雷光附着箭尖，直贯要害', damageMultiplier: 2.0, type: 'attack' },
       {
         name: '风之精准',
         description: '调息凝神，下一击攻击大幅提升',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 60,
+        buffPercent: 48,
         buffTurns: 2,
       },
       {
@@ -110,13 +110,13 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '化身风影迷惑对手，敌方速度短暂降低',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 50,
+        buffPercent: 42,
         buffTurns: 2,
       },
       {
         name: '万箭穿空·雷祭',
         description: '万箭齐发，每一支都引下天雷',
-        damageMultiplier: 5.8,
+        damageMultiplier: 5.2,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -126,10 +126,10 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 3,
     name: '毒沼巫女',
     title: 'debuff 消耗',
-    hp: 880,
-    attack: 132,
-    defense: 48,
-    speed: 102,
+    hp: 760,
+    attack: 104,
+    defense: 40,
+    speed: 92,
     avatarSeed: 9303,
     ultimateType: 'shadow',
     imagePrompt:
@@ -138,13 +138,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'swamp witch summoning toxic shadow miasma engulfing battlefield, poison serpents wriggling, purple shadow blooms, anime key visual',
     skills: [
       { name: '腐蚀触手', description: '腐沼触手束缚对手', damageMultiplier: 1.0, type: 'attack' },
-      { name: '剧毒爆破', description: '引爆体内毒囊', damageMultiplier: 2.3, type: 'attack' },
+      { name: '剧毒爆破', description: '引爆体内毒囊', damageMultiplier: 2.15, type: 'attack' },
       {
         name: '巫蛊诅咒',
         description: '低吟诅咒削弱对手攻击',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 60,
+        buffPercent: 54,
         buffTurns: 3,
       },
       {
@@ -152,12 +152,12 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '从毒沼吸取生机自疗',
         damageMultiplier: 0,
         type: 'heal',
-        healPercent: 32,
+        healPercent: 28,
       },
       {
         name: '万蛊归吞',
         description: '召唤千万毒蛇与亡魂吞噬战场',
-        damageMultiplier: 6.0,
+        damageMultiplier: 5.5,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -167,10 +167,10 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 4,
     name: '雷霆斗士',
     title: '高速暴击',
-    hp: 980,
-    attack: 155,
-    defense: 70,
-    speed: 138,
+    hp: 860,
+    attack: 126,
+    defense: 56,
+    speed: 126,
     avatarSeed: 9404,
     ultimateType: 'lightning',
     imagePrompt:
@@ -179,13 +179,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'thunder gladiator concentrating divine thunder into a single godlike fist, plasma sphere ready to erupt, anime key visual',
     skills: [
       { name: '雷霆直拳', description: '电光附拳一击穿透', damageMultiplier: 1.0, type: 'attack' },
-      { name: '闪电连击', description: '快速三连闪电拳', damageMultiplier: 2.4, type: 'attack' },
+      { name: '闪电连击', description: '快速三连闪电拳', damageMultiplier: 2.35, type: 'attack' },
       {
         name: '极速凝电',
         description: '电荷激增，攻击力暴涨',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 75,
+        buffPercent: 62,
         buffTurns: 3,
       },
       {
@@ -193,13 +193,13 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '电磁干扰使对方混乱',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 55,
+        buffPercent: 48,
         buffTurns: 2,
       },
       {
         name: '雷神最终一击',
         description: '凝聚所有电荷的雷神之拳',
-        damageMultiplier: 6.2,
+        damageMultiplier: 5.9,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -209,10 +209,10 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 5,
     name: '熔岩巨像',
     title: '重装坦克',
-    hp: 1380,
-    attack: 140,
-    defense: 125,
-    speed: 38,
+    hp: 1280,
+    attack: 130,
+    defense: 110,
+    speed: 32,
     avatarSeed: 9505,
     ultimateType: 'fire',
     imagePrompt:
@@ -227,7 +227,7 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '硬化外壳大幅提升防御',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 70,
+        buffPercent: 62,
         buffTurns: 3,
       },
       {
@@ -235,12 +235,12 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '从核心吸取热能修复装甲',
         damageMultiplier: 0,
         type: 'heal',
-        healPercent: 35,
+        healPercent: 30,
       },
       {
         name: '末日喷发',
         description: '体内火山倾泻而出，焚尽战场',
-        damageMultiplier: 6.0,
+        damageMultiplier: 5.8,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -250,10 +250,10 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 6,
     name: '影刃双子',
     title: '极速刺客',
-    hp: 1080,
-    attack: 185,
-    defense: 60,
-    speed: 170,
+    hp: 900,
+    attack: 165,
+    defense: 42,
+    speed: 155,
     avatarSeed: 9606,
     ultimateType: 'shadow',
     imagePrompt:
@@ -262,13 +262,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'twin shadow assassins delivering thousand simultaneous crimson slash marks, black mist explosion engulfs entire frame, anime key visual',
     skills: [
       { name: '双影连斩', description: '左右双影同时出刀', damageMultiplier: 1.0, type: 'attack' },
-      { name: '黑雾割喉', description: '隐入黑雾突袭要害', damageMultiplier: 2.7, type: 'attack' },
+      { name: '黑雾割喉', description: '隐入黑雾突袭要害', damageMultiplier: 2.75, type: 'attack' },
       {
         name: '影分身',
         description: '化分身扰乱视线，自身速度暴涨',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 80,
+        buffPercent: 70,
         buffTurns: 2,
       },
       {
@@ -276,13 +276,13 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '影刃透体而过，敌方防御暴跌',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 70,
+        buffPercent: 62,
         buffTurns: 2,
       },
       {
         name: '万影千斩',
         description: '双子在一瞬间斩出千刀',
-        damageMultiplier: 6.8,
+        damageMultiplier: 6.7,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -292,11 +292,11 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 7,
     name: '星陨术士',
     title: '玻璃大炮',
-    hp: 980,
-    attack: 215,
-    defense: 55,
-    speed: 150,
-    critBonus: 18,
+    hp: 820,
+    attack: 178,
+    defense: 34,
+    speed: 142,
+    critBonus: 16,
     avatarSeed: 9707,
     ultimateType: 'cosmic',
     imagePrompt:
@@ -305,13 +305,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'star fall sorcerer dropping cataclysmic meteor shower from cosmos, planet cracking impact, galaxy explosion, anime key visual',
     skills: [
       { name: '陨石碎击', description: '指尖唤来微型陨石', damageMultiplier: 1.0, type: 'attack' },
-      { name: '虚空射线', description: '虚空中射出暗紫射线', damageMultiplier: 2.8, type: 'attack' },
+      { name: '虚空射线', description: '虚空中射出暗紫射线', damageMultiplier: 3.0, type: 'attack' },
       {
         name: '星辰共鸣',
         description: '调动星力，攻击力暴增',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 90,
+        buffPercent: 82,
         buffTurns: 2,
       },
       {
@@ -319,7 +319,7 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '让陨石锁定敌方，使其防御坍缩',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 65,
+        buffPercent: 58,
         buffTurns: 2,
       },
       {
@@ -335,11 +335,11 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 8,
     name: '龙骑神官',
     title: '全能战神',
-    hp: 1560,
-    attack: 205,
-    defense: 140,
-    speed: 145,
-    critBonus: 12,
+    hp: 1320,
+    attack: 172,
+    defense: 115,
+    speed: 122,
+    critBonus: 10,
     avatarSeed: 9808,
     ultimateType: 'holy',
     imagePrompt:
@@ -348,13 +348,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'dragon knight pontiff summoning celestial dragon of light spearing through heaven, holy sunburst, anime key visual',
     skills: [
       { name: '圣龙突刺', description: '圣光附枪一刺', damageMultiplier: 1.0, type: 'attack' },
-      { name: '神威烙印', description: '神圣烙印贯穿敌阵', damageMultiplier: 2.6, type: 'attack' },
+      { name: '神威烙印', description: '神圣烙印贯穿敌阵', damageMultiplier: 2.75, type: 'attack' },
       {
         name: '圣龙圣盾',
         description: '展开圣盾，攻防双幅提升',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 75,
+        buffPercent: 70,
         buffTurns: 3,
       },
       {
@@ -362,12 +362,12 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '吟诵神谕大幅治愈自身',
         damageMultiplier: 0,
         type: 'heal',
-        healPercent: 40,
+        healPercent: 34,
       },
       {
         name: '神龙临世',
         description: '召唤神龙降临，圣光焚尽一切',
-        damageMultiplier: 7.2,
+        damageMultiplier: 7.0,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -377,11 +377,11 @@ export const towerBossDefs: TowerBossDef[] = [
     layer: 9,
     name: '虚空之主',
     title: '终极 BOSS',
-    hp: 2100,
-    attack: 260,
-    defense: 170,
-    speed: 190,
-    critBonus: 25,
+    hp: 1720,
+    attack: 220,
+    defense: 145,
+    speed: 155,
+    critBonus: 22,
     avatarSeed: 9909,
     ultimateType: 'cosmic',
     imagePrompt:
@@ -390,13 +390,13 @@ export const towerBossDefs: TowerBossDef[] = [
       'void overlord ripping spacetime apart, swallowing galaxies into black hole at his fingertip, universe collapse, anime key visual',
     skills: [
       { name: '虚空断罪', description: '虚空之指一抹划过', damageMultiplier: 1.0, type: 'attack' },
-      { name: '坍缩烙刑', description: '凝缩黑洞砸落', damageMultiplier: 3.0, type: 'attack' },
+      { name: '坍缩烙刑', description: '凝缩黑洞砸落', damageMultiplier: 3.2, type: 'attack' },
       {
         name: '宇宙覆灭',
         description: '吞噬星辰之力，全属性暴涨',
         damageMultiplier: 0,
         type: 'buff',
-        buffPercent: 95,
+        buffPercent: 88,
         buffTurns: 3,
       },
       {
@@ -404,13 +404,13 @@ export const towerBossDefs: TowerBossDef[] = [
         description: '让对手陷入熵增，攻防双衰',
         damageMultiplier: 0,
         type: 'debuff',
-        buffPercent: 80,
+        buffPercent: 72,
         buffTurns: 3,
       },
       {
         name: '终焉·虚空奇点',
         description: '在战场中心拉开奇点，宇宙在一瞬归零',
-        damageMultiplier: 8.2,
+        damageMultiplier: 8.4,
         type: 'ultimate',
         isUltimate: true,
       },
@@ -469,8 +469,12 @@ const scaleBoss = (boss: CharacterData, endlessLayer: number, challenger?: Roste
   const roundMultiplier = 1 + (rank - 1) * 0.38;
   const layerMultiplier = 1 + (localLayer - 1) * 0.018;
   const challengerPower = challenger ? estimateRosterPower(challenger) : 0;
+  const adaptiveCap =
+    rank === 1
+      ? 1.02 + (localLayer - 1) * 0.035
+      : 1.55 + (rank - 2) * 0.2 + (localLayer - 1) * 0.025;
   const adaptiveMultiplier = challengerPower > 0
-    ? Math.min(1.85 + (rank - 1) * 0.18, Math.max(1, challengerPower / 620))
+    ? Math.min(adaptiveCap, Math.max(1, challengerPower / 760))
     : 1;
   const multiplier = Math.max(roundMultiplier, adaptiveMultiplier) * layerMultiplier;
   const scaled = cloneCharacter(boss);
