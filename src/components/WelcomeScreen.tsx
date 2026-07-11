@@ -375,7 +375,11 @@ export const WelcomeScreen: React.FC = () => {
                       }}
                       icon={<Gift size={16} />}
                       label="FREE"
-                      sub={`每日体验 · ${freeUsageLabel}`}
+                      sub={
+                        freeUsage?.unlimited
+                          ? "免费体验"
+                          : `免费体验 · ${freeUsageLabel}`
+                      }
                       accent="#66FCF1"
                     />
                     <ModeToggle
