@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CharacterData, Skill } from "./useGameStore";
+import type { CharacterData, Skill, Rarity } from "./useGameStore";
 import { presetCharacters } from "../data/presetCharacters";
 
 /** 进化阶段：0 初始 / 1-6 为每 5 级一次的形态状态 */
@@ -319,11 +319,20 @@ const supplementDefaultRoster = (
   return [...roster, ...missingStarters.slice(0, room)];
 };
 
+export interface PendingRevealEntry {
+  rosterId: string;
+  character: RosterCharacter;
+  addedAt: number;
+}
+
 interface RosterStore {
   roster: RosterCharacter[];
+  /** 等待播放抽卡揭示动画的角色队列（先进先出） */
+  pendingRevealQueue: PendingRevealEntry[];
   recruitCharacter: (
     char: CharacterData,
     sourceDescription?: string,
+    addToRevealQueue?: boolean,
   ) => RosterCharacter;
   createPendingRecruit: (sourceDescription: string) => RosterCharacter;
   completePendingRecruit: (
@@ -345,13 +354,16 @@ interface RosterStore {
   appendFormHistory: (rosterId: string, entry: FormHistoryEntry) => void;
   /** 追加技能（解锁三选一时使用） */
   appendSkill: (rosterId: string, skill: Skill) => void;
+  /** 从队列头部取出一个待揭示角色并移除 */
+  consumeNextReveal: () => PendingRevealEntry | null;
 }
 
 export const useRosterStore = create<RosterStore>()(
   persist(
     (set, get) => ({
       roster: createDefaultRoster(),
-      recruitCharacter: (char, sourceDescription) => {
+      pendingRevealQueue: [],
+      recruitCharacter: (char, sourceDescription, addToRevealQueue = true) => {
         const recruited: RosterCharacter = ensureGrowthFields({
           ...resetCharacterRuntimeState(char),
           sourceDescription: sourceDescription ?? char.sourceDescription,
@@ -361,6 +373,16 @@ export const useRosterStore = create<RosterStore>()(
 
         set((state) => ({
           roster: [recruited, ...state.roster].slice(0, MAX_ROSTER_SIZE),
+          pendingRevealQueue: addToRevealQueue
+            ? [
+                ...state.pendingRevealQueue,
+                {
+                  rosterId: recruited.rosterId,
+                  character: recruited,
+                  addedAt: Date.now(),
+                },
+              ]
+            : state.pendingRevealQueue,
         }));
         return recruited;
       },
@@ -401,8 +423,19 @@ export const useRosterStore = create<RosterStore>()(
           roster: state.roster.map((entry) =>
             entry.rosterId === rosterId ? recruited : entry,
           ),
+          pendingRevealQueue: [
+            ...state.pendingRevealQueue,
+            { rosterId, character: recruited, addedAt: Date.now() },
+          ],
         }));
         return recruited;
+      },
+      consumeNextReveal: () => {
+        const state = get();
+        const [next, ...rest] = state.pendingRevealQueue;
+        if (!next) return null;
+        set({ pendingRevealQueue: rest });
+        return next;
       },
       failPendingRecruit: (rosterId, error) =>
         set((state) => ({
@@ -510,25 +543,30 @@ export const useRosterStore = create<RosterStore>()(
     }),
     {
       name: "word-brawl-roster",
-      version: 4,
+      version: 5,
+      // 不持久化 reveal 队列，刷新页面后不重播动画
+      partialize: (state) => ({ roster: state.roster }),
       migrate: (persistedState: unknown, version: number) => {
         if (!persistedState || typeof persistedState !== "object") {
-          return { roster: createDefaultRoster() } as {
+          return { roster: createDefaultRoster(), pendingRevealQueue: [] } as {
             roster: RosterCharacter[];
+            pendingRevealQueue: PendingRevealEntry[];
           };
         }
         const state = persistedState as { roster?: unknown };
         if (!Array.isArray(state.roster)) {
-          return { roster: createDefaultRoster() } as {
+          return { roster: createDefaultRoster(), pendingRevealQueue: [] } as {
             roster: RosterCharacter[];
+            pendingRevealQueue: PendingRevealEntry[];
           };
         }
         if (state.roster.length === 0) {
-          return { roster: createDefaultRoster() } as {
+          return { roster: createDefaultRoster(), pendingRevealQueue: [] } as {
             roster: RosterCharacter[];
+            pendingRevealQueue: PendingRevealEntry[];
           };
         }
-        if (version < 4) {
+        if (version < 5) {
           const roster = state.roster.map((entry) =>
             ensureGrowthFields(
               entry as Partial<RosterCharacter> & CharacterData,
@@ -536,7 +574,11 @@ export const useRosterStore = create<RosterStore>()(
           );
           return {
             roster: supplementDefaultRoster(roster),
-          } as { roster: RosterCharacter[] };
+            pendingRevealQueue: [],
+          } as {
+            roster: RosterCharacter[];
+            pendingRevealQueue: PendingRevealEntry[];
+          };
         }
         return {
           roster: supplementDefaultRoster(
@@ -546,7 +588,11 @@ export const useRosterStore = create<RosterStore>()(
               ),
             ),
           ),
-        } as { roster: RosterCharacter[] };
+          pendingRevealQueue: [],
+        } as {
+          roster: RosterCharacter[];
+          pendingRevealQueue: PendingRevealEntry[];
+        };
       },
     },
   ),

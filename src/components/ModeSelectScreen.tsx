@@ -20,9 +20,15 @@ import {
   Trash2,
   Timer,
   Loader2,
+  Star,
 } from "lucide-react";
 import { CharacterAvatar } from "./CharacterAvatar";
-import { useGameStore } from "../store/useGameStore";
+import {
+  useGameStore,
+  RARITY_CONFIGS,
+  calculatePowerScore,
+  type Rarity,
+} from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
   isRosterCharacterRecruitLocked,
@@ -935,6 +941,25 @@ export const ModeSelectScreen: React.FC = () => {
                       const highestLayer =
                         char.tower.highestEndlessLayer ??
                         char.tower.highestCleared;
+                      const charRarity: Rarity = char.rarity || "R";
+                      const rarityConfig = RARITY_CONFIGS[charRarity];
+                      const cardColor = rarityConfig.primaryColor;
+                      const cardRgb = rarityConfig.rgb;
+                      const rarityTierMap: Record<Rarity, number> = {
+                        N: 0,
+                        R: 1,
+                        SR: 2,
+                        SSR: 3,
+                        UR: 4,
+                      };
+                      const rarityTier = rarityTierMap[charRarity];
+                      const borderWidth = 1 + 0.25 * rarityTier;
+                      const isURCard = charRarity === "UR";
+                      const isSSRCard = charRarity === "SSR";
+                      const isSRCard = charRarity === "SR";
+                      const isHighRarityCard =
+                        isURCard || isSSRCard || isSRCard;
+                      const cardPower = calculatePowerScore(char);
                       return (
                         <motion.div
                           key={char.rosterId}
@@ -947,112 +972,182 @@ export const ModeSelectScreen: React.FC = () => {
                               setSelectedRosterId(char.rosterId);
                             }
                           }}
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.97 }}
-                          className="group cursor-pointer overflow-hidden rounded-lg border bg-[#0B0C10]/80 text-left transition-all"
+                          whileHover={{ y: -3 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="group cursor-pointer relative rounded-lg text-left overflow-hidden"
                           style={{
-                            borderColor: isSelected
-                              ? "#FFD700"
-                              : "rgba(255, 215, 0, 0.28)",
+                            background: "#0D0E14",
+                            border: `${borderWidth}px solid rgba(${cardRgb}, ${isSelected ? 0.8 : 0.35 + rarityTier * 0.1})`,
                             boxShadow: isSelected
-                              ? "0 0 18px rgba(255,215,0,0.45)"
-                              : "none",
+                              ? `0 0 0 1px rgba(${cardRgb}, 0.3), 0 4px 16px rgba(${cardRgb}, 0.25), 0 0 32px rgba(${cardRgb}, 0.15), inset 0 0 12px rgba(${cardRgb}, 0.06)`
+                              : `0 2px 8px rgba(0,0,0,0.5), 0 0 16px rgba(${cardRgb}, ${0.05 + rarityTier * 0.03})`,
+                          }}
+                          animate={{
+                            y: isSelected ? -4 : 0,
+                            boxShadow: isSelected
+                              ? `0 0 0 1px rgba(${cardRgb}, 0.3), 0 6px 20px rgba(${cardRgb}, 0.3), 0 0 40px rgba(${cardRgb}, 0.18), inset 0 0 12px rgba(${cardRgb}, 0.06)`
+                              : undefined,
+                          }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 400,
+                            damping: 30,
                           }}
                           aria-pressed={isSelected}
                         >
-                          <div className="relative aspect-[4/3] overflow-hidden bg-[#111827]">
-                            <CharacterAvatar
-                              imageUrl={char.imageUrl}
-                              name={char.name}
-                              themeColor="#FFD700"
-                              className="h-full w-full transition-transform group-hover:scale-105"
-                              iconSize={36}
-                            />
-                            {(evolutionLocked || recruitLocked) && (
-                              <RecruitLockOverlay
-                                char={char}
-                                recruitLocked={recruitLocked}
-                                evolutionLocked={evolutionLocked}
-                                onRetry={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  retryRecruit(char);
+                          {(isURCard || isSSRCard) && (
+                            <motion.div
+                              className="absolute inset-0 z-0 pointer-events-none overflow-hidden rounded-lg"
+                              initial={false}
+                            >
+                              <motion.div
+                                className="absolute top-0 h-full w-1/3"
+                                style={{
+                                  background: `linear-gradient(90deg, transparent 0%, rgba(${cardRgb}, ${isURCard ? 0.1 : 0.07}) 50%, transparent 100%)`,
                                 }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  dropRecruit(char);
+                                animate={{ x: ["-50%", "350%"] }}
+                                transition={{
+                                  duration: isURCard ? 4.5 : 5.5,
+                                  repeat: Infinity,
+                                  ease: "easeInOut",
+                                  repeatDelay: 1,
                                 }}
                               />
-                            )}
-                            {isSelected && (
-                              <div className="absolute inset-0 border-2 border-[#FFD700] shadow-[inset_0_0_18px_rgba(255,215,0,0.35)]" />
-                            )}
-                            <div className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#FFD700]">
-                              Lv.{char.level}
-                            </div>
-                            <div className="absolute right-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#66FCF1]">
-                              L{highestLayer}
-                            </div>
-                            {isSelected &&
-                              !evolutionLocked &&
-                              !recruitLocked && (
-                                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 mt-4 z-10 flex flex-col gap-2">
-                                  <span
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenSpiritRosterId(char.rosterId);
-                                      setPhase("SPIRIT_CHAT");
+                            </motion.div>
+                          )}
+                          <div className="relative z-10">
+                            <div
+                              className="relative aspect-[4/3] overflow-hidden"
+                              style={{
+                                background: `radial-gradient(ellipse at 50% 30%, rgba(${cardRgb}, 0.08) 0%, #0D0E14 70%)`,
+                              }}
+                            >
+                              <CharacterAvatar
+                                imageUrl={char.imageUrl}
+                                name={char.name}
+                                themeColor={cardColor}
+                                className="h-full w-full transition-transform duration-300 group-hover:scale-105"
+                                iconSize={36}
+                              />
+                              <div
+                                className="absolute inset-0 pointer-events-none"
+                                style={{
+                                  background: `linear-gradient(to top, #0D0E14 0%, #0D0E14e0 35%, transparent 60%),
+                                              linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 30%),
+                                              radial-gradient(ellipse at 50% 40%, transparent 40%, rgba(${cardRgb}, 0.06) 100%)`,
+                                }}
+                              />
+                              {(evolutionLocked || recruitLocked) && (
+                                <RecruitLockOverlay
+                                  char={char}
+                                  recruitLocked={recruitLocked}
+                                  evolutionLocked={evolutionLocked}
+                                  onRetry={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    retryRecruit(char);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    dropRecruit(char);
+                                  }}
+                                />
+                              )}
+                              <div
+                                className="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[8px] font-black tracking-wider"
+                                style={{
+                                  background: `linear-gradient(135deg, ${cardColor} 0%, ${rarityConfig.secondaryColor} 100%)`,
+                                  color: "#0B0C10",
+                                  boxShadow: `0 1px 4px rgba(0,0,0,0.4), 0 0 6px rgba(${cardRgb}, 0.3)`,
+                                }}
+                              >
+                                {charRarity}
+                              </div>
+                              <div className="absolute left-1.5 top-[26px] flex gap-px">
+                                {Array.from({
+                                  length: rarityConfig.starCount,
+                                }).map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    size={6}
+                                    fill={cardColor}
+                                    color={cardColor}
+                                    style={{
+                                      filter: `drop-shadow(0 0 2px rgba(${cardRgb}, 0.6))`,
                                     }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
+                                  />
+                                ))}
+                              </div>
+                              <div
+                                className="absolute left-1.5 top-[42px] rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-bold"
+                                style={{ color: cardColor }}
+                              >
+                                Lv.{char.level}
+                              </div>
+                              <div className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-bold text-[#66FCF1]">
+                                L{highestLayer}
+                              </div>
+                              {isSelected &&
+                                !evolutionLocked &&
+                                !recruitLocked && (
+                                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 mt-4 z-10 flex flex-col gap-1">
+                                    <span
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={(e) => {
                                         e.stopPropagation();
                                         setOpenSpiritRosterId(char.rosterId);
                                         setPhase("SPIRIT_CHAT");
-                                      }
-                                    }}
-                                    className="cursor-pointer rounded bg-[#66FCF1] px-1.5 py-0.5 text-center text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(102,252,241,0.55)] transition-all hover:scale-105 hover:bg-[#8FFFF4]"
-                                  >
-                                    聊天
-                                  </span>
-                                  <span
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startTower();
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" ||
+                                          e.key === " "
+                                        ) {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setOpenSpiritRosterId(char.rosterId);
+                                          setPhase("SPIRIT_CHAT");
+                                        }
+                                      }}
+                                      className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"
+                                      style={{
+                                        background: "#66FCF1",
+                                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                                      }}
+                                    >
+                                      聊天
+                                    </span>
+                                    <span
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={(e) => {
                                         e.stopPropagation();
                                         startTower();
-                                      }
-                                    }}
-                                    className="cursor-pointer rounded bg-[#FFD700] px-1.5 py-0.5 text-center text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(255,215,0,0.65)] transition-all hover:scale-105 hover:bg-[#FFEA55]"
-                                  >
-                                    出战
-                                  </span>
-                                  <span
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (window.confirm("确认删除该词灵？")) {
-                                        removeCharacter(char.rosterId);
+                                      }}
+                                      onKeyDown={(e) => {
                                         if (
-                                          selectedRosterId === char.rosterId
+                                          e.key === "Enter" ||
+                                          e.key === " "
                                         ) {
-                                          setSelectedRosterId(null);
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          startTower();
                                         }
-                                      }
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
+                                      }}
+                                      className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"
+                                      style={{
+                                        background: "#FBBF24",
+                                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                                      }}
+                                    >
+                                      出战
+                                    </span>
+                                    <span
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={(e) => {
                                         e.stopPropagation();
                                         if (
                                           window.confirm("确认删除该词灵？")
@@ -1064,58 +1159,117 @@ export const ModeSelectScreen: React.FC = () => {
                                             setSelectedRosterId(null);
                                           }
                                         }
-                                      }
-                                    }}
-                                    className="cursor-pointer rounded bg-[#FF6B9D] px-1.5 py-0.5 text-center text-[9px] font-black text-[#0B0C10] shadow-[0_0_10px_rgba(255,107,157,0.55)] transition-all hover:scale-105 hover:bg-[#FF8DB5]"
-                                  >
-                                    删除
-                                  </span>
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" ||
+                                          e.key === " "
+                                        ) {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          if (
+                                            window.confirm("确认删除该词灵？")
+                                          ) {
+                                            removeCharacter(char.rosterId);
+                                            if (
+                                              selectedRosterId === char.rosterId
+                                            ) {
+                                              setSelectedRosterId(null);
+                                            }
+                                          }
+                                        }
+                                      }}
+                                      className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-white transition-all hover:brightness-110"
+                                      style={{
+                                        background: "#EF4444",
+                                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                                      }}
+                                    >
+                                      删除
+                                    </span>
+                                  </div>
+                                )}
+                              <div
+                                className="absolute inset-x-0 bottom-0 p-1.5"
+                                style={{
+                                  background:
+                                    "linear-gradient(to top, #0D0E14 0%, #0D0E14e0 50%, transparent 100%)",
+                                }}
+                              >
+                                <div
+                                  className="truncate text-[11px] font-black font-display leading-tight"
+                                  style={{
+                                    color: "#fff",
+                                    textShadow: `0 0 6px rgba(${cardRgb}, 0.7), 0 0 14px rgba(${cardRgb}, 0.3)`,
+                                  }}
+                                >
+                                  {char.name}
                                 </div>
-                              )}
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
-                              <div className="truncate text-xs font-black font-display text-[#FFD700]">
-                                {char.name}
-                              </div>
-                              <div className="truncate text-[9px] text-[#C5C6C7]">
-                                {levelAscensionLabel(char.level)} ·{" "}
-                                {evolutionLabel(char.evolutionStage)}
+                                <div
+                                  className="truncate text-[8px] mt-0.5"
+                                  style={{ color: cardColor }}
+                                >
+                                  {levelAscensionLabel(char.level)} ·{" "}
+                                  {evolutionLabel(char.evolutionStage)}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="p-2">
-                            <div className="h-1 overflow-hidden rounded bg-[#1F2833]">
+                            <div
+                              className="p-1.5"
+                              style={{ background: "#0D0E14" }}
+                            >
                               <div
-                                className="h-full bg-[#FFD700]"
+                                className="h-px mb-1.5"
                                 style={{
-                                  width: `${Math.round(progress.ratio * 100)}%`,
+                                  background: `linear-gradient(to right, transparent, rgba(${cardRgb}, 0.25), transparent)`,
                                 }}
                               />
-                            </div>
-                            <div className="mt-1.5 grid grid-cols-4 gap-1 text-[9px] text-[#C5C6C7]">
-                              <MiniStat
-                                icon={<Heart size={8} />}
-                                value={char.maxHp}
-                                color="#FF6B9D"
-                              />
-                              <MiniStat
-                                icon={<Zap size={8} />}
-                                value={char.attack}
-                                color="#FFD700"
-                              />
-                              <MiniStat
-                                icon={<Shield size={8} />}
-                                value={char.defense}
-                                color="#66FCF1"
-                              />
-                              <MiniStat
-                                icon={<Gauge size={8} />}
-                                value={char.speed}
-                                color="#7FFF9F"
-                              />
-                            </div>
-                            <div className="mt-1 truncate text-[9px] font-bold text-[#FFD700]/80">
-                              {nextEvoText}
+                              <div className="h-[3px] overflow-hidden rounded-full bg-black/50">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    background: `linear-gradient(90deg, ${rarityConfig.secondaryColor}, ${cardColor})`,
+                                    width: `${Math.round(progress.ratio * 100)}%`,
+                                  }}
+                                  initial={{ width: 0 }}
+                                  animate={{
+                                    width: `${Math.round(progress.ratio * 100)}%`,
+                                  }}
+                                  transition={{
+                                    duration: 0.6,
+                                    ease: "easeOut",
+                                  }}
+                                />
+                              </div>
+                              <div className="mt-1 grid grid-cols-4 gap-0.5 text-[8px]">
+                                <MiniStat
+                                  icon={<Heart size={7} />}
+                                  value={char.maxHp}
+                                  color="#FF6B9D"
+                                />
+                                <MiniStat
+                                  icon={<Zap size={7} />}
+                                  value={char.attack}
+                                  color="#FFD700"
+                                />
+                                <MiniStat
+                                  icon={<Shield size={7} />}
+                                  value={char.defense}
+                                  color="#66FCF1"
+                                />
+                                <MiniStat
+                                  icon={<Gauge size={7} />}
+                                  value={char.speed}
+                                  color="#7FFF9F"
+                                />
+                              </div>
+                              <div
+                                className="mt-1 truncate text-[8px] font-bold text-center"
+                                style={{ color: cardColor }}
+                              >
+                                ⚡{cardPower} · {nextEvoText}
+                              </div>
                             </div>
                           </div>
                         </motion.div>

@@ -1,5 +1,6 @@
-import React from "react";
-import { useGameStore } from "./store/useGameStore";
+import React, { useEffect, useState, useCallback } from "react";
+import { useGameStore, type Rarity } from "./store/useGameStore";
+import { useRosterStore, type PendingRevealEntry } from "./store/useRosterStore";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { ModeSelectScreen } from "./components/ModeSelectScreen";
 import { CharacterCreateScreen } from "./components/CharacterCreateScreen";
@@ -10,6 +11,38 @@ import { TowerScreen } from "./components/TowerScreen";
 import { TowerResultScreen } from "./components/TowerResultScreen";
 import { SpiritChatScreen } from "./components/SpiritChatScreen";
 import { SpiritStoryScreen } from "./components/SpiritStoryScreen";
+import { CardRevealAnimation } from "./components/CardRevealAnimation";
+import { HeroCard } from "./components/HeroCard";
+
+/**
+ * 全局抽卡动画管理器
+ * 监听 pendingRevealQueue，依次播放每个新角色的揭示动画
+ */
+function RevealOverlay() {
+  const pendingRevealQueue = useRosterStore((s) => s.pendingRevealQueue);
+  const consumeNextReveal = useRosterStore((s) => s.consumeNextReveal);
+  const [currentReveal, setCurrentReveal] = useState<PendingRevealEntry | null>(null);
+
+  // 自动从队列取出下一个播放
+  useEffect(() => {
+    if (currentReveal) return;
+    const next = consumeNextReveal();
+    if (next) setCurrentReveal(next);
+  }, [pendingRevealQueue, currentReveal, consumeNextReveal]);
+
+  const handleClose = useCallback(() => {
+    setCurrentReveal(null);
+  }, []);
+
+  if (!currentReveal) return null;
+
+  return (
+    <CardRevealAnimation
+      character={currentReveal.character}
+      onClose={handleClose}
+    />
+  );
+}
 
 function App() {
   const { phase } = useGameStore();
@@ -28,6 +61,8 @@ function App() {
       {phase === "SPIRIT_STORY" && <SpiritStoryScreen />}
       {phase === "TOWER_HUB" && <TowerScreen />}
       {phase === "TOWER_RESULT" && <TowerResultScreen />}
+      {/* 全局抽卡动画覆盖层 */}
+      <RevealOverlay />
     </div>
   );
 }

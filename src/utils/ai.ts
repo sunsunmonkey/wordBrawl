@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { CharacterData, Skill, SpiritProfile } from "../store/useGameStore";
+import { CharacterData, Skill, SpiritProfile, RARITY_CONFIGS, calculatePowerScore, determineRarityByPower, rollRarity, Rarity } from "../store/useGameStore";
 import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from "../data/ultimateTypes";
 import {
   isPollinationsUrl,
@@ -139,6 +139,33 @@ const normalizeSpiritProfile = (value: unknown): SpiritProfile | undefined => {
   };
 };
 
+const applyRarityMultiplier = (char: CharacterData, rarity: Rarity): CharacterData => {
+  const mult = RARITY_CONFIGS[rarity].powerMultiplier;
+  const scaleStat = (base: number, min: number, max: number) => 
+    Math.min(max, Math.max(min, Math.round(base * mult)));
+  
+  return {
+    ...char,
+    hp: scaleStat(char.hp, 100, 1300),
+    maxHp: scaleStat(char.maxHp, 100, 1300),
+    attack: scaleStat(char.attack, 15, 210),
+    defense: scaleStat(char.defense, 0, 140),
+    speed: scaleStat(char.speed, 1, 200),
+    skills: char.skills.map(skill => ({
+      ...skill,
+      damageMultiplier: skill.type === "heal" || skill.type === "buff" || skill.type === "debuff"
+        ? skill.damageMultiplier
+        : Math.min(
+            skill.isUltimate ? 12 : 4.5,
+            Math.max(skill.isUltimate ? 4.4 : 1.0, skill.damageMultiplier * (0.85 + mult * 0.18))
+          ),
+      healPercent: skill.healPercent ? Math.min(85, Math.round(skill.healPercent * mult)) : undefined,
+      buffPercent: skill.buffPercent ? Math.min(150, Math.round(skill.buffPercent * mult)) : undefined,
+    })),
+    rarity,
+  };
+};
+
 const normalizeCharacterData = (value: unknown): CharacterData => {
   const data = asRecord(value);
   const rawSkills = Array.isArray(data.skills) ? data.skills : [];
@@ -186,17 +213,21 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     };
   });
 
-  const hp = clampInt(data.hp, 100, 1100, 320);
+  let hp = clampInt(data.hp, 100, 1100, 320);
+  let attack = clampInt(data.attack, 15, 170, 62);
+  let defense = clampInt(data.defense, 0, 110, 30);
+  let speed = clampInt(data.speed, 1, 160, 65);
   const spiritProfile = normalizeSpiritProfile(data.spiritProfile);
 
-  return {
+  // 先构建基础角色数据用于计算战力
+  let baseChar: CharacterData = {
     ...data,
     name: String(data.name || "未命名角色"),
     hp,
     maxHp: hp,
-    attack: clampInt(data.attack, 15, 170, 62),
-    defense: clampInt(data.defense, 0, 110, 30),
-    speed: clampInt(data.speed, 1, 160, 65),
+    attack,
+    defense,
+    speed,
     imagePrompt: String(
       data.imagePrompt || "cyberpunk game character portrait",
     ),
@@ -207,6 +238,21 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     buffTurnsLeft: 0,
     ...(spiritProfile ? { spiritProfile } : {}),
   };
+
+  // 抽取稀有度（结合roll概率和基础战力）
+  const basePower = calculatePowerScore(baseChar);
+  const rolledRarity = rollRarity();
+  // 基础战力越高，越容易roll到高稀有度；反之亦然
+  const powerBasedRarity = determineRarityByPower(basePower);
+  const rarityOrder: Rarity[] = ["N", "R", "SR", "SSR", "UR"];
+  const rolledIdx = rarityOrder.indexOf(rolledRarity);
+  const powerIdx = rarityOrder.indexOf(powerBasedRarity);
+  // 取两者中间偏高值，让好底子更容易出彩，但惊喜感也保留
+  const finalIdx = Math.min(rarityOrder.length - 1, Math.max(rolledIdx, Math.floor((rolledIdx + powerIdx) / 2)));
+  const finalRarity = rarityOrder[finalIdx];
+
+  // 应用稀有度倍率
+  return applyRarityMultiplier(baseChar, finalRarity);
 };
 
 const generateCharacterWithFreeTrial = async (

@@ -6,6 +6,7 @@ import type {
   SpiritChatMessage,
   SpiritChatRecord,
 } from "../store/useSpiritChatStore";
+import { extractPartialStringField, looksLikeJsonStart } from "./jsonStream";
 
 export interface SpiritChatContext {
   recentBattle?: BattleSummary | null;
@@ -232,12 +233,17 @@ const SYSTEM_PROMPT = `你是《词灵世界》里的一个“词灵”，不是
 }
 bond 是更新后的总羁绊值 0-100，可根据本轮互动微调，普通聊天 +0 到 +2，真诚安慰/战后复盘可 +1 到 +4。`;
 
+export interface SpiritChatStreamHandlers {
+  onReplyChunk?: (partialReply: string) => void;
+}
+
 export async function requestSpiritChat(
   cfg: AIConfig,
   character: RosterCharacter,
   chat: SpiritChatRecord,
   userMessage: string,
   context?: SpiritChatContext,
+  handlers?: SpiritChatStreamHandlers,
 ): Promise<SpiritChatResult> {
   const payload = {
     scene: context?.scene || "idle",
@@ -250,7 +256,12 @@ export async function requestSpiritChat(
 
   const apiMode = cfg.apiMode || "custom";
   if (apiMode === "free") {
-    return requestSpiritChatFreeTrial(payload, chat, userMessage);
+    return requestSpiritChatFreeTrial(
+      payload,
+      chat,
+      userMessage,
+      handlers?.onReplyChunk,
+    );
   }
 
   if (!cfg.apiKey) throw new Error("请先填写 API Key");
@@ -263,16 +274,39 @@ export async function requestSpiritChat(
     dangerouslyAllowBrowser: true,
   });
 
-  const response = await client.chat.completions.create({
+  const stream = await client.chat.completions.create({
     model: cfg.model,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify(payload) },
     ],
     temperature: 0.88,
+    stream: true,
   });
 
-  const content = response.choices[0]?.message?.content;
+  let rawContent = "";
+  let lastEmitted = "";
+  const onReplyChunk = handlers?.onReplyChunk;
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (!delta) continue;
+    rawContent += delta;
+    if (!onReplyChunk) continue;
+
+    let partial: string;
+    if (looksLikeJsonStart(rawContent)) {
+      partial = extractPartialStringField(rawContent, "reply");
+    } else {
+      partial = rawContent.trim();
+    }
+    if (partial && partial !== lastEmitted) {
+      lastEmitted = partial;
+      onReplyChunk(partial);
+    }
+  }
+
+  const content = rawContent;
   if (!content) throw new Error("词灵没有回应，请稍后再试。");
   try {
     return normalizeResult(parseJsonLoose(content), chat);
@@ -293,16 +327,31 @@ async function requestSpiritChatFreeTrial(
   payload: Record<string, unknown>,
   chat: SpiritChatRecord,
   userMessage: string,
+  onReplyChunk?: (partialReply: string) => void,
 ): Promise<SpiritChatResult> {
   let response: Response;
   try {
     response = await fetch("/api/spirit-chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson",
+      },
       body: JSON.stringify(payload),
     });
   } catch {
     throw new Error("词灵会客室免费接口暂时不可用，请稍后再试。");
+  }
+
+  // 后端支持 NDJSON 流式响应时，逐行读取并回传 chunk
+  if (
+    response.ok &&
+    response.body &&
+    (response.headers.get("content-type") || "").includes(
+      "application/x-ndjson",
+    )
+  ) {
+    return consumeSpiritChatStream(response, chat, onReplyChunk);
   }
 
   const raw = await response.json().catch(() => ({}));
@@ -322,4 +371,66 @@ async function requestSpiritChatFreeTrial(
     };
   }
   return normalizeResult(data.result, chat);
+}
+
+async function consumeSpiritChatStream(
+  response: Response,
+  chat: SpiritChatRecord,
+  onReplyChunk?: (partialReply: string) => void,
+): Promise<SpiritChatResult> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let lastEmitted = "";
+  let finalResult: SpiritChatResult | null = null;
+  let finalError: string | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex: number;
+    while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (!line) continue;
+      let event: {
+        type?: string;
+        content?: string;
+        result?: unknown;
+        error?: string;
+      };
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (event.type === "chunk" && event.content && onReplyChunk) {
+        if (event.content !== lastEmitted) {
+          lastEmitted = event.content;
+          onReplyChunk(event.content);
+        }
+      } else if (event.type === "done" && event.result) {
+        finalResult = normalizeResult(event.result, chat);
+      } else if (event.type === "error") {
+        finalError = String(event.error || "词灵会客室免费接口流式响应失败");
+      }
+    }
+  }
+
+  if (finalResult) return finalResult;
+  if (finalError) throw new Error(finalError);
+  return {
+    reply: lastEmitted || "我听见了。只是这句话还需要一点时间在我心里成形。",
+    mood: chat.mood || "倾听",
+    bond: Math.min(100, chat.bond + 1),
+    memorySummary: mergeFallbackMemory(
+      chat,
+      lastEmitted.slice(0, 80) || "（流式中断）",
+    ),
+    playerFacts: chat.playerFacts,
+    promises: chat.promises,
+    lastSuggestedAction: chat.lastSuggestedAction,
+  };
 }

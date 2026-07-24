@@ -21,6 +21,7 @@ export type ApiResponse = {
   setHeader: (name: string, value: string) => void;
   status: (statusCode: number) => ApiResponse;
   json: (body: unknown) => void;
+  write: (chunk: string | Buffer) => boolean;
   end: () => void;
 };
 
@@ -72,8 +73,7 @@ export const parseJsonLoose = (raw: string): unknown => {
     }
   }
 
-  const detail =
-    lastError instanceof Error ? `：${lastError.message}` : "";
+  const detail = lastError instanceof Error ? `：${lastError.message}` : "";
   throw new Error(`AI 返回的内容不是合法 JSON${detail}`);
 };
 
@@ -249,6 +249,182 @@ export const setCorsHeaders = (req: ApiRequest, res: ApiResponse) => {
 
 export const sendJson = (res: ApiResponse, status: number, body: unknown) => {
   res.status(status).json(body);
+};
+
+/**
+ * 初始化 NDJSON 流式响应。后续可通过 sendNdjsonLine 持续写入事件。
+ * 调用方需要在写完所有事件后调用 res.end()。
+ */
+export const beginNdjsonStream = (
+  res: ApiResponse,
+  status = 200,
+): ApiResponse => {
+  res.status(status);
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  return res;
+};
+
+/**
+ * 向 NDJSON 流中写入一行 JSON 事件。自动追加换行符。
+ */
+export const sendNdjsonLine = (res: ApiResponse, payload: unknown): void => {
+  res.write(`${JSON.stringify(payload)}\n`);
+};
+
+const unescapeJsonString = (raw: string): string => {
+  let result = "";
+  let i = 0;
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (ch === "\\" && i + 1 < raw.length) {
+      const next = raw[i + 1];
+      switch (next) {
+        case '"':
+          result += '"';
+          i += 2;
+          break;
+        case "\\":
+          result += "\\";
+          i += 2;
+          break;
+        case "/":
+          result += "/";
+          i += 2;
+          break;
+        case "b":
+          result += "\b";
+          i += 2;
+          break;
+        case "f":
+          result += "\f";
+          i += 2;
+          break;
+        case "n":
+          result += "\n";
+          i += 2;
+          break;
+        case "r":
+          result += "\r";
+          i += 2;
+          break;
+        case "t":
+          result += "\t";
+          i += 2;
+          break;
+        case "u": {
+          const hex = raw.slice(i + 2, i + 6);
+          if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+            result += String.fromCharCode(parseInt(hex, 16));
+            i += 6;
+          } else {
+            result += next;
+            i += 2;
+          }
+          break;
+        }
+        default:
+          result += next;
+          i += 2;
+      }
+    } else {
+      result += ch;
+      i++;
+    }
+  }
+  return result;
+};
+
+const escapeFieldName = (name: string): string =>
+  name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * 从尚未结束的 JSON 文本中尽力抽取某个字符串字段当前的值。
+ */
+export const extractPartialStringField = (
+  raw: string,
+  fieldName: string,
+): string => {
+  const re = new RegExp(
+    `"${escapeFieldName(fieldName)}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`,
+  );
+  const match = raw.match(re);
+  if (!match) return "";
+  return unescapeJsonString(match[1]);
+};
+
+/**
+ * 从尚未结束的 JSON 文本中尽力抽取某个数组字段里已经写出的对象。
+ */
+export const extractPartialArrayObjects = <T>(
+  raw: string,
+  fieldName: string,
+  itemParser: (objContent: string, isComplete: boolean) => T | null,
+): T[] => {
+  const re = new RegExp(`"${escapeFieldName(fieldName)}"\\s*:\\s*\\[`);
+  const startMatch = raw.match(re);
+  if (!startMatch || startMatch.index === undefined) return [];
+
+  const arrayStart = startMatch.index + startMatch[0].length;
+  const items: T[] = [];
+  let pos = arrayStart;
+
+  while (pos < raw.length) {
+    while (pos < raw.length && /[\s,]/.test(raw[pos])) pos++;
+    if (pos >= raw.length) break;
+    if (raw[pos] === "]") break;
+    if (raw[pos] !== "{") break;
+
+    let depth = 1;
+    let objEnd = pos + 1;
+    let isComplete = false;
+
+    while (objEnd < raw.length) {
+      const ch = raw[objEnd];
+      if (ch === '"') {
+        objEnd++;
+        while (objEnd < raw.length) {
+          if (raw[objEnd] === "\\") {
+            objEnd += 2;
+            continue;
+          }
+          if (raw[objEnd] === '"') break;
+          objEnd++;
+        }
+        if (objEnd >= raw.length) break;
+        objEnd++;
+        continue;
+      }
+      if (ch === "{") {
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          objEnd++;
+          isComplete = true;
+          break;
+        }
+      }
+      objEnd++;
+    }
+
+    const objStr = raw.slice(pos, objEnd);
+    const innerContent = objStr.replace(/^\{/, "").replace(/\}$/, "");
+    const item = itemParser(innerContent, isComplete);
+    if (item) items.push(item);
+
+    pos = objEnd;
+    if (!isComplete) break;
+  }
+
+  return items;
+};
+
+export const looksLikeJsonStart = (raw: string): boolean => {
+  const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "");
+  return trimmed.startsWith("{");
 };
 
 export const getAiCredentials = () => {
