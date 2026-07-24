@@ -20,9 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap,
   Heart,
-  Brain,
   Sparkles,
-  ImageIcon,
   Flame,
   Shield,
   Gauge,
@@ -36,14 +34,8 @@ import { ParticleField } from "./ParticleField";
 import { CharacterDetailModal } from "./CharacterDetailModal";
 import { BackButton } from "./BackButton";
 import { CharacterAvatar } from "./CharacterAvatar";
-
-const LOADING_STEPS = [
-  { icon: Brain, text: "正在解析灵魂数据..." },
-  { icon: Zap, text: "注入战斗参数..." },
-  { icon: Sparkles, text: "生成专属技能体系..." },
-  { icon: Flame, text: "凝聚大招能量..." },
-  { icon: ImageIcon, text: "召唤实体形象..." },
-];
+import { GeneratingOverlay } from "./GeneratingOverlay";
+import { LOADING_STEPS } from "./loadingSteps";
 
 const RECRUIT_COOLDOWN_MS = 60_000;
 const RECRUIT_COOLDOWN_KEY = "word-brawl-recruit-last-generated-at";
@@ -322,8 +314,6 @@ export const CharacterCreateScreen: React.FC = () => {
       setSelectingPreset(null);
     }
   };
-
-  const StepIcon = LOADING_STEPS[loadingStep].icon;
 
   const pvpPresetNames = new Set([
     "唐三",
@@ -697,18 +687,10 @@ export const CharacterCreateScreen: React.FC = () => {
               }}
             >
               {isGenerating ? (
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={avatarHint || loadingStep}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="flex items-center gap-2"
-                  >
-                    <StepIcon className="animate-spin" size={18} />
-                    {avatarHint || LOADING_STEPS[loadingStep].text}
-                  </motion.div>
-                </AnimatePresence>
+                <span className="flex items-center gap-2">
+                  <Sparkles size={18} className="animate-spin" />
+                  生成中...
+                </span>
               ) : (
                 <>
                   <Sparkles size={18} />
@@ -717,21 +699,6 @@ export const CharacterCreateScreen: React.FC = () => {
                     : "后台创造"}
                   <Sparkles size={18} />
                 </>
-              )}
-              {isGenerating && (
-                <motion.div
-                  className="absolute inset-0 pointer-events-none"
-                  initial={{ x: "-100%" }}
-                  animate={{ x: "100%" }}
-                  transition={{
-                    duration: 1.5,
-                    repeat: Infinity,
-                    ease: "linear",
-                  }}
-                  style={{
-                    background: `linear-gradient(90deg, transparent, rgba(${themeColorHex}, 0.4), transparent)`,
-                  }}
-                />
               )}
             </motion.button>
           </div>
@@ -893,6 +860,16 @@ export const CharacterCreateScreen: React.FC = () => {
           </div>
         )}
       </motion.div>
+
+      <AnimatePresence>
+        {isGenerating && (
+          <GeneratingOverlay
+            activeStep={loadingStep}
+            hint={avatarHint}
+            themeColor={themeColor}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {(() => {

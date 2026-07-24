@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Star, Heart, Zap, Shield, Gauge, Flame } from "lucide-react";
+import { Star, Heart, Zap, Shield, Gauge, Flame, Sparkles } from "lucide-react";
 import {
   CharacterData,
   RARITY_CONFIGS,
@@ -22,28 +22,87 @@ interface HeroCardProps {
 const sizeConfig = {
   sm: {
     card: "w-32",
-    avatar: "h-36",
-    name: "text-sm",
-    stats: "text-[8px]",
-    badge: "text-[8px] px-1.5 py-0.5",
-    starSize: 9,
+    frame: "p-[5px]",
+    innerPad: "p-1",
+    avatar: "h-[104px]",
+    rarity: "text-[9px] px-1 py-0.5",
+    verticalName: "hidden",
+    bottomName: "block text-[10px]",
+    levelBadge: "w-6 h-6 text-[8px]",
+    starSize: 7,
+    stats: "text-[7px] gap-1",
+    skill: "hidden",
+    quote: "hidden",
+    power: "text-[7px]",
   },
   md: {
     card: "w-52",
-    avatar: "h-56",
-    name: "text-lg",
-    stats: "text-[10px]",
-    badge: "text-[9px] px-2 py-0.5",
-    starSize: 11,
+    frame: "p-[6px]",
+    innerPad: "p-1.5",
+    avatar: "h-[168px]",
+    rarity: "text-[10px] px-1.5 py-0.5",
+    verticalName: "block text-[10px]",
+    bottomName: "hidden",
+    levelBadge: "w-8 h-8 text-[9px]",
+    starSize: 9,
+    stats: "text-[9px] gap-2",
+    skill: "block",
+    quote: "block",
+    power: "text-[9px]",
   },
   lg: {
     card: "w-72",
-    avatar: "h-80",
-    name: "text-2xl",
-    stats: "text-xs",
-    badge: "text-[10px] px-2 py-1",
-    starSize: 13,
+    frame: "p-[8px]",
+    innerPad: "p-2",
+    avatar: "h-56",
+    rarity: "text-xs px-2 py-1",
+    verticalName: "block text-xs",
+    bottomName: "hidden",
+    levelBadge: "w-11 h-11 text-[11px]",
+    starSize: 12,
+    stats: "text-[11px] gap-3",
+    skill: "block",
+    quote: "block",
+    power: "text-[10px]",
   },
+};
+
+const RARITY_LEVELS: Record<Rarity, number> = {
+  N: 1,
+  R: 20,
+  SR: 40,
+  SSR: 80,
+  UR: 100,
+};
+
+const CornerOrnament: React.FC<{ color: string; position: string }> = ({
+  color,
+  position,
+}) => {
+  const rotations: Record<string, number> = {
+    "top-left": 0,
+    "top-right": 90,
+    "bottom-right": 180,
+    "bottom-left": 270,
+  };
+  return (
+    <svg
+      className={`absolute w-5 h-5 ${position} z-20`}
+      style={{
+        color,
+        transform: `rotate(${rotations[position]}deg)`,
+        filter: `drop-shadow(0 0 4px ${color})`,
+      }}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    >
+      <path d="M2 2 L2 10 L4 10 L4 4 L10 4 L10 2 Z" />
+      <path d="M8 2 L2 8" strokeOpacity="0.4" />
+      <circle cx="5" cy="5" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
 };
 
 export const HeroCard: React.FC<HeroCardProps> = ({
@@ -59,52 +118,56 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   const config = RARITY_CONFIGS[rarity];
   const sizeCfg = sizeConfig[size];
   const power = calculatePowerScore(character);
+  const level = RARITY_LEVELS[rarity];
   const ultimateSkill = character.skills.find(
     (s) => s.isUltimate || s.type === "ultimate",
   );
+  const normalSkill = character.skills.find(
+    (s) => !s.isUltimate && s.type !== "ultimate",
+  );
+  const displaySkill = ultimateSkill || normalSkill;
+  const quote = character.spiritProfile?.catchphrases?.[0];
 
-  const isUR = rarity === "UR";
-  const isSSR = rarity === "SSR";
-  const isSR = rarity === "SR";
-  const tier = isUR ? 4 : isSSR ? 3 : isSR ? 2 : rarity === "R" ? 1 : 0;
+  const tier = rarity === "UR" ? 4 : rarity === "SSR" ? 3 : rarity === "SR" ? 2 : rarity === "R" ? 1 : 0;
+  const borderAlpha = selected ? 0.95 : 0.55 + tier * 0.11;
+  const glowSize = 10 + tier * 10;
+  const glowIntensity = 0.2 + tier * 0.14;
 
-  const borderAlpha = selected ? 0.95 : 0.5 + tier * 0.12;
-  const glowSize = 8 + tier * 8;
-  const glowIntensity = 0.15 + tier * 0.12;
+  const cornerColor = config.primaryColor;
 
   return (
     <motion.div
       onClick={onClick}
-      className={`relative rounded-xl overflow-hidden ${sizeCfg.card} ${className} ${onClick ? "cursor-pointer" : ""}`}
+      className={`relative rounded-2xl ${sizeCfg.card} ${className} ${onClick ? "cursor-pointer" : ""}`}
       style={{
-        background: "#0D0E14",
-        border: `${1 + tier * 0.3}px solid`,
+        background: "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
+        border: `${1 + tier * 0.5}px solid`,
         borderColor: `${config.primaryColor}${Math.round(borderAlpha * 255)
           .toString(16)
           .padStart(2, "0")}`,
         boxShadow: `
           0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}),
           0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}),
-          inset 0 0 ${glowSize * 1.5}px rgba(${config.rgb}, ${glowIntensity * 0.15})
+          inset 0 0 ${glowSize * 1.2}px rgba(${config.rgb}, ${glowIntensity * 0.12})
         `,
       }}
       animate={
         animate
           ? {
               boxShadow: [
-                `0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}), 0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}), inset 0 0 ${glowSize * 1.5}px rgba(${config.rgb}, ${glowIntensity * 0.15})`,
-                `0 0 ${glowSize + 6}px rgba(${config.rgb}, ${glowIntensity + 0.1}), 0 0 ${glowSize * 3}px rgba(${config.rgb}, ${glowIntensity * 0.5}), inset 0 0 ${glowSize * 1.5}px rgba(${config.rgb}, ${glowIntensity * 0.2})`,
-                `0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}), 0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}), inset 0 0 ${glowSize * 1.5}px rgba(${config.rgb}, ${glowIntensity * 0.15})`,
+                `0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}), 0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}), inset 0 0 ${glowSize * 1.2}px rgba(${config.rgb}, ${glowIntensity * 0.12})`,
+                `0 0 ${glowSize + 8}px rgba(${config.rgb}, ${glowIntensity + 0.12}), 0 0 ${glowSize * 3}px rgba(${config.rgb}, ${glowIntensity * 0.55}), inset 0 0 ${glowSize * 1.5}px rgba(${config.rgb}, ${glowIntensity * 0.18})`,
+                `0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}), 0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}), inset 0 0 ${glowSize * 1.2}px rgba(${config.rgb}, ${glowIntensity * 0.12})`,
               ],
             }
           : selected
             ? {
                 y: -4,
                 boxShadow: `
-                  0 0 ${glowSize + 8}px rgba(${config.rgb}, ${glowIntensity + 0.15}),
-                  0 0 ${glowSize * 3}px rgba(${config.rgb}, ${glowIntensity * 0.6}),
-                  0 8px 24px rgba(0,0,0,0.4),
-                  inset 0 0 ${glowSize * 2}px rgba(${config.rgb}, ${glowIntensity * 0.2})
+                  0 0 ${glowSize + 10}px rgba(${config.rgb}, ${glowIntensity + 0.18}),
+                  0 0 ${glowSize * 3.2}px rgba(${config.rgb}, ${glowIntensity * 0.65}),
+                  0 8px 24px rgba(0,0,0,0.45),
+                  inset 0 0 ${glowSize * 2}px rgba(${config.rgb}, ${glowIntensity * 0.22})
                 `,
               }
             : {}
@@ -114,184 +177,326 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           ? {
               y: -3,
               boxShadow: `
-                0 0 ${glowSize + 6}px rgba(${config.rgb}, ${glowIntensity + 0.12}),
-                0 0 ${glowSize * 2.8}px rgba(${config.rgb}, ${glowIntensity * 0.55}),
-                0 6px 20px rgba(0,0,0,0.35),
+                0 0 ${glowSize + 8}px rgba(${config.rgb}, ${glowIntensity + 0.14}),
+                0 0 ${glowSize * 3}px rgba(${config.rgb}, ${glowIntensity * 0.6}),
+                0 6px 20px rgba(0,0,0,0.4),
                 inset 0 0 ${glowSize * 1.8}px rgba(${config.rgb}, ${glowIntensity * 0.2})
               `,
             }
           : {}
       }
-      transition={{ duration: 0.3, ease: "easeOut" }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
     >
-      {/* UR/SSR 微妙顶部高光线 */}
-      {(isUR || isSSR) && (
+      {/* 外框装饰层 */}
+      <div
+        className={`absolute inset-0 rounded-2xl ${sizeCfg.frame} pointer-events-none`}
+        style={{
+          background: `linear-gradient(135deg, ${config.primaryColor}18, transparent 40%, transparent 60%, ${config.secondaryColor}18)`,
+        }}
+      >
+        <div
+          className="w-full h-full rounded-xl border opacity-60"
+          style={{
+            borderColor: `${config.primaryColor}44`,
+            background:
+              "linear-gradient(145deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(0,0,0,0.15) 100%)",
+          }}
+        />
+      </div>
+
+      <CornerOrnament color={cornerColor} position="top-1.5 left-1.5" />
+      <CornerOrnament color={cornerColor} position="top-1.5 right-1.5" />
+      <CornerOrnament color={cornerColor} position="bottom-1.5 right-1.5" />
+      <CornerOrnament color={cornerColor} position="bottom-1.5 left-1.5" />
+
+      {/* 顶部高光 */}
+      {(rarity === "UR" || rarity === "SSR") && (
         <motion.div
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-[1px] z-10"
+          className="absolute top-2 left-1/2 -translate-x-1/2 w-2/3 h-[1px] z-10"
           style={{
             background: `linear-gradient(90deg, transparent, ${config.primaryColor}, transparent)`,
-            opacity: 0.6,
           }}
-          animate={animate ? { opacity: [0.3, 0.8, 0.3] } : {}}
+          animate={animate ? { opacity: [0.35, 0.85, 0.35] } : {}}
           transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
 
-      {/* 精致扫光（非常淡、非常慢） */}
-      {(animate || isUR || isSSR) && (
+      {/* 扫光 */}
+      {(animate || rarity === "UR" || rarity === "SSR") && (
         <motion.div
-          className="absolute inset-0 pointer-events-none z-20"
+          className="absolute inset-0 pointer-events-none z-30 rounded-2xl overflow-hidden"
           initial={{ x: "-100%", opacity: 0 }}
           animate={{
             x: ["-100%", "200%"],
-            opacity: [0, isUR ? 0.12 : 0.07, 0],
+            opacity: [0, rarity === "UR" ? 0.14 : 0.08, 0],
           }}
           transition={{
-            duration: isUR ? 3.5 : 5,
+            duration: rarity === "UR" ? 3.5 : 5,
             repeat: Infinity,
             ease: "easeInOut",
-            repeatDelay: isUR ? 1 : 2.5,
+            repeatDelay: rarity === "UR" ? 1 : 2.5,
           }}
           style={{
-            background: `linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.15) 50%, transparent 60%)`,
+            background: `linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)`,
           }}
         />
       )}
 
-      {/* 稀有度标签 */}
-      <div
-        className={`absolute top-2 left-2 z-10 ${sizeCfg.badge} rounded font-black tracking-wider`}
-        style={{
-          background: `linear-gradient(135deg, ${config.primaryColor}, ${config.secondaryColor})`,
-          color: "#0D0E14",
-          boxShadow: `0 2px 8px rgba(${config.rgb}, 0.35)`,
-          textShadow: "none",
-          lineHeight: 1.2,
-        }}
-      >
-        {config.labelEn}
-      </div>
+      <div className={`relative ${sizeCfg.innerPad} h-full flex flex-col`}>
+        {/* 顶部 header：稀有度 + 竖排名字 + 职业图标 */}
+        <div className="flex items-start justify-between mb-1.5">
+          <div className="flex flex-col items-start gap-1 z-10">
+            <div
+              className={`${sizeCfg.rarity} rounded font-black tracking-wider`}
+              style={{
+                background: `linear-gradient(135deg, ${config.primaryColor}, ${config.secondaryColor})`,
+                color: "#0a0b12",
+                boxShadow: `0 2px 8px rgba(${config.rgb}, 0.4)`,
+                lineHeight: 1.1,
+              }}
+            >
+              {config.labelEn}
+            </div>
+            <div
+              className={`${sizeCfg.verticalName} font-display font-bold tracking-widest leading-tight`}
+              style={{
+                color: config.primaryColor,
+                textShadow: `0 0 6px ${config.glowColor}`,
+                writingMode: "vertical-rl",
+                textOrientation: "upright",
+                letterSpacing: "0.15em",
+                maxHeight: size === "lg" ? 84 : 56,
+              }}
+              title={character.name}
+            >
+              {character.name.length > 5
+                ? character.name.slice(0, 5) + "…"
+                : character.name}
+            </div>
+          </div>
 
-      {/* 星星评级 - 放在标签右下方，小而精致 */}
-      <div className="absolute top-[26px] left-2 z-10 flex gap-0.5">
-        {Array.from({ length: config.starCount }).map((_, i) => (
-          <motion.div
-            key={i}
-            animate={
-              animate && (isUR || isSSR) ? { opacity: [0.6, 1, 0.6] } : {}
-            }
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              delay: i * 0.2,
-              ease: "easeInOut",
+          <div
+            className="z-10 flex items-center justify-center rounded-full border"
+            style={{
+              width: size === "lg" ? 28 : size === "md" ? 22 : 18,
+              height: size === "lg" ? 28 : size === "md" ? 22 : 18,
+              borderColor: `${config.primaryColor}66`,
+              background: `radial-gradient(circle at 30% 30%, ${config.primaryColor}33, transparent 70%)`,
+              boxShadow: `0 0 8px ${config.glowColor}`,
             }}
           >
-            <Star
-              size={sizeCfg.starSize - 2}
-              fill={config.primaryColor}
-              color={config.primaryColor}
-              style={{
-                filter: `drop-shadow(0 0 3px ${config.glowColor})`,
-              }}
+            <Sparkles
+              size={size === "lg" ? 14 : size === "md" ? 11 : 9}
+              style={{ color: config.primaryColor }}
             />
-          </motion.div>
-        ))}
-      </div>
-
-      {/* 角色头像 */}
-      <div className={`relative ${sizeCfg.avatar} overflow-hidden`}>
-        <CharacterAvatar
-          imageUrl={character.imageUrl}
-          name={character.name}
-          themeColor={config.primaryColor}
-          className="w-full h-full object-cover"
-          iconSize={size === "lg" ? 64 : size === "md" ? 48 : 32}
-        />
-        {/* 精致暗角 + 渐变遮罩 */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `
-              linear-gradient(to top, #0D0E14 0%, transparent 40%),
-              linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, transparent 25%),
-              radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.2) 100%)
-            `,
-          }}
-        />
-        {/* 稀有度色微妙径向光 */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `radial-gradient(ellipse at 50% 20%, rgba(${config.rgb}, 0.08) 0%, transparent 55%)`,
-          }}
-        />
-      </div>
-
-      {/* 底部信息区 */}
-      <div
-        className="relative px-3 pt-2 pb-3"
-        style={{ background: "#0D0E14" }}
-      >
-        {/* 顶部分隔线 */}
-        <div
-          className="absolute top-0 left-3 right-3 h-[1px]"
-          style={{
-            background: `linear-gradient(90deg, transparent, rgba(${config.rgb}, 0.3), transparent)`,
-          }}
-        />
-
-        {/* 名称 */}
-        <div
-          className={`font-black font-display tracking-wide ${sizeCfg.name} text-center`}
-          style={{
-            color: "#fff",
-            textShadow: `0 0 8px ${config.glowColor}, 0 0 16px rgba(${config.rgb}, 0.3)`,
-            marginBottom: ultimateSkill && size !== "sm" ? "2px" : "6px",
-          }}
-        >
-          {character.name}
+          </div>
         </div>
 
-        {/* 大招名称 */}
-        {ultimateSkill && size !== "sm" && (
-          <div className="flex items-center justify-center gap-1 mb-2">
-            <Flame size={9} style={{ color: "#FFD700", opacity: 0.9 }} />
-            <span
-              className="text-[9px] tracking-wide text-[#FFD700]/80 truncate max-w-[85%]"
-              title={ultimateSkill.name}
-            >
-              {ultimateSkill.name}
-            </span>
-          </div>
-        )}
-
-        {/* 属性 */}
-        {showStats && (
-          <div className={`grid grid-cols-4 gap-1 ${sizeCfg.stats} mt-1`}>
-            {[
-              { icon: Heart, value: character.maxHp, color: "#F472B6" },
-              { icon: Zap, value: character.attack, color: "#FBBF24" },
-              { icon: Shield, value: character.defense, color: "#60A5FA" },
-              { icon: Gauge, value: character.speed, color: "#4ADE80" },
-            ].map(({ icon: Icon, value, color }, i) => (
-              <div key={i} className="flex items-center justify-center gap-0.5">
-                <Icon size={size === "sm" ? 7 : 8} style={{ color }} />
-                <span className="text-[#C5C6C7] tabular-nums">{value}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 战力 */}
-        {size !== "sm" && (
+        {/* 角色立绘区 */}
+        <div
+          className={`relative ${sizeCfg.avatar} rounded-lg overflow-hidden flex-shrink-0`}
+          style={{
+            border: `1px solid ${config.primaryColor}33`,
+            boxShadow: `inset 0 0 24px rgba(${config.rgb}, 0.1)`,
+          }}
+        >
+          <CharacterAvatar
+            imageUrl={character.imageUrl}
+            name={character.name}
+            themeColor={config.primaryColor}
+            className="w-full h-full object-cover"
+            iconSize={size === "lg" ? 64 : size === "md" ? 44 : 28}
+          />
+          {/* 暗角遮罩 */}
           <div
-            className="mt-2 text-center text-[10px] font-bold tracking-widest"
-            style={{ color: config.primaryColor, opacity: 0.85 }}
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `
+                linear-gradient(to top, #0a0b12 0%, transparent 35%),
+                linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, transparent 20%),
+                radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.25) 100%)
+              `,
+            }}
+          />
+          {/* 顶部径向光 */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `radial-gradient(ellipse at 50% 15%, rgba(${config.rgb}, 0.1) 0%, transparent 55%)`,
+            }}
+          />
+        </div>
+
+        {/* 底部信息区 */}
+        <div className="relative flex-1 flex flex-col pt-2 mt-1">
+          {/* 顶部分隔线 */}
+          <div
+            className="absolute top-0 left-1 right-1 h-[1px]"
+            style={{
+              background: `linear-gradient(90deg, transparent, rgba(${config.rgb}, 0.35), transparent)`,
+            }}
+          />
+
+          {/* sm 尺寸底部名字 */}
+          <div
+            className={`${sizeCfg.bottomName} font-display font-bold text-center truncate mb-1`}
+            style={{
+              color: "#fff",
+              textShadow: `0 0 8px ${config.glowColor}`,
+            }}
+            title={character.name}
           >
-            ⚡ {power}
+            {character.name}
           </div>
-        )}
+
+          {/* 等级 + 星级 + 战力 */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <div
+              className={`${sizeCfg.levelBadge} rounded-full flex flex-col items-center justify-center font-black border flex-shrink-0`}
+              style={{
+                borderColor: config.primaryColor,
+                background: `radial-gradient(circle at 30% 30%, ${config.primaryColor}22, #0a0b12 70%)`,
+                color: config.primaryColor,
+                boxShadow: `0 0 10px ${config.glowColor}`,
+              }}
+            >
+              <span className="scale-[0.75] leading-none opacity-70">Lv.</span>
+              <span className="leading-none -mt-0.5">{level}</span>
+            </div>
+
+            <div className="flex flex-col gap-0.5">
+              <div className="flex gap-0.5">
+                {Array.from({ length: config.starCount }).map((_, i) => (
+                  <motion.div
+                    key={i}
+                    animate={
+                      animate && (rarity === "UR" || rarity === "SSR")
+                        ? { opacity: [0.55, 1, 0.55] }
+                        : {}
+                    }
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      delay: i * 0.18,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <Star
+                      size={sizeCfg.starSize}
+                      fill={config.primaryColor}
+                      color={config.primaryColor}
+                      style={{
+                        filter: `drop-shadow(0 0 3px ${config.glowColor})`,
+                      }}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+              <div
+                className={`${sizeCfg.power} font-bold tracking-wider`}
+                style={{ color: config.secondaryColor, opacity: 0.9 }}
+              >
+                ⚡ {power}
+              </div>
+            </div>
+          </div>
+
+          {/* 属性 */}
+          {showStats && (
+            <div
+              className={`grid grid-cols-4 ${sizeCfg.stats} mb-1.5 py-1 px-1 rounded-md`}
+              style={{
+                background: "rgba(0,0,0,0.25)",
+                border: `1px solid ${config.primaryColor}22`,
+              }}
+            >
+              {[
+                { icon: Zap, value: character.attack, color: "#FBBF24", label: "攻击" },
+                { icon: Shield, value: character.defense, color: "#60A5FA", label: "防御" },
+                { icon: Heart, value: character.maxHp, color: "#F472B6", label: "生命" },
+                { icon: Gauge, value: character.speed, color: "#4ADE80", label: "速度" },
+              ].map(({ icon: Icon, value, color, label }, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col items-center gap-0.5"
+                  title={label}
+                >
+                  <Icon
+                    size={size === "sm" ? 7 : size === "md" ? 9 : 11}
+                    style={{ color }}
+                  />
+                  <span className="text-[#C5C6C7] tabular-nums font-semibold leading-none">
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 技能信息 */}
+          {displaySkill && sizeCfg.skill !== "hidden" && (
+            <div
+              className="rounded-md p-1.5 mb-1.5 flex items-start gap-1.5"
+              style={{
+                background: `linear-gradient(135deg, rgba(${config.rgb}, 0.12), rgba(0,0,0,0.25))`,
+                border: `1px solid ${config.primaryColor}33`,
+              }}
+            >
+              <div
+                className="flex-shrink-0 rounded flex items-center justify-center"
+                style={{
+                  width: size === "lg" ? 28 : 22,
+                  height: size === "lg" ? 28 : 22,
+                  background: `radial-gradient(circle at 30% 30%, ${config.primaryColor}33, transparent 70%)`,
+                  boxShadow: `0 0 8px ${config.glowColor}`,
+                }}
+              >
+                <Flame
+                  size={size === "lg" ? 15 : 12}
+                  style={{ color: "#FFD700" }}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-[9px] font-bold truncate"
+                  style={{ color: "#FFD700" }}
+                >
+                  {displaySkill.name}
+                  {displaySkill.damageMultiplier > 0 && (
+                    <span className="ml-1 opacity-70">
+                      Lv.{Math.min(10, Math.max(1, Math.floor(displaySkill.damageMultiplier)))}
+                    </span>
+                  )}
+                </div>
+                <div
+                  className="text-[8px] text-[#8a8d91] leading-tight"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {displaySkill.description}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 角色语录 */}
+          {quote && sizeCfg.quote !== "hidden" && (
+            <div
+              className="mt-auto text-[8px] italic text-center px-1 py-1 rounded"
+              style={{
+                color: config.secondaryColor,
+                background: "rgba(0,0,0,0.2)",
+                borderTop: `1px solid ${config.primaryColor}22`,
+              }}
+            >
+              「{quote}」
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
   );
