@@ -946,11 +946,7 @@ export const ModeSelectScreen: React.FC = () => {
                       const cardColor = rarityConfig.primaryColor;
                       const cardRgb = rarityConfig.rgb;
                       const rarityTierMap: Record<Rarity, number> = {
-                        N: 0,
-                        R: 1,
-                        SR: 2,
-                        SSR: 3,
-                        UR: 4,
+                        N: 0, R: 1, SR: 2, SSR: 3, UR: 4,
                       };
                       const rarityTier = rarityTierMap[charRarity];
                       const borderWidth = 1 + 0.25 * rarityTier;
@@ -988,11 +984,7 @@ export const ModeSelectScreen: React.FC = () => {
                               ? `0 0 0 1px rgba(${cardRgb}, 0.3), 0 6px 20px rgba(${cardRgb}, 0.3), 0 0 40px rgba(${cardRgb}, 0.18), inset 0 0 12px rgba(${cardRgb}, 0.06)`
                               : undefined,
                           }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 400,
-                            damping: 30,
-                          }}
+                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
                           aria-pressed={isSelected}
                         >
                           {(isURCard || isSSRCard) && (
@@ -1215,10 +1207,7 @@ export const ModeSelectScreen: React.FC = () => {
                               </div>
                             </div>
 
-                            <div
-                              className="p-1.5"
-                              style={{ background: "#0D0E14" }}
-                            >
+                            <div className="p-1.5" style={{ background: "#0D0E14" }}>
                               <div
                                 className="h-px mb-1.5"
                                 style={{
