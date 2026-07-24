@@ -11,6 +11,11 @@ import {
   type SpiritStoryRosterEvent,
   type SpiritStoryStance,
 } from "../store/useSpiritStoryStore";
+import {
+  extractPartialArrayObjects,
+  extractPartialStringField,
+  looksLikeJsonStart,
+} from "./jsonStream";
 
 export interface SpiritStoryTurn {
   role: "narrator" | "spirit";
@@ -104,10 +109,7 @@ const parseJsonLoose = (raw: string): unknown => {
   }
 };
 
-const sanitizeCharacter = (
-  char: RosterCharacter,
-  room: SpiritStoryRoom,
-) => {
+const sanitizeCharacter = (char: RosterCharacter, room: SpiritStoryRoom) => {
   const state = room.participantStates[char.rosterId];
   const stance = state?.stance || DEFAULT_STORY_STANCE;
   return {
@@ -200,7 +202,9 @@ const normalizeTurns = (
   value.forEach((item) => {
     const data = asRecord(item);
     const role = String(data.role || "");
-    const content = String(data.content || "").trim().slice(0, 1000);
+    const content = String(data.content || "")
+      .trim()
+      .slice(0, 1000);
     if (!content || turns.length >= 8) return;
     if (role === "narrator") {
       turns.push({ role: "narrator", content });
@@ -233,7 +237,11 @@ const normalizeRosterEvents = (
     const data = asRecord(item);
     const type = String(data.type || "");
     const rosterId = String(data.rosterId || "").trim();
-    if (type === "join" && availableIds.has(rosterId) && !activeIds.has(rosterId)) {
+    if (
+      type === "join" &&
+      availableIds.has(rosterId) &&
+      !activeIds.has(rosterId)
+    ) {
       events.push({
         type: "join",
         rosterId,
@@ -364,12 +372,49 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
 }
 tension 是故事张力 0-100。普通闲聊 10-30，明显冲突 40-70，危机/背叛/审讯 70-95。`;
 
+export interface SpiritStoryStreamHandlers {
+  onTurnsChunk?: (turns: SpiritStoryTurn[]) => void;
+}
+
+const extractPartialTurns = (
+  raw: string,
+  participantIds: Set<string>,
+): SpiritStoryTurn[] => {
+  if (!looksLikeJsonStart(raw)) return [];
+  return extractPartialArrayObjects(raw, "turns", (objContent) => {
+    const role = extractPartialStringField(`{${objContent}}`, "role");
+    const content = extractPartialStringField(`{${objContent}}`, "content");
+    if (!role && !content) return null;
+    const typedRole = role === "spirit" ? "spirit" : "narrator";
+    if (typedRole !== "spirit") {
+      return { role: "narrator", content: content || "" };
+    }
+    const speakerRosterId = extractPartialStringField(
+      `{${objContent}}`,
+      "speakerRosterId",
+    ).trim();
+    const speakerName = extractPartialStringField(
+      `{${objContent}}`,
+      "speakerName",
+    );
+    return {
+      role: "spirit",
+      content: content || "",
+      ...(speakerRosterId && participantIds.has(speakerRosterId)
+        ? { speakerRosterId }
+        : {}),
+      ...(speakerName ? { speakerName: speakerName.slice(0, 32) } : {}),
+    };
+  });
+};
+
 export async function requestSpiritStory(
   cfg: AIConfig,
   participants: RosterCharacter[],
   availableRoster: RosterCharacter[],
   room: SpiritStoryRoom,
   userMessage: string,
+  handlers?: SpiritStoryStreamHandlers,
 ): Promise<SpiritStoryResult> {
   const activeIds = new Set(participants.map((char) => char.rosterId));
   const allRosterIds = new Set(availableRoster.map((char) => char.rosterId));
@@ -402,7 +447,13 @@ export async function requestSpiritStory(
 
   const apiMode = cfg.apiMode || "custom";
   if (apiMode === "free") {
-    return requestSpiritStoryFreeTrial(payload, room, userMessage, allRosterIds);
+    return requestSpiritStoryFreeTrial(
+      payload,
+      room,
+      userMessage,
+      allRosterIds,
+      handlers?.onTurnsChunk,
+    );
   }
 
   if (!cfg.apiKey) throw new Error("请先填写 API Key");
@@ -415,16 +466,36 @@ export async function requestSpiritStory(
     dangerouslyAllowBrowser: true,
   });
 
-  const response = await client.chat.completions.create({
+  const stream = await client.chat.completions.create({
     model: cfg.model,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify(payload) },
     ],
     temperature: 0.92,
+    stream: true,
   });
 
-  const content = response.choices[0]?.message?.content;
+  let rawContent = "";
+  let lastEmittedKey = "";
+  const onTurnsChunk = handlers?.onTurnsChunk;
+  const participantIds = new Set(room.participantRosterIds);
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (!delta) continue;
+    rawContent += delta;
+    if (!onTurnsChunk) continue;
+
+    const partialTurns = extractPartialTurns(rawContent, participantIds);
+    const key = JSON.stringify(partialTurns);
+    if (key !== lastEmittedKey) {
+      lastEmittedKey = key;
+      onTurnsChunk(partialTurns);
+    }
+  }
+
+  const content = rawContent;
   if (!content) throw new Error("故事没有继续，请稍后再试。");
   try {
     return normalizeResult(parseJsonLoose(content), room, allRosterIds);
@@ -444,16 +515,30 @@ async function requestSpiritStoryFreeTrial(
   room: SpiritStoryRoom,
   userMessage: string,
   allRosterIds: Set<string>,
+  onTurnsChunk?: (turns: SpiritStoryTurn[]) => void,
 ): Promise<SpiritStoryResult> {
   let response: Response;
   try {
     response = await fetch("/api/spirit-story", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson",
+      },
       body: JSON.stringify(payload),
     });
   } catch {
     throw new Error("多人故事免费接口暂时不可用，请稍后再试。");
+  }
+
+  if (
+    response.ok &&
+    response.body &&
+    (response.headers.get("content-type") || "").includes(
+      "application/x-ndjson",
+    )
+  ) {
+    return consumeSpiritStoryStream(response, room, allRosterIds, onTurnsChunk);
   }
 
   const raw = await response.json().catch(() => ({}));
@@ -476,4 +561,61 @@ async function requestSpiritStoryFreeTrial(
     );
   }
   return normalizeResult(data.result, room, allRosterIds);
+}
+
+async function consumeSpiritStoryStream(
+  response: Response,
+  room: SpiritStoryRoom,
+  allRosterIds: Set<string>,
+  onTurnsChunk?: (turns: SpiritStoryTurn[]) => void,
+): Promise<SpiritStoryResult> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let lastEmittedKey = "";
+  let finalResult: SpiritStoryResult | null = null;
+  let finalError: string | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex: number;
+    while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (!line) continue;
+      let event: {
+        type?: string;
+        turns?: SpiritStoryTurn[];
+        result?: unknown;
+        error?: string;
+      };
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (
+        event.type === "chunk" &&
+        Array.isArray(event.turns) &&
+        onTurnsChunk
+      ) {
+        const key = JSON.stringify(event.turns);
+        if (key !== lastEmittedKey) {
+          lastEmittedKey = key;
+          onTurnsChunk(event.turns);
+        }
+      } else if (event.type === "done" && event.result) {
+        finalResult = normalizeResult(event.result, room, allRosterIds);
+      } else if (event.type === "error") {
+        finalError = String(event.error || "多人故事流式响应失败");
+      }
+    }
+  }
+
+  if (finalResult) return finalResult;
+  if (finalError) throw new Error(finalError);
+  return normalizeResult({ turns: [] }, room, allRosterIds);
 }

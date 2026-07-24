@@ -1,4 +1,11 @@
-import { CharacterData, Skill } from "../store/useGameStore";
+import {
+  CharacterData,
+  Skill,
+  Rarity,
+  calculatePowerScore,
+  determineRarityByPower,
+  RARITY_CONFIGS,
+} from "../store/useGameStore";
 import { ULTIMATE_TYPES } from "./ultimateTypes";
 
 /**
@@ -35,6 +42,8 @@ interface PresetCharacterDef {
   /** 专属大招图英文提示词 */
   ultimateImagePrompt: string;
   skills: Skill[];
+  /** 预设稀有度（可选，默认根据战力自动计算） */
+  rarity?: Rarity;
 }
 
 // 数值分层：每个角色只允许 1-2 个主强项，必须保留明显短板。
@@ -46,6 +55,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 88,
     defense: 46,
     speed: 78,
+    rarity: "SSR",
     imagePrompt:
       "Tang San from Soul Land, young warrior with blue silver grass aura, sea god trident, elegant white and blue robes, glowing cyan eyes, anime style",
     avatarSeed: 707,
@@ -96,6 +106,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 128,
     defense: 14,
     speed: 106,
+    rarity: "SSR",
     imagePrompt:
       "Mewtwo, psychic Pokemon, purple and white feline humanoid, glowing purple eyes, telekinetic aura, futuristic lab background, anime style",
     avatarSeed: 1414,
@@ -145,6 +156,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 100,
     defense: 40,
     speed: 112,
+    rarity: "UR",
     imagePrompt:
       "Sun Wukong the Monkey King, golden fur, fiery eyes, holding Ruyi Jingu Bang staff, red and gold armor, clouds under feet, anime style",
     avatarSeed: 808,
@@ -195,6 +207,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 78,
     defense: 64,
     speed: 70,
+    rarity: "SSR",
     imagePrompt:
       "Ultraman, silver and red armored giant hero, glowing color timer, heroic pose, cosmic background, anime style",
     avatarSeed: 909,
@@ -246,6 +259,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 104,
     defense: 18,
     speed: 132,
+    rarity: "SR",
     imagePrompt:
       "Kakashi Hatake, silver spiky hair, mask covering lower face, sharingan eye glowing red, lightning chakra around hand, blue flak jacket, anime style",
     avatarSeed: 1313,
@@ -317,7 +331,7 @@ const buildCharacter = (def: PresetCharacterDef): CharacterData => {
     return { ...s };
   });
 
-  return {
+  const baseChar: CharacterData = {
     name: def.name,
     hp: def.hp,
     maxHp: def.hp,
@@ -331,6 +345,37 @@ const buildCharacter = (def: PresetCharacterDef): CharacterData => {
     attackBuff: 0,
     defenseBuff: 0,
     buffTurnsLeft: 0,
+  };
+
+  // 确定稀有度
+  const rarity =
+    def.rarity || determineRarityByPower(calculatePowerScore(baseChar));
+  const mult = RARITY_CONFIGS[rarity].powerMultiplier;
+
+  // 应用稀有度倍率
+  return {
+    ...baseChar,
+    hp: Math.round(baseChar.hp * mult),
+    maxHp: Math.round(baseChar.maxHp * mult),
+    attack: Math.round(baseChar.attack * mult),
+    defense: Math.round(baseChar.defense * mult),
+    speed: Math.round(baseChar.speed * mult),
+    skills: baseChar.skills.map((skill) => ({
+      ...skill,
+      damageMultiplier:
+        skill.type === "heal" ||
+        skill.type === "buff" ||
+        skill.type === "debuff"
+          ? skill.damageMultiplier
+          : Math.min(
+              skill.isUltimate ? 12 : 4.5,
+              Math.max(
+                skill.isUltimate ? 4.4 : 1.0,
+                skill.damageMultiplier * (0.85 + mult * 0.18),
+              ),
+            ),
+    })),
+    rarity,
   };
 };
 

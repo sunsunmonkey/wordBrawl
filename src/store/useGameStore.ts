@@ -3,6 +3,127 @@ import { persist } from "zustand/middleware";
 
 export type SkillType = "attack" | "heal" | "buff" | "debuff" | "ultimate";
 
+export type Rarity = "N" | "R" | "SR" | "SSR" | "UR";
+
+export interface RarityConfig {
+  id: Rarity;
+  label: string;
+  labelEn: string;
+  primaryColor: string;
+  secondaryColor: string;
+  rgb: string;
+  glowColor: string;
+  borderGradient: string;
+  starCount: number;
+  powerMultiplier: number;
+  dropRate: number;
+}
+
+export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
+  N: {
+    id: "N",
+    label: "普通",
+    labelEn: "NORMAL",
+    primaryColor: "#9CA3AF",
+    secondaryColor: "#6B7280",
+    rgb: "156, 163, 175",
+    glowColor: "rgba(156, 163, 175, 0.5)",
+    borderGradient: "linear-gradient(135deg, #9CA3AF, #6B7280)",
+    starCount: 1,
+    powerMultiplier: 0.85,
+    dropRate: 0.40,
+  },
+  R: {
+    id: "R",
+    label: "稀有",
+    labelEn: "RARE",
+    primaryColor: "#60A5FA",
+    secondaryColor: "#3B82F6",
+    rgb: "96, 165, 250",
+    glowColor: "rgba(96, 165, 250, 0.7)",
+    borderGradient: "linear-gradient(135deg, #60A5FA, #3B82F6, #2563EB)",
+    starCount: 2,
+    powerMultiplier: 1.0,
+    dropRate: 0.35,
+  },
+  SR: {
+    id: "SR",
+    label: "超稀有",
+    labelEn: "SUPER RARE",
+    primaryColor: "#C084FC",
+    secondaryColor: "#A855F7",
+    rgb: "192, 132, 252",
+    glowColor: "rgba(192, 132, 252, 0.8)",
+    borderGradient: "linear-gradient(135deg, #E879F9, #C084FC, #A855F7, #9333EA)",
+    starCount: 3,
+    powerMultiplier: 1.15,
+    dropRate: 0.17,
+  },
+  SSR: {
+    id: "SSR",
+    label: "史诗",
+    labelEn: "SUPER SUPER RARE",
+    primaryColor: "#FBBF24",
+    secondaryColor: "#F59E0B",
+    rgb: "251, 191, 36",
+    glowColor: "rgba(251, 191, 36, 0.9)",
+    borderGradient: "linear-gradient(135deg, #FDE047, #FBBF24, #F59E0B, #D97706)",
+    starCount: 4,
+    powerMultiplier: 1.35,
+    dropRate: 0.065,
+  },
+  UR: {
+    id: "UR",
+    label: "传说",
+    labelEn: "ULTRA RARE",
+    primaryColor: "#FF6B9D",
+    secondaryColor: "#FF003C",
+    rgb: "255, 107, 157",
+    glowColor: "rgba(255, 107, 157, 1)",
+    borderGradient: "linear-gradient(135deg, #66FCF1, #C084FC, #FFD700, #FF6B9D, #FF003C)",
+    starCount: 5,
+    powerMultiplier: 1.6,
+    dropRate: 0.015,
+  },
+};
+
+export const calculatePowerScore = (char: {
+  hp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  skills?: { damageMultiplier: number; isUltimate?: boolean }[];
+}): number => {
+  const hp = char.maxHp || char.hp;
+  const atk = char.attack;
+  const def = char.defense;
+  const spd = char.speed;
+  const baseScore = hp * 0.4 + atk * 2.5 + def * 1.8 + spd * 1.5;
+  const ultimateMult = char.skills?.find((s) => s.isUltimate)?.damageMultiplier || 5;
+  const skillBonus = ultimateMult * 15;
+  return Math.round(baseScore + skillBonus);
+};
+
+export const determineRarityByPower = (powerScore: number): Rarity => {
+  if (powerScore >= 850) return "UR";
+  if (powerScore >= 680) return "SSR";
+  if (powerScore >= 500) return "SR";
+  if (powerScore >= 350) return "R";
+  return "N";
+};
+
+export const rollRarity = (): Rarity => {
+  const rand = Math.random();
+  let cumulative = 0;
+  const rarities: Rarity[] = ["UR", "SSR", "SR", "R", "N"];
+  for (const r of rarities) {
+    cumulative += RARITY_CONFIGS[r].dropRate;
+    if (rand <= cumulative) return r;
+  }
+  return "N";
+};
+
 export interface Skill {
   name: string;
   description: string;
@@ -70,6 +191,8 @@ export interface CharacterData {
   spiritProfile?: SpiritProfile;
   /** 来自预设角色，不参与赛后收入麾下 */
   isPreset?: boolean;
+  /** 稀有度：N/R/SR/SSR/UR */
+  rarity?: Rarity;
 }
 
 export interface BattleEvent {

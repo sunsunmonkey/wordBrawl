@@ -1,16 +1,20 @@
 import {
   asRecord,
+  beginNdjsonStream,
   clamp,
   consumeUsage,
+  extractPartialStringField,
   getAiCredentials,
   getUsageStatus,
+  looksLikeJsonStart,
   readBody,
   sendJson,
+  sendNdjsonLine,
   setCorsHeaders,
   stripJsonFences,
   type ApiRequest,
   type ApiResponse,
-} from './_shared.js';
+} from "./_shared.js";
 
 const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，不是通用助手。
 你正在和自己的契约者聊天。你必须以角色本人第一人称回应，保留角色性格、口癖、世界观锚点和战斗经历。
@@ -57,7 +61,7 @@ const normalizeText = (
   fallback: string,
   maxLength: number,
 ): string => {
-  const text = String(value || '').trim();
+  const text = String(value || "").trim();
   return (text || fallback).slice(0, maxLength);
 };
 
@@ -70,7 +74,7 @@ const normalizeList = (
   if (!Array.isArray(value)) return fallback;
   const list = value
     .map((item) =>
-      String(item || '')
+      String(item || "")
         .trim()
         .slice(0, maxLength),
     )
@@ -80,27 +84,30 @@ const normalizeList = (
 };
 
 const normalizeTriggerEvent = (value: unknown) => {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== "object") return null;
   const data = asRecord(value);
-  const type = String(data.type || '');
-  if (type !== 'TOWER_CHALLENGE' && type !== 'PVP_SPARRING') return null;
-  const description = String(data.description || '').slice(0, 120);
+  const type = String(data.type || "");
+  if (type !== "TOWER_CHALLENGE" && type !== "PVP_SPARRING") return null;
+  const description = String(data.description || "").slice(0, 120);
   const layerRaw = Number(data.layer);
   const layer = Number.isFinite(layerRaw)
     ? Math.min(999, Math.max(1, Math.round(layerRaw)))
     : undefined;
   return {
-    type: type as 'TOWER_CHALLENGE' | 'PVP_SPARRING',
+    type: type as "TOWER_CHALLENGE" | "PVP_SPARRING",
     description,
     ...(layer ? { layer } : {}),
   };
 };
 
-const normalizeResult = (value: unknown, fallbackChat: Record<string, unknown>) => {
+const normalizeResult = (
+  value: unknown,
+  fallbackChat: Record<string, unknown>,
+) => {
   const data = asRecord(value);
   const currentBond = Number(fallbackChat.bond) || 0;
-  const currentMood = String(fallbackChat.mood || '专注');
-  const currentMemory = String(fallbackChat.memorySummary || '');
+  const currentMood = String(fallbackChat.mood || "专注");
+  const currentMemory = String(fallbackChat.memorySummary || "");
   const currentPlayerFacts = Array.isArray(fallbackChat.playerFacts)
     ? (fallbackChat.playerFacts as string[])
     : [];
@@ -114,7 +121,7 @@ const normalizeResult = (value: unknown, fallbackChat: Record<string, unknown>) 
   return {
     reply: normalizeText(
       data.reply,
-      '我听见了。只是这句话还需要一点时间在我心里成形。',
+      "我听见了。只是这句话还需要一点时间在我心里成形。",
       800,
     ),
     mood: normalizeText(data.mood, currentMood, 24),
@@ -123,7 +130,7 @@ const normalizeResult = (value: unknown, fallbackChat: Record<string, unknown>) 
     playerFacts: normalizeList(data.playerFacts, currentPlayerFacts, 12, 80),
     promises: normalizeList(data.promises, currentPromises, 12, 80),
     lastSuggestedAction: data.lastSuggestedAction
-      ? normalizeText(data.lastSuggestedAction, '', 80)
+      ? normalizeText(data.lastSuggestedAction, "", 80)
       : currentLastSuggestedAction,
     triggerEvent: normalizeTriggerEvent(data.triggerEvent),
     xpGranted: clamp(data.xpGranted, 0, 50, 0),
@@ -133,19 +140,21 @@ const normalizeResult = (value: unknown, fallbackChat: Record<string, unknown>) 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(req, res);
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
   }
 
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed" });
     return;
   }
 
   const { apiKey, baseUrl, model } = getAiCredentials();
   if (!apiKey) {
-    sendJson(res, 500, { error: '服务端还没有配置 AI_API_KEY / OPENAI_API_KEY' });
+    sendJson(res, 500, {
+      error: "服务端还没有配置 AI_API_KEY / OPENAI_API_KEY",
+    });
     return;
   }
 
@@ -164,20 +173,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const recentMessages = Array.isArray(body.recentMessages)
     ? (body.recentMessages as unknown[])
     : [];
-  const userMessage = String(body.userMessage || '').trim();
-  const scene = String(body.scene || 'idle');
+  const userMessage = String(body.userMessage || "").trim();
+  const scene = String(body.scene || "idle");
   const recentBattle = body.recentBattle ?? null;
 
   if (!character.name) {
-    sendJson(res, 400, { error: '缺少角色数据' });
+    sendJson(res, 400, { error: "缺少角色数据" });
     return;
   }
   if (!userMessage) {
-    sendJson(res, 400, { error: '请先输入要说的话' });
+    sendJson(res, 400, { error: "请先输入要说的话" });
     return;
   }
   if (userMessage.length > 2000) {
-    sendJson(res, 400, { error: '消息太长了，请控制在 2000 字以内' });
+    sendJson(res, 400, { error: "消息太长了，请控制在 2000 字以内" });
     return;
   }
 
@@ -192,40 +201,57 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const chargedUsage = await consumeUsage(req);
 
+  const acceptHeader = String(
+    (req.headers && (req.headers as Record<string, unknown>).accept) || "",
+  );
+  const wantsStream = acceptHeader.includes("application/x-ndjson");
+
   try {
     const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
+      method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: JSON.stringify(payload) },
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: JSON.stringify(payload) },
         ],
         temperature: 0.88,
+        ...(wantsStream ? { stream: true } : {}),
       }),
     });
 
-    const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
     if (!upstreamResponse.ok) {
+      const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
       console.error(
-        'spirit-chat upstream error',
+        "spirit-chat upstream error",
         upstreamResponse.status,
         upstreamPayload?.error || upstreamPayload,
       );
       sendJson(res, 502, {
-        error: upstreamPayload?.error?.message || '大模型接口调用失败',
+        error: upstreamPayload?.error?.message || "大模型接口调用失败",
         usage: chargedUsage,
       });
       return;
     }
 
+    if (wantsStream && upstreamResponse.body) {
+      await streamSpiritChatUpstream(
+        upstreamResponse,
+        res,
+        relationship,
+        chargedUsage,
+      );
+      return;
+    }
+
+    const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
     const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
     if (!rawContent) {
-      sendJson(res, 502, { error: '大模型返回内容为空', usage: chargedUsage });
+      sendJson(res, 502, { error: "大模型返回内容为空", usage: chargedUsage });
       return;
     }
 
@@ -255,7 +281,119 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       usage: chargedUsage,
     });
   } catch (error) {
-    console.error('spirit-chat failed', error);
-    sendJson(res, 500, { error: '词灵对话失败，请稍后再试', usage: chargedUsage });
+    console.error("spirit-chat failed", error);
+    if (wantsStream) {
+      beginNdjsonStream(res, 500);
+      sendNdjsonLine(res, {
+        type: "error",
+        error: "词灵对话失败，请稍后再试",
+        usage: chargedUsage,
+      });
+      res.end();
+      return;
+    }
+    sendJson(res, 500, {
+      error: "词灵对话失败，请稍后再试",
+      usage: chargedUsage,
+    });
+  }
+}
+
+async function streamSpiritChatUpstream(
+  upstreamResponse: Response,
+  res: ApiResponse,
+  relationship: Record<string, unknown>,
+  chargedUsage: unknown,
+): Promise<void> {
+  beginNdjsonStream(res, 200);
+
+  const reader = upstreamResponse.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let rawContent = "";
+  let lastEmitted = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      while (true) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex < 0) break;
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed?.choices?.[0]?.delta?.content;
+          if (!delta) continue;
+          rawContent += delta;
+
+          let partial: string;
+          if (looksLikeJsonStart(rawContent)) {
+            partial = extractPartialStringField(rawContent, "reply");
+          } else {
+            partial = rawContent.trim();
+          }
+          if (partial && partial !== lastEmitted) {
+            lastEmitted = partial;
+            sendNdjsonLine(res, { type: "chunk", content: partial });
+          }
+        } catch {
+          // 忽略无法解析的 SSE 数据行
+        }
+      }
+    }
+
+    if (!rawContent) {
+      sendNdjsonLine(res, {
+        type: "error",
+        error: "大模型返回内容为空",
+        usage: chargedUsage,
+      });
+      res.end();
+      return;
+    }
+
+    const cleaned = stripJsonFences(rawContent);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) {
+        sendNdjsonLine(res, {
+          type: "done",
+          result: normalizeResult(
+            { reply: String(rawContent).slice(0, 800) },
+            relationship,
+          ),
+          usage: chargedUsage,
+        });
+        res.end();
+        return;
+      }
+      parsed = JSON.parse(match[0]);
+    }
+
+    sendNdjsonLine(res, {
+      type: "done",
+      result: normalizeResult(parsed, relationship),
+      usage: chargedUsage,
+    });
+    res.end();
+  } catch (error) {
+    console.error("spirit-chat stream failed", error);
+    sendNdjsonLine(res, {
+      type: "error",
+      error: "词灵对话流式响应失败",
+      usage: chargedUsage,
+    });
+    res.end();
   }
 }

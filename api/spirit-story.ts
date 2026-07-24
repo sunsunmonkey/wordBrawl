@@ -1,11 +1,16 @@
 import {
   asRecord,
+  beginNdjsonStream,
   clamp,
   consumeUsage,
+  extractPartialArrayObjects,
+  extractPartialStringField,
   getAiCredentials,
   getUsageStatus,
+  looksLikeJsonStart,
   readBody,
   sendJson,
+  sendNdjsonLine,
   setCorsHeaders,
   stripJsonFences,
   type ApiRequest,
@@ -380,6 +385,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const chargedUsage = await consumeUsage(req);
 
+  const acceptHeader = String(
+    (req.headers && (req.headers as Record<string, unknown>).accept) || "",
+  );
+  const wantsStream = acceptHeader.includes("application/x-ndjson");
+
   try {
     const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -394,11 +404,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           { role: "user", content: JSON.stringify(payload) },
         ],
         temperature: 0.92,
+        ...(wantsStream ? { stream: true } : {}),
       }),
     });
 
-    const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
     if (!upstreamResponse.ok) {
+      const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
       console.error(
         "spirit-story upstream error",
         upstreamResponse.status,
@@ -411,6 +422,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
+    if (wantsStream && upstreamResponse.body) {
+      await streamSpiritStoryUpstream(
+        upstreamResponse,
+        res,
+        payload,
+        activeIds,
+        chargedUsage,
+      );
+      return;
+    }
+
+    const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
     const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
     if (!rawContent) {
       sendJson(res, 502, { error: "大模型返回内容为空", usage: chargedUsage });
@@ -451,9 +474,161 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   } catch (error) {
     console.error("spirit-story failed", error);
+    if (wantsStream) {
+      beginNdjsonStream(res, 500);
+      sendNdjsonLine(res, {
+        type: "error",
+        error: "多人故事推进失败，请稍后再试",
+        usage: chargedUsage,
+      });
+      res.end();
+      return;
+    }
     sendJson(res, 500, {
       error: "多人故事推进失败，请稍后再试",
       usage: chargedUsage,
     });
+  }
+}
+
+interface StreamTurn {
+  role: string;
+  content: string;
+  speakerRosterId?: string;
+  speakerName?: string;
+}
+
+const extractPartialTurnsStream = (
+  raw: string,
+  participantIds: Set<string>,
+): StreamTurn[] => {
+  if (!looksLikeJsonStart(raw)) return [];
+  return extractPartialArrayObjects(raw, "turns", (objContent) => {
+    const role = extractPartialStringField(`{${objContent}}`, "role");
+    const content = extractPartialStringField(`{${objContent}}`, "content");
+    if (!role && !content) return null;
+    const typedRole = role === "spirit" ? "spirit" : "narrator";
+    if (typedRole !== "spirit") {
+      return { role: "narrator", content: content || "" };
+    }
+    const speakerRosterId = extractPartialStringField(
+      `{${objContent}}`,
+      "speakerRosterId",
+    ).trim();
+    const speakerName = extractPartialStringField(
+      `{${objContent}}`,
+      "speakerName",
+    );
+    return {
+      role: "spirit",
+      content: content || "",
+      ...(speakerRosterId && participantIds.has(speakerRosterId)
+        ? { speakerRosterId }
+        : {}),
+      ...(speakerName ? { speakerName: speakerName.slice(0, 32) } : {}),
+    };
+  });
+};
+
+async function streamSpiritStoryUpstream(
+  upstreamResponse: Response,
+  res: ApiResponse,
+  payload: Record<string, unknown>,
+  activeIds: Set<string>,
+  chargedUsage: unknown,
+): Promise<void> {
+  beginNdjsonStream(res, 200);
+
+  const reader = upstreamResponse.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let rawContent = "";
+  let lastEmittedKey = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      while (true) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex < 0) break;
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed?.choices?.[0]?.delta?.content;
+          if (!delta) continue;
+          rawContent += delta;
+
+          const partialTurns = extractPartialTurnsStream(rawContent, activeIds);
+          const key = JSON.stringify(partialTurns);
+          if (key !== lastEmittedKey) {
+            lastEmittedKey = key;
+            sendNdjsonLine(res, { type: "chunk", turns: partialTurns });
+          }
+        } catch {
+          // 忽略无法解析的 SSE 数据行
+        }
+      }
+    }
+
+    if (!rawContent) {
+      sendNdjsonLine(res, {
+        type: "error",
+        error: "大模型返回内容为空",
+        usage: chargedUsage,
+      });
+      res.end();
+      return;
+    }
+
+    const cleaned = stripJsonFences(rawContent);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) {
+        sendNdjsonLine(res, {
+          type: "done",
+          result: normalizeResult(
+            {
+              turns: [
+                {
+                  role: "narrator",
+                  content: String(rawContent).slice(0, 1000),
+                },
+              ],
+            },
+            payload,
+          ),
+          usage: chargedUsage,
+        });
+        res.end();
+        return;
+      }
+      parsed = JSON.parse(match[0]);
+    }
+
+    sendNdjsonLine(res, {
+      type: "done",
+      result: normalizeResult(parsed, payload),
+      usage: chargedUsage,
+    });
+    res.end();
+  } catch (error) {
+    console.error("spirit-story stream failed", error);
+    sendNdjsonLine(res, {
+      type: "error",
+      error: "多人故事流式响应失败",
+      usage: chargedUsage,
+    });
+    res.end();
   }
 }

@@ -34,7 +34,7 @@ import {
   useSpiritStoryStore,
   type SpiritStoryMessage,
 } from "../store/useSpiritStoryStore";
-import { requestSpiritStory } from "../utils/spiritStory";
+import { requestSpiritStory, type SpiritStoryTurn } from "../utils/spiritStory";
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
 
 const MAX_STORY_PARTICIPANTS = 10;
@@ -75,6 +75,7 @@ export const SpiritStoryScreen: React.FC = () => {
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
+  const [streamingTurns, setStreamingTurns] = useState<SpiritStoryTurn[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Draft state (新建故事时使用)
@@ -120,7 +121,7 @@ export const SpiritStoryScreen: React.FC = () => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [activeRoom?.messages.length, isSending]);
+  }, [activeRoom?.messages.length, isSending, streamingTurns]);
 
   useEffect(() => {
     if (!isComposing) return;
@@ -206,6 +207,7 @@ export const SpiritStoryScreen: React.FC = () => {
 
     setError("");
     setInput("");
+    setStreamingTurns([]);
     const playerMessage = appendMessage(currentRoom.id, {
       role: "player",
       content: text,
@@ -222,7 +224,13 @@ export const SpiritStoryScreen: React.FC = () => {
         availableRoster,
         latestRoom,
         playerMessage.content,
+        {
+          onTurnsChunk: (turns) => {
+            setStreamingTurns(turns);
+          },
+        },
       );
+      setStreamingTurns([]);
       applyStoryTurn(
         currentRoom.id,
         result.turns.map((turn) => ({
@@ -241,6 +249,7 @@ export const SpiritStoryScreen: React.FC = () => {
         },
       );
     } catch (err) {
+      setStreamingTurns([]);
       setError(err instanceof Error ? err.message : "多人故事暂时没有回应。");
     } finally {
       setIsSending(false);
@@ -622,7 +631,27 @@ export const SpiritStoryScreen: React.FC = () => {
                         themeColor={themeColor}
                       />
                     ))}
-                    {isSending && (
+                    {isSending &&
+                      streamingTurns.length > 0 &&
+                      streamingTurns.map((turn, idx) => (
+                        <StoryBubble
+                          key={`streaming-${idx}`}
+                          message={{
+                            id: `streaming-${idx}`,
+                            role: turn.role,
+                            content: turn.content,
+                            createdAt: Date.now(),
+                            speakerRosterId: turn.speakerRosterId,
+                            speakerName: turn.speakerName,
+                          }}
+                          allRoster={roster}
+                          activeRosterIds={activeRosterIdSet}
+                          themeColor={themeColor}
+                          streaming
+                        />
+                      ))}
+
+                    {isSending && streamingTurns.length === 0 && (
                       <motion.div
                         key="typing"
                         initial={{ opacity: 0, y: 8, scale: 0.95 }}
@@ -856,7 +885,8 @@ const StoryBubble: React.FC<{
   allRoster: RosterCharacter[];
   activeRosterIds: Set<string>;
   themeColor: string;
-}> = ({ message, allRoster, activeRosterIds, themeColor }) => {
+  streaming?: boolean;
+}> = ({ message, allRoster, activeRosterIds, themeColor, streaming }) => {
   const isPlayer = message.role === "player";
   const isNarrator = message.role === "narrator";
   const isBackground = isPlayer && message.speakerName === "背景";
@@ -868,6 +898,13 @@ const StoryBubble: React.FC<{
     : false;
   const speakerName = speaker?.name || message.speakerName || "词灵";
   const color = isNarrator ? "#8a8d91" : isPlayer ? "#FFD700" : themeColor;
+
+  const StreamingCursor = streaming ? (
+    <span
+      className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse"
+      style={{ backgroundColor: themeColor }}
+    />
+  ) : null;
 
   if (isNarrator || isBackground) {
     return (
@@ -883,6 +920,7 @@ const StoryBubble: React.FC<{
           <Sparkles size={13} className="mr-2 inline text-[#66FCF1]" />
         )}
         {message.content}
+        {StreamingCursor}
       </motion.div>
     );
   }
@@ -929,11 +967,13 @@ const StoryBubble: React.FC<{
           }}
         >
           {message.content}
+          {StreamingCursor}
         </div>
         <div
           className={`mt-1 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
         >
-          {isPlayer ? "YOU" : speakerName} · {formatTime(message.createdAt)}
+          {isPlayer ? "YOU" : speakerName}
+          {!streaming && <> · {formatTime(message.createdAt)}</>}
           {!isPlayer && (
             <span
               className={`flex items-center gap-1 rounded px-1 py-0.5 border ${

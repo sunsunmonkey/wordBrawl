@@ -78,6 +78,7 @@ export const SpiritChatScreen: React.FC = () => {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [streamingReply, setStreamingReply] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -101,7 +102,7 @@ export const SpiritChatScreen: React.FC = () => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [chat?.messages.length, isSending]);
+  }, [chat?.messages.length, isSending, streamingReply]);
 
   if (!selected || !chat) {
     return (
@@ -142,6 +143,7 @@ export const SpiritChatScreen: React.FC = () => {
 
     setError("");
     setInput("");
+    setStreamingReply("");
     const userMessage = appendMessage(selected.rosterId, {
       role: "player",
       content: text,
@@ -161,7 +163,13 @@ export const SpiritChatScreen: React.FC = () => {
           scene: isRecentBattle ? "postBattle" : "idle",
           recentBattle: isRecentBattle ? lastSummary : null,
         },
+        {
+          onReplyChunk: (partial) => {
+            setStreamingReply(partial);
+          },
+        },
       );
+      setStreamingReply("");
       applySpiritReply(
         selected.rosterId,
         {
@@ -187,6 +195,7 @@ export const SpiritChatScreen: React.FC = () => {
         );
       }
     } catch (err) {
+      setStreamingReply("");
       setError(err instanceof Error ? err.message : "词灵暂时没有回应。");
     } finally {
       setIsSending(false);
@@ -581,7 +590,23 @@ export const SpiritChatScreen: React.FC = () => {
                       </motion.div>
                     )}
 
-                    {isSending && (
+                    {isSending && streamingReply && (
+                      <ChatBubble
+                        key="streaming"
+                        message={{
+                          id: "streaming",
+                          role: "spirit",
+                          content: streamingReply,
+                          createdAt: Date.now(),
+                        }}
+                        themeColor={themeColor}
+                        avatar={selected.imageUrl}
+                        name={selected.name}
+                        streaming
+                      />
+                    )}
+
+                    {isSending && !streamingReply && (
                       <motion.div
                         key="typing"
                         initial={{ opacity: 0, y: 8, scale: 0.95 }}
@@ -701,7 +726,8 @@ const ChatBubble: React.FC<{
   themeColor: string;
   avatar?: string;
   name: string;
-}> = ({ message, themeColor, avatar, name }) => {
+  streaming?: boolean;
+}> = ({ message, themeColor, avatar, name, streaming }) => {
   const isPlayer = message.role === "player";
   return (
     <motion.div
@@ -736,11 +762,18 @@ const ChatBubble: React.FC<{
           }}
         >
           {message.content}
+          {streaming && (
+            <span
+              className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse"
+              style={{ backgroundColor: themeColor }}
+            />
+          )}
         </div>
         <div
           className={`mt-1 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
         >
-          {isPlayer ? "YOU" : name} · {formatTime(message.createdAt)}
+          {isPlayer ? "YOU" : name}
+          {!streaming && <> · {formatTime(message.createdAt)}</>}
           {!isPlayer && message.xpGranted && message.xpGranted > 0 && (
             <span className="flex items-center gap-1 rounded bg-[#7FFF9F]/10 px-1 py-0.5 text-[#7FFF9F] border border-[#7FFF9F]/30">
               <Zap size={8} /> +{message.xpGranted} XP
