@@ -230,7 +230,10 @@ export type GamePhase =
   | "SPIRIT_CHAT"
   | "SPIRIT_STORY"
   | "TOWER_HUB"
-  | "TOWER_RESULT";
+  | "TOWER_RESULT"
+  | "SOCIAL_LOBBY"
+  | "SOCIAL_ROOM"
+  | "SOCIAL_BATTLE";
 export type ApiMode = "free" | "custom";
 export type BattleMode = "pvp" | "pve_tower";
 

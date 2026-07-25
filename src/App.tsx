@@ -17,6 +17,9 @@ import { SpiritStoryScreen } from "./components/SpiritStoryScreen";
 import { CardRevealAnimation } from "./components/CardRevealAnimation";
 import { runBackgroundRecruit } from "./utils/recruitPipeline";
 import type { AIConfig } from "./utils/ai";
+import { SocialLobbyScreen } from "./components/SocialLobbyScreen";
+import { SocialRoomScreen } from "./components/SocialRoomScreen";
+import { SocialBattleScreen } from "./components/SocialBattleScreen";
 
 /**
  * 全局抽卡动画管理器
@@ -108,6 +111,9 @@ function App() {
       {phase === "SPIRIT_STORY" && <SpiritStoryScreen />}
       {phase === "TOWER_HUB" && <TowerScreen />}
       {phase === "TOWER_RESULT" && <TowerResultScreen />}
+      {phase === "SOCIAL_LOBBY" && <SocialLobbyScreen />}
+      {phase === "SOCIAL_ROOM" && <SocialRoomScreen />}
+      {phase === "SOCIAL_BATTLE" && <SocialBattleScreen />}
       {/* 全局抽卡动画覆盖层 */}
       <RevealOverlay />
     </div>

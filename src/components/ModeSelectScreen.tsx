@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Swords,
   Castle,
   UsersRound,
   Sparkles,
@@ -14,6 +13,7 @@ import {
   ChevronRight,
   Send,
   Timer,
+  Users,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -172,7 +172,6 @@ export const ModeSelectScreen: React.FC = () => {
     setPlayer1,
     setPlayer2,
     setWinner,
-    resetGame,
   } = useGameStore();
   const roster = useRosterStore((s) => s.roster);
   const updateCharacter = useRosterStore((s) => s.updateCharacter);
@@ -324,12 +323,6 @@ export const ModeSelectScreen: React.FC = () => {
     }
   }, [evolutionDebugAvailable, evolutionDebugMode, setEvolutionDebugMode]);
 
-  const startPvP = () => {
-    resetGame();
-    setBattleMode("pvp");
-    setPhase("PLAYER1_CREATE");
-  };
-
   const startRecruit = () => {
     setPhase("RECRUIT_CREATE");
   };
@@ -355,6 +348,10 @@ export const ModeSelectScreen: React.FC = () => {
       return;
     }
     setPhase("SPIRIT_STORY");
+  };
+
+  const startSocial = () => {
+    setPhase("SOCIAL_LOBBY");
   };
 
   const goRoster = () => {
@@ -560,12 +557,6 @@ export const ModeSelectScreen: React.FC = () => {
             icon={<UsersRound size={16} />}
             label={`我的词灵 · ${rosterCount}`}
             accent="#66FCF1"
-          />
-          <IconButton
-            onClick={startPvP}
-            icon={<Swords size={16} />}
-            label="PVP"
-            accent="#FF003C"
           />
         </div>
       </div>
@@ -802,6 +793,78 @@ export const ModeSelectScreen: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* 社交&朋友入口：群聊 + 1v1 对战 */}
+            <motion.button
+              type="button"
+              onClick={startSocial}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.99 }}
+              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+              className="group relative w-full overflow-hidden border border-[#A78BFA]/40 bg-gradient-to-r from-[#A78BFA]/15 via-[#66FCF1]/8 to-transparent px-5 py-4 text-left transition-all hover:border-[#A78BFA]"
+            >
+              <span
+                aria-hidden
+                className="absolute top-0 left-0 w-3 h-3 border-t border-l border-[#A78BFA]"
+              />
+              <span
+                aria-hidden
+                className="absolute top-0 right-0 w-3 h-3 border-t border-r border-[#A78BFA]"
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-[#A78BFA]"
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-[#A78BFA]"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-20 -right-10 h-44 w-44 rounded-full blur-3xl opacity-25 group-hover:opacity-40 transition-opacity"
+                style={{ background: "#A78BFA" }}
+              />
+              <div className="relative flex items-center gap-4">
+                <div
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2"
+                  style={{
+                    borderColor: "#A78BFA",
+                    color: "#A78BFA",
+                    boxShadow: "0 0 18px rgba(167,139,250,0.4)",
+                    background: "rgba(167,139,250,0.15)",
+                  }}
+                >
+                  <Users size={22} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-[9px] font-mono tracking-[0.4em] text-[#A78BFA]/85">
+                      SOCIAL · & · FRIENDS
+                    </span>
+                    <span className="text-[9px] font-mono text-[#FFD700] tracking-widest">
+                      · 房间码 / 群聊 / 1v1 对战
+                    </span>
+                  </div>
+                  <div
+                    className="font-display font-black text-xl md:text-2xl tracking-tight"
+                    style={{
+                      color: "#A78BFA",
+                      textShadow: "0 0 14px rgba(167,139,250,0.4)",
+                    }}
+                  >
+                    社交&朋友
+                  </div>
+                  <div className="text-[11px] text-white/50 mt-1 leading-relaxed">
+                    带词灵开房间群聊 · @词灵 persona 回复 · 群聊房 5 位 / 1v1
+                    对战房 3 位分开创建
+                  </div>
+                </div>
+                <ChevronRight
+                  size={18}
+                  className="shrink-0 text-[#A78BFA] transition-transform group-hover:translate-x-1"
+                />
+              </div>
+            </motion.button>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <ModeCard
