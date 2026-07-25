@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpen,
   Brain,
+  ChevronDown,
+  ChevronUp,
   Heart,
   Loader2,
   MessageCircle,
@@ -16,13 +18,18 @@ import { BackButton } from "./BackButton";
 import { ParticleField } from "./ParticleField";
 import { CharacterAvatar } from "./CharacterAvatar";
 import { useGameStore } from "../store/useGameStore";
-import { useRosterStore } from "../store/useRosterStore";
+import {
+  useRosterStore,
+  isRosterCharacterRecruitLocked,
+  RECRUIT_STAGE_COUNT,
+} from "../store/useRosterStore";
 import {
   useSpiritChatStore,
   type SpiritChatMessage,
 } from "../store/useSpiritChatStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { requestSpiritChat } from "../utils/spiritChat";
+import { LOADING_STEPS } from "./loadingSteps";
 import {
   applyTrainingXp,
   evolutionLabel,
@@ -71,15 +78,36 @@ export const SpiritChatScreen: React.FC = () => {
   const getOrCreateChat = useSpiritChatStore((s) => s.getOrCreateChat);
   const appendMessage = useSpiritChatStore((s) => s.appendMessage);
   const applySpiritReply = useSpiritChatStore((s) => s.applySpiritReply);
+  const updateSpiritMessage = useSpiritChatStore((s) => s.updateSpiritMessage);
+  const updateSpiritMeta = useSpiritChatStore((s) => s.updateSpiritMeta);
   const clearChat = useSpiritChatStore((s) => s.clearChat);
 
   const selected =
     roster.find((char) => char.rosterId === openRosterId) ?? roster[0] ?? null;
+  const isSelectedRecruiting = selected
+    ? isRosterCharacterRecruitLocked(selected)
+    : false;
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [streamingReply, setStreamingReply] = useState<string>("");
+  const [replyStreamDone, setReplyStreamDone] = useState(false);
+  const [isFinalizingMeta, setIsFinalizingMeta] = useState(false);
+  const [isInfoExpanded, setIsInfoExpanded] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const pendingChunkRef = useRef<string | null>(null);
+  const rafHandleRef = useRef<number | null>(null);
+  const spiritMessageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current);
+        rafHandleRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!selected) return;
@@ -101,8 +129,29 @@ export const SpiritChatScreen: React.FC = () => {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
   }, [chat?.messages.length, isSending, streamingReply]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 64;
+  };
+
+  const flushStreamingChunk = () => {
+    rafHandleRef.current = null;
+    const next = pendingChunkRef.current;
+    pendingChunkRef.current = null;
+    if (next !== null) setStreamingReply(next);
+  };
+
+  const scheduleStreamingChunk = (partial: string) => {
+    pendingChunkRef.current = partial;
+    if (rafHandleRef.current !== null) return;
+    rafHandleRef.current = requestAnimationFrame(flushStreamingChunk);
+  };
 
   if (!selected || !chat) {
     return (
@@ -144,6 +193,15 @@ export const SpiritChatScreen: React.FC = () => {
     setError("");
     setInput("");
     setStreamingReply("");
+    setReplyStreamDone(false);
+    setIsFinalizingMeta(false);
+    pendingChunkRef.current = null;
+    spiritMessageIdRef.current = null;
+    if (rafHandleRef.current !== null) {
+      cancelAnimationFrame(rafHandleRef.current);
+      rafHandleRef.current = null;
+    }
+    stickToBottomRef.current = true;
     const userMessage = appendMessage(selected.rosterId, {
       role: "player",
       content: text,
@@ -165,19 +223,46 @@ export const SpiritChatScreen: React.FC = () => {
         },
         {
           onReplyChunk: (partial) => {
-            setStreamingReply(partial);
+            scheduleStreamingChunk(partial);
+          },
+          onReplyComplete: (finalReply) => {
+            if (rafHandleRef.current !== null) {
+              cancelAnimationFrame(rafHandleRef.current);
+              rafHandleRef.current = null;
+            }
+            pendingChunkRef.current = null;
+            // reply 一到收尾就把消息落进 store，同时清 streaming。
+            // 由于最后一条 spirit 消息与 streaming 气泡内容一致、位置一致，
+            // 用户不会看到闪。metadata 等整个 JSON 结束后再补写。
+            const appended = applySpiritReply(
+              selected.rosterId,
+              {
+                role: "spirit",
+                content: finalReply,
+              },
+              {},
+            );
+            spiritMessageIdRef.current = appended.id;
+            setStreamingReply("");
+            setReplyStreamDone(false);
+            setIsFinalizingMeta(true);
           },
         },
       );
-      setStreamingReply("");
-      applySpiritReply(
-        selected.rosterId,
-        {
-          role: "spirit",
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current);
+        rafHandleRef.current = null;
+      }
+      pendingChunkRef.current = null;
+
+      // metadata 补写；若因为 stream 未触发 onReplyComplete（例如非流式回退），
+      // 再兜底 append 一次消息。
+      if (spiritMessageIdRef.current) {
+        updateSpiritMessage(selected.rosterId, spiritMessageIdRef.current, {
           content: result.reply,
           xpGranted: result.xpGranted,
-        },
-        {
+        });
+        updateSpiritMeta(selected.rosterId, {
           mood: result.mood,
           bond: result.bond,
           memorySummary: result.memorySummary,
@@ -185,8 +270,30 @@ export const SpiritChatScreen: React.FC = () => {
           promises: result.promises,
           lastSuggestedAction: result.lastSuggestedAction,
           triggerEvent: result.triggerEvent,
-        },
-      );
+        });
+      } else {
+        applySpiritReply(
+          selected.rosterId,
+          {
+            role: "spirit",
+            content: result.reply,
+            xpGranted: result.xpGranted,
+          },
+          {
+            mood: result.mood,
+            bond: result.bond,
+            memorySummary: result.memorySummary,
+            playerFacts: result.playerFacts,
+            promises: result.promises,
+            lastSuggestedAction: result.lastSuggestedAction,
+            triggerEvent: result.triggerEvent,
+          },
+        );
+      }
+      setStreamingReply("");
+      setReplyStreamDone(false);
+      setIsFinalizingMeta(false);
+      spiritMessageIdRef.current = null;
 
       if (result.xpGranted && result.xpGranted > 0) {
         updateCharacter(
@@ -195,7 +302,15 @@ export const SpiritChatScreen: React.FC = () => {
         );
       }
     } catch (err) {
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current);
+        rafHandleRef.current = null;
+      }
+      pendingChunkRef.current = null;
       setStreamingReply("");
+      setReplyStreamDone(false);
+      setIsFinalizingMeta(false);
+      spiritMessageIdRef.current = null;
       setError(err instanceof Error ? err.message : "词灵暂时没有回应。");
     } finally {
       setIsSending(false);
@@ -240,55 +355,35 @@ export const SpiritChatScreen: React.FC = () => {
               SPIRIT LOUNGE
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {roster.slice(0, 8).map((char) => {
-              const active = char.rosterId === selected.rosterId;
-              return (
-                <button
-                  key={char.rosterId}
-                  type="button"
-                  onClick={() => setOpenRosterId(char.rosterId)}
-                  className="flex items-center gap-2 rounded border px-3 py-1.5 text-[11px] font-bold tracking-widest transition-all"
-                  style={{
-                    borderColor: active ? themeColor : "rgba(102,252,241,0.25)",
-                    color: active ? themeColor : "#8a8d91",
-                    background: active
-                      ? `${themeColor}18`
-                      : "rgba(11,12,16,0.55)",
-                    boxShadow: active ? `0 0 10px ${themeColor}33` : "none",
-                  }}
-                >
-                  <CharacterAvatar
-                    imageUrl={char.imageUrl}
-                    name={char.name}
-                    themeColor={themeColor}
-                    className="h-6 w-6 shrink-0 rounded"
-                    iconSize={14}
-                  />
-                  {char.name}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <div className="grid min-h-0 flex-1 items-stretch gap-4 lg:grid-cols-12">
-          <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30 lg:col-span-4 lg:flex xl:col-span-3">
+          <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto scrollbar-hide lg:col-span-4 lg:flex xl:col-span-3">
             <div
-              className="group relative overflow-hidden rounded-2xl border bg-[#0B0C10] scanlines transition-all"
+              className="group relative shrink-0 overflow-hidden rounded-2xl border bg-[#0B0C10] scanlines transition-all"
               style={{
                 borderColor: `${themeColor}aa`,
                 boxShadow: `0 0 24px ${themeColor}22`,
+                minHeight: "50%",
               }}
             >
               <div className="aspect-[3/4] w-full">
-                <CharacterAvatar
-                  imageUrl={selected.imageUrl}
-                  name={selected.name}
-                  themeColor={themeColor}
-                  className="h-full w-full transition-transform duration-700 group-hover:scale-105"
-                  iconSize={96}
-                />
+                {isSelectedRecruiting ? (
+                  <ChatRecruitLoading
+                    themeColor={themeColor}
+                    stage={selected.recruitLock?.stage ?? 0}
+                    failed={selected.recruitLock?.status === "failed"}
+                    error={selected.recruitLock?.error}
+                  />
+                ) : (
+                  <CharacterAvatar
+                    imageUrl={selected.imageUrl}
+                    name={selected.name}
+                    themeColor={themeColor}
+                    className="h-full w-full transition-transform duration-700 group-hover:scale-105"
+                    iconSize={96}
+                  />
+                )}
               </div>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#05070A] via-[#05070A]/92 to-transparent p-4 pt-10">
                 <div
@@ -298,7 +393,11 @@ export const SpiritChatScreen: React.FC = () => {
                     textShadow: `0 0 12px ${themeColor}`,
                   }}
                 >
-                  {selected.name}
+                  {isSelectedRecruiting
+                    ? selected.recruitLock?.status === "failed"
+                      ? "创造失败"
+                      : "创造中"
+                    : selected.name}
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-[10px] tracking-widest text-[#C5C6C7]">
                   <span className="rounded bg-black/50 px-1.5 py-0.5 border border-white/10">
@@ -336,8 +435,8 @@ export const SpiritChatScreen: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
-              <div className="mb-5">
+            <div className="shrink-0 rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
+              <div className="mb-2">
                 <div className="mb-2 flex items-center justify-between text-[10px] tracking-[0.24em] text-[#8a8d91]">
                   <div className="flex items-center gap-1.5">
                     <Heart size={12} style={{ color: themeColor }} />
@@ -366,59 +465,88 @@ export const SpiritChatScreen: React.FC = () => {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <InfoBlock
-                  icon={<Brain size={14} />}
-                  title="长期记忆"
-                  color={themeColor}
-                  empty="还没有形成稳定记忆。"
-                  items={chat.memorySummary ? [chat.memorySummary] : []}
-                />
-                <InfoBlock
-                  icon={<BookOpen size={14} />}
-                  title="关于你"
-                  color="#66FCF1"
-                  empty="词灵还不了解你。"
-                  items={chat.playerFacts}
-                />
-                <InfoBlock
-                  icon={<Sparkles size={14} />}
-                  title="约定"
-                  color="#FFD700"
-                  empty="还没有约定。"
-                  items={chat.promises}
-                />
-
-                {chat.lastSuggestedAction && (
-                  <div className="rounded border border-[#FFD700]/40 bg-[#0B0C10]/60 p-3 transition-colors hover:border-[#FFD700]/60">
-                    <div className="text-[10px] font-black tracking-[0.26em] text-[#FFD700] flex items-center gap-1.5">
-                      <Zap size={12} />
-                      它想做的事
-                    </div>
-                    <div className="mt-2 text-xs leading-relaxed text-[#C5C6C7]">
-                      {chat.lastSuggestedAction}
-                    </div>
-                  </div>
+              <button
+                type="button"
+                onClick={() => setIsInfoExpanded(!isInfoExpanded)}
+                className="mt-1 flex w-full items-center justify-center gap-1 py-1 text-[10px] tracking-widest text-[#8a8d91] transition-colors hover:text-[#66FCF1]"
+              >
+                {isInfoExpanded ? (
+                  <>
+                    <ChevronUp size={14} /> 收起档案
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown size={14} /> 展开档案
+                  </>
                 )}
+              </button>
 
-                {spirit?.worldAnchors?.length ? (
-                  <div className="rounded border border-[#45A29E]/30 bg-[#0B0C10]/55 p-3">
-                    <div className="text-[10px] font-black tracking-[0.26em] text-[#66FCF1]">
-                      世界锚点
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {spirit.worldAnchors.map((anchor, index) => (
-                        <div
-                          key={index}
-                          className="text-[11px] leading-relaxed text-[#C5C6C7]"
-                        >
-                          <span className="text-[#66FCF1]">▸</span> {anchor}
+              <AnimatePresence initial={false}>
+                {isInfoExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-4 pt-3">
+                      <InfoBlock
+                        icon={<Brain size={14} />}
+                        title="长期记忆"
+                        color={themeColor}
+                        empty="还没有形成稳定记忆。"
+                        items={chat.memorySummary ? [chat.memorySummary] : []}
+                      />
+                      <InfoBlock
+                        icon={<BookOpen size={14} />}
+                        title="关于你"
+                        color="#66FCF1"
+                        empty="词灵还不了解你。"
+                        items={chat.playerFacts}
+                      />
+                      <InfoBlock
+                        icon={<Sparkles size={14} />}
+                        title="约定"
+                        color="#FFD700"
+                        empty="还没有约定。"
+                        items={chat.promises}
+                      />
+
+                      {chat.lastSuggestedAction && (
+                        <div className="rounded border border-[#FFD700]/40 bg-[#0B0C10]/60 p-3 transition-colors hover:border-[#FFD700]/60">
+                          <div className="text-[10px] font-black tracking-[0.26em] text-[#FFD700] flex items-center gap-1.5">
+                            <Zap size={12} />
+                            它想做的事
+                          </div>
+                          <div className="mt-2 text-xs leading-relaxed text-[#C5C6C7]">
+                            {chat.lastSuggestedAction}
+                          </div>
                         </div>
-                      ))}
+                      )}
+
+                      {spirit?.worldAnchors?.length ? (
+                        <div className="rounded border border-[#45A29E]/30 bg-[#0B0C10]/55 p-3">
+                          <div className="text-[10px] font-black tracking-[0.26em] text-[#66FCF1]">
+                            世界锚点
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {spirit.worldAnchors.map((anchor, index) => (
+                              <div
+                                key={index}
+                                className="text-[11px] leading-relaxed text-[#C5C6C7]"
+                              >
+                                <span className="text-[#66FCF1]">▸</span>{" "}
+                                {anchor}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
-                ) : null}
-              </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </aside>
 
@@ -455,6 +583,72 @@ export const SpiritChatScreen: React.FC = () => {
                   "radial-gradient(ellipse at top, rgba(255,255,255,0.04), transparent 60%)",
               }}
             />
+
+            <div className="relative z-10 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-[#45A29E]/25 bg-[#0B0C10]/40 px-5 py-2.5 backdrop-blur-md scrollbar-hide">
+              {roster.map((char) => {
+                const active = char.rosterId === selected.rosterId;
+                const isRecruiting = isRosterCharacterRecruitLocked(char);
+                const isFailed =
+                  isRecruiting && char.recruitLock?.status === "failed";
+                return (
+                  <button
+                    key={char.rosterId}
+                    type="button"
+                    onClick={() => setOpenRosterId(char.rosterId)}
+                    className="flex shrink-0 items-center gap-2 rounded border px-3 py-1.5 text-[11px] font-bold tracking-widest transition-all"
+                    style={{
+                      borderColor: active
+                        ? themeColor
+                        : "rgba(102,252,241,0.25)",
+                      color: active ? themeColor : "#8a8d91",
+                      background: active
+                        ? `${themeColor}18`
+                        : "rgba(11,12,16,0.55)",
+                      boxShadow: active ? `0 0 10px ${themeColor}33` : "none",
+                    }}
+                  >
+                    {isRecruiting ? (
+                      <span
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
+                        style={{
+                          background: "rgba(11,12,16,0.7)",
+                          border: `1px solid ${isFailed ? "#FF6B9D" : themeColor}55`,
+                        }}
+                      >
+                        {isFailed ? (
+                          <RotateCcw size={11} style={{ color: "#FF6B9D" }} />
+                        ) : (
+                          <motion.span
+                            animate={{ rotate: 360 }}
+                            transition={{
+                              duration: 1,
+                              repeat: Infinity,
+                              ease: "linear",
+                            }}
+                            style={{ display: "inline-flex" }}
+                          >
+                            <Loader2 size={12} style={{ color: themeColor }} />
+                          </motion.span>
+                        )}
+                      </span>
+                    ) : (
+                      <CharacterAvatar
+                        imageUrl={char.imageUrl}
+                        name={char.name}
+                        themeColor={themeColor}
+                        className="h-6 w-6 shrink-0 rounded"
+                        iconSize={14}
+                      />
+                    )}
+                    {isRecruiting
+                      ? isFailed
+                        ? "创造失败"
+                        : "创造中"
+                      : char.name}
+                  </button>
+                );
+              })}
+            </div>
 
             <div className="relative z-10 flex shrink-0 items-center justify-between border-b border-[#45A29E]/25 bg-[#0B0C10]/55 px-5 py-3 backdrop-blur-md">
               <div className="flex items-center gap-3">
@@ -498,6 +692,7 @@ export const SpiritChatScreen: React.FC = () => {
 
             <div
               ref={scrollRef}
+              onScroll={handleScroll}
               className="relative z-10 flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30"
             >
               {chat.messages.length === 0 ? (
@@ -523,15 +718,27 @@ export const SpiritChatScreen: React.FC = () => {
               ) : (
                 <div className="space-y-5">
                   <AnimatePresence initial={false}>
-                    {chat.messages.map((message) => (
-                      <ChatBubble
-                        key={message.id}
-                        message={message}
-                        themeColor={themeColor}
-                        avatar={selected.imageUrl}
-                        name={selected.name}
-                      />
-                    ))}
+                    {chat.messages.map((message, idx) => {
+                      // 若正在流式，最后一条 spirit 消息由 streaming 气泡代为呈现，
+                      // 避免"流完瞬间"两个气泡同时存在导致的淡入淡出闪烁。
+                      const isLast = idx === chat.messages.length - 1;
+                      if (
+                        isLast &&
+                        streamingReply &&
+                        message.role === "spirit"
+                      ) {
+                        return null;
+                      }
+                      return (
+                        <ChatBubble
+                          key={message.id}
+                          message={message}
+                          themeColor={themeColor}
+                          avatar={selected.imageUrl}
+                          name={selected.name}
+                        />
+                      );
+                    })}
 
                     {chat.triggerEvent && !isSending && (
                       <motion.div
@@ -602,11 +809,11 @@ export const SpiritChatScreen: React.FC = () => {
                         themeColor={themeColor}
                         avatar={selected.imageUrl}
                         name={selected.name}
-                        streaming
+                        streaming={!replyStreamDone}
                       />
                     )}
 
-                    {isSending && !streamingReply && (
+                    {isSending && !streamingReply && !isFinalizingMeta && (
                       <motion.div
                         key="typing"
                         initial={{ opacity: 0, y: 8, scale: 0.95 }}
@@ -620,6 +827,19 @@ export const SpiritChatScreen: React.FC = () => {
                         <span className="animate-pulse">
                           {selected.name} 正在组织语言...
                         </span>
+                      </motion.div>
+                    )}
+
+                    {isSending && isFinalizingMeta && (
+                      <motion.div
+                        key="finalizing"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="flex items-center gap-2 pl-12 text-[10px] tracking-widest text-[#8a8d91]/70"
+                      >
+                        <Loader2 size={11} className="animate-spin" />
+                        <span>整理记忆中...</span>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -721,6 +941,144 @@ const MiniStat: React.FC<{
   </div>
 );
 
+const ChatRecruitLoading: React.FC<{
+  themeColor: string;
+  stage: number;
+  failed: boolean;
+  error?: string;
+}> = ({ themeColor, stage, failed, error }) => {
+  const total = RECRUIT_STAGE_COUNT;
+  const safeStage = Math.min(total - 1, Math.max(0, stage));
+  const step = LOADING_STEPS[safeStage] ?? LOADING_STEPS[0];
+  const Icon = step.icon;
+  const progressPct = Math.round(((safeStage + 1) / total) * 100);
+  const accent = failed ? "#FF6B9D" : themeColor;
+
+  return (
+    <div
+      className="relative h-full w-full overflow-hidden"
+      style={{
+        background: `radial-gradient(ellipse at 50% 40%, ${accent}18 0%, rgba(11,12,16,0.95) 55%, #05070A 100%)`,
+      }}
+    >
+      {/* 旋转魔法阵 */}
+      {!failed && (
+        <>
+          <motion.div
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-center"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 24, repeat: Infinity, ease: "linear" }}
+          >
+            <div
+              className="h-[68%] w-[68%] rounded-full border-2 border-dashed"
+              style={{ borderColor: `${accent}55` }}
+            />
+          </motion.div>
+          <motion.div
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-center"
+            animate={{ rotate: -360 }}
+            transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
+          >
+            <div
+              className="h-[52%] w-[52%] rounded-full border"
+              style={{ borderColor: `${accent}44` }}
+            />
+          </motion.div>
+        </>
+      )}
+
+      {/* 中心图标 */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {failed ? (
+          <div
+            className="flex h-16 w-16 items-center justify-center rounded-full border-2"
+            style={{
+              borderColor: accent,
+              boxShadow: `0 0 24px ${accent}66`,
+              background: `${accent}18`,
+            }}
+          >
+            <RotateCcw size={26} style={{ color: accent }} />
+          </div>
+        ) : (
+          <motion.div
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+            className="flex h-20 w-20 items-center justify-center rounded-full border-2"
+            style={{
+              borderColor: accent,
+              boxShadow: `0 0 32px ${accent}77, inset 0 0 22px ${accent}55`,
+              background: `radial-gradient(circle at 30% 30%, ${accent}44, rgba(0,0,0,0.4) 70%)`,
+            }}
+          >
+            <Icon size={30} style={{ color: accent }} />
+          </motion.div>
+        )}
+      </div>
+
+      {/* 底部进度信息（放在头像盒外部的名称 gradient 之上以留白）*/}
+      <div className="absolute inset-x-4 bottom-24 flex flex-col items-center gap-2">
+        <div
+          className="text-[10px] font-black tracking-[0.3em]"
+          style={{
+            color: accent,
+            textShadow: `0 0 8px ${accent}88`,
+          }}
+        >
+          {failed ? "创造失败" : step.text.toUpperCase()}
+        </div>
+        {!failed && (
+          <div className="text-[10px] text-[#8a8d91] text-center leading-relaxed">
+            {step.detail}
+          </div>
+        )}
+        {failed && error && (
+          <div className="line-clamp-2 text-center text-[10px] leading-relaxed text-[#FF6B9D]/80">
+            {error}
+          </div>
+        )}
+        <div className="mt-1 flex w-full items-center gap-2">
+          <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-black/60 border border-white/5">
+            <motion.div
+              className="h-full rounded-full"
+              style={{
+                background: `linear-gradient(90deg, ${accent}, #FFD700)`,
+                boxShadow: `0 0 8px ${accent}88`,
+              }}
+              initial={false}
+              animate={{ width: failed ? "100%" : `${progressPct}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            />
+          </div>
+          <span
+            className="text-[9px] font-black tabular-nums"
+            style={{ color: accent }}
+          >
+            {failed ? "ERR" : `${progressPct}%`}
+          </span>
+        </div>
+        {!failed && (
+          <div className="flex w-full items-center justify-between gap-1">
+            {LOADING_STEPS.map((s, i) => (
+              <div
+                key={i}
+                className="h-[3px] flex-1 rounded-full transition-colors"
+                style={{
+                  background:
+                    i <= safeStage ? accent : "rgba(255,255,255,0.08)",
+                  boxShadow: i === safeStage ? `0 0 6px ${accent}` : undefined,
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ChatBubble: React.FC<{
   message: SpiritChatMessage;
   themeColor: string;
@@ -729,11 +1087,14 @@ const ChatBubble: React.FC<{
   streaming?: boolean;
 }> = ({ message, themeColor, avatar, name, streaming }) => {
   const isPlayer = message.role === "player";
+  // spirit 消息始终由流式先显示后落定，落定时不需要额外淡入/淡出。
+  const skipAnim = streaming || !isPlayer;
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={skipAnim ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
+      exit={skipAnim ? { opacity: 1 } : { opacity: 0 }}
+      transition={skipAnim ? { duration: 0 } : undefined}
       className={`flex gap-3 ${isPlayer ? "justify-end" : "justify-start"}`}
     >
       {!isPlayer && (
@@ -770,7 +1131,7 @@ const ChatBubble: React.FC<{
           )}
         </div>
         <div
-          className={`mt-1 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
+          className={`mt-2 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
         >
           {isPlayer ? "YOU" : name}
           {!streaming && <> · {formatTime(message.createdAt)}</>}

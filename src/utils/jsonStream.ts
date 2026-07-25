@@ -84,6 +84,25 @@ export const extractPartialStringField = (
 };
 
 /**
+ * 与 extractPartialStringField 相同，但同时返回该字段字符串是否已经闭合
+ * （即模型已经写完收尾引号）。用于识别 reply 已经流完、后面只剩 JSON 尾部字段。
+ */
+export const extractPartialStringFieldWithStatus = (
+  raw: string,
+  fieldName: string,
+): { value: string; isComplete: boolean } => {
+  const re = new RegExp(
+    `"${escapeFieldName(fieldName)}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)("?)`,
+  );
+  const match = raw.match(re);
+  if (!match) return { value: "", isComplete: false };
+  return {
+    value: unescapeJsonString(match[1]),
+    isComplete: match[2] === '"',
+  };
+};
+
+/**
  * 从尚未结束的 JSON 文本中尽力抽取某个数组字段里已经写出的对象。
  * itemParser 接收单个对象的原始字符串（不含外层花括号）以及该对象是否已经结束。
  */

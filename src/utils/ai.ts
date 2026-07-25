@@ -213,14 +213,14 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     };
   });
 
-  let hp = clampInt(data.hp, 100, 1100, 320);
-  let attack = clampInt(data.attack, 15, 170, 62);
-  let defense = clampInt(data.defense, 0, 110, 30);
-  let speed = clampInt(data.speed, 1, 160, 65);
+  const hp = clampInt(data.hp, 100, 1100, 320);
+  const attack = clampInt(data.attack, 15, 170, 62);
+  const defense = clampInt(data.defense, 0, 110, 30);
+  const speed = clampInt(data.speed, 1, 160, 65);
   const spiritProfile = normalizeSpiritProfile(data.spiritProfile);
 
   // 先构建基础角色数据用于计算战力
-  let baseChar: CharacterData = {
+  const baseChar: CharacterData = {
     ...data,
     name: String(data.name || "未命名角色"),
     hp,

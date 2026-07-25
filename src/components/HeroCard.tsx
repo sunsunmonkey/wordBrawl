@@ -41,8 +41,8 @@ const sizeConfig = {
     innerPad: "p-1.5",
     avatar: "h-[168px]",
     rarity: "text-[10px] px-1.5 py-0.5",
-    verticalName: "block text-[10px]",
-    bottomName: "hidden",
+    verticalName: "hidden",
+    bottomName: "block text-[13px]",
     levelBadge: "w-8 h-8 text-[9px]",
     starSize: 9,
     stats: "text-[9px] gap-2",
@@ -56,8 +56,8 @@ const sizeConfig = {
     innerPad: "p-2",
     avatar: "h-56",
     rarity: "text-xs px-2 py-1",
-    verticalName: "block text-xs",
-    bottomName: "hidden",
+    verticalName: "hidden",
+    bottomName: "block text-base",
     levelBadge: "w-11 h-11 text-[11px]",
     starSize: 12,
     stats: "text-[11px] gap-3",
@@ -75,32 +75,35 @@ const RARITY_LEVELS: Record<Rarity, number> = {
   UR: 100,
 };
 
-const CornerOrnament: React.FC<{ color: string; position: string }> = ({
+type CornerKey = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+const CORNER_STYLES: Record<CornerKey, { pos: string; rotate: number }> = {
+  "top-left": { pos: "top-1 left-1", rotate: 0 },
+  "top-right": { pos: "top-1 right-1", rotate: 90 },
+  "bottom-right": { pos: "bottom-1 right-1", rotate: 180 },
+  "bottom-left": { pos: "bottom-1 left-1", rotate: 270 },
+};
+
+const CornerOrnament: React.FC<{ color: string; corner: CornerKey }> = ({
   color,
-  position,
+  corner,
 }) => {
-  const rotations: Record<string, number> = {
-    "top-left": 0,
-    "top-right": 90,
-    "bottom-right": 180,
-    "bottom-left": 270,
-  };
+  const { pos, rotate } = CORNER_STYLES[corner];
   return (
     <svg
-      className={`absolute w-5 h-5 ${position} z-20`}
+      className={`absolute w-3.5 h-3.5 ${pos} z-20 pointer-events-none`}
       style={{
         color,
-        transform: `rotate(${rotations[position]}deg)`,
-        filter: `drop-shadow(0 0 4px ${color})`,
+        transform: `rotate(${rotate}deg)`,
+        filter: `drop-shadow(0 0 3px ${color})`,
       }}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.2"
+      strokeWidth="1.5"
     >
-      <path d="M2 2 L2 10 L4 10 L4 4 L10 4 L10 2 Z" />
-      <path d="M8 2 L2 8" strokeOpacity="0.4" />
-      <circle cx="5" cy="5" r="1.2" fill="currentColor" stroke="none" />
+      <path d="M2 2 L2 10 M2 2 L10 2" strokeLinecap="round" />
+      <circle cx="3.5" cy="3.5" r="1" fill="currentColor" stroke="none" />
     </svg>
   );
 };
@@ -118,7 +121,10 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   const config = RARITY_CONFIGS[rarity];
   const sizeCfg = sizeConfig[size];
   const power = calculatePowerScore(character);
-  const level = RARITY_LEVELS[rarity];
+  const level =
+    typeof character.level === "number" && character.level > 0
+      ? character.level
+      : RARITY_LEVELS[rarity];
   const ultimateSkill = character.skills.find(
     (s) => s.isUltimate || s.type === "ultimate",
   );
@@ -128,7 +134,16 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   const displaySkill = ultimateSkill || normalSkill;
   const quote = character.spiritProfile?.catchphrases?.[0];
 
-  const tier = rarity === "UR" ? 4 : rarity === "SSR" ? 3 : rarity === "SR" ? 2 : rarity === "R" ? 1 : 0;
+  const tier =
+    rarity === "UR"
+      ? 4
+      : rarity === "SSR"
+        ? 3
+        : rarity === "SR"
+          ? 2
+          : rarity === "R"
+            ? 1
+            : 0;
   const borderAlpha = selected ? 0.95 : 0.55 + tier * 0.11;
   const glowSize = 10 + tier * 10;
   const glowIntensity = 0.2 + tier * 0.14;
@@ -204,10 +219,10 @@ export const HeroCard: React.FC<HeroCardProps> = ({
         />
       </div>
 
-      <CornerOrnament color={cornerColor} position="top-1.5 left-1.5" />
-      <CornerOrnament color={cornerColor} position="top-1.5 right-1.5" />
-      <CornerOrnament color={cornerColor} position="bottom-1.5 right-1.5" />
-      <CornerOrnament color={cornerColor} position="bottom-1.5 left-1.5" />
+      <CornerOrnament color={cornerColor} corner="top-left" />
+      <CornerOrnament color={cornerColor} corner="top-right" />
+      <CornerOrnament color={cornerColor} corner="bottom-right" />
+      <CornerOrnament color={cornerColor} corner="bottom-left" />
 
       {/* 顶部高光 */}
       {(rarity === "UR" || rarity === "SSR") && (
@@ -244,7 +259,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
 
       <div className={`relative ${sizeCfg.innerPad} h-full flex flex-col`}>
         {/* 顶部 header：稀有度 + 竖排名字 + 职业图标 */}
-        <div className="flex items-start justify-between mb-1.5">
+        <div className="flex items-start justify-between mb-1.5 px-3">
           <div className="flex flex-col items-start gap-1 z-10">
             <div
               className={`${sizeCfg.rarity} rounded font-black tracking-wider`}
@@ -337,7 +352,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
             }}
           />
 
-          {/* sm 尺寸底部名字 */}
+          {/* 角色名字（横排主标题） */}
           <div
             className={`${sizeCfg.bottomName} font-display font-bold text-center truncate mb-1`}
             style={{
@@ -411,10 +426,30 @@ export const HeroCard: React.FC<HeroCardProps> = ({
               }}
             >
               {[
-                { icon: Zap, value: character.attack, color: "#FBBF24", label: "攻击" },
-                { icon: Shield, value: character.defense, color: "#60A5FA", label: "防御" },
-                { icon: Heart, value: character.maxHp, color: "#F472B6", label: "生命" },
-                { icon: Gauge, value: character.speed, color: "#4ADE80", label: "速度" },
+                {
+                  icon: Zap,
+                  value: character.attack,
+                  color: "#FBBF24",
+                  label: "攻击",
+                },
+                {
+                  icon: Shield,
+                  value: character.defense,
+                  color: "#60A5FA",
+                  label: "防御",
+                },
+                {
+                  icon: Heart,
+                  value: character.maxHp,
+                  color: "#F472B6",
+                  label: "生命",
+                },
+                {
+                  icon: Gauge,
+                  value: character.speed,
+                  color: "#4ADE80",
+                  label: "速度",
+                },
               ].map(({ icon: Icon, value, color, label }, i) => (
                 <div
                   key={i}
@@ -464,7 +499,11 @@ export const HeroCard: React.FC<HeroCardProps> = ({
                   {displaySkill.name}
                   {displaySkill.damageMultiplier > 0 && (
                     <span className="ml-1 opacity-70">
-                      Lv.{Math.min(10, Math.max(1, Math.floor(displaySkill.damageMultiplier)))}
+                      Lv.
+                      {Math.min(
+                        10,
+                        Math.max(1, Math.floor(displaySkill.damageMultiplier)),
+                      )}
                     </span>
                   )}
                 </div>
@@ -486,7 +525,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           {/* 角色语录 */}
           {quote && sizeCfg.quote !== "hidden" && (
             <div
-              className="mt-auto text-[8px] italic text-center px-1 py-1 rounded"
+              className="mt-auto text-[8px] italic text-center px-4 py-1 rounded truncate"
               style={{
                 color: config.secondaryColor,
                 background: "rgba(0,0,0,0.2)",

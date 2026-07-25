@@ -56,6 +56,26 @@ interface SpiritChatStore {
         | "triggerEvent"
       >
     >,
+  ) => SpiritChatMessage;
+  updateSpiritMessage: (
+    rosterId: string,
+    messageId: string,
+    patch: Partial<Pick<SpiritChatMessage, "content" | "xpGranted">>,
+  ) => void;
+  updateSpiritMeta: (
+    rosterId: string,
+    updates: Partial<
+      Pick<
+        SpiritChatRecord,
+        | "memorySummary"
+        | "mood"
+        | "bond"
+        | "playerFacts"
+        | "promises"
+        | "lastSuggestedAction"
+        | "triggerEvent"
+      >
+    >,
   ) => void;
   clearChat: (rosterId: string) => void;
 }
@@ -198,6 +218,81 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                   updates.triggerEvent !== undefined
                     ? updates.triggerEvent
                     : current.triggerEvent,
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+        return message;
+      },
+      updateSpiritMessage: (rosterId, messageId, patch) => {
+        set((state) => {
+          const current = state.chats[rosterId];
+          if (!current) return state;
+          const normalized = normalizeRecord(rosterId, current);
+          const messages = normalized.messages.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  content:
+                    patch.content !== undefined
+                      ? patch.content.trim()
+                      : m.content,
+                  xpGranted:
+                    patch.xpGranted !== undefined
+                      ? patch.xpGranted
+                      : m.xpGranted,
+                }
+              : m,
+          );
+          return {
+            chats: {
+              ...state.chats,
+              [rosterId]: { ...normalized, messages, updatedAt: Date.now() },
+            },
+          };
+        });
+      },
+      updateSpiritMeta: (rosterId, updates) => {
+        set((state) => {
+          const current = state.chats[rosterId];
+          if (!current) return state;
+          const normalized = normalizeRecord(rosterId, current);
+          return {
+            chats: {
+              ...state.chats,
+              [rosterId]: {
+                ...normalized,
+                memorySummary:
+                  updates.memorySummary !== undefined
+                    ? String(updates.memorySummary).slice(0, 600)
+                    : normalized.memorySummary,
+                mood:
+                  updates.mood !== undefined
+                    ? String(updates.mood).slice(0, 24)
+                    : normalized.mood,
+                bond:
+                  updates.bond !== undefined
+                    ? Math.min(100, Math.max(0, Math.round(updates.bond)))
+                    : normalized.bond,
+                playerFacts:
+                  updates.playerFacts !== undefined
+                    ? normalizeStringList(updates.playerFacts, MAX_FACTS)
+                    : normalized.playerFacts,
+                promises:
+                  updates.promises !== undefined
+                    ? normalizeStringList(updates.promises, MAX_PROMISES)
+                    : normalized.promises,
+                lastSuggestedAction:
+                  updates.lastSuggestedAction !== undefined
+                    ? updates.lastSuggestedAction
+                      ? String(updates.lastSuggestedAction).slice(0, 80)
+                      : undefined
+                    : normalized.lastSuggestedAction,
+                triggerEvent:
+                  updates.triggerEvent !== undefined
+                    ? updates.triggerEvent
+                    : normalized.triggerEvent,
                 updatedAt: Date.now(),
               },
             },

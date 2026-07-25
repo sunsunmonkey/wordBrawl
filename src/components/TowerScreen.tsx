@@ -12,6 +12,7 @@ import {
   Bot,
 } from "lucide-react";
 import { CharacterAvatar } from "./CharacterAvatar";
+import { SpiritCard } from "./SpiritCard";
 import { useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
@@ -32,7 +33,6 @@ import {
 import {
   EVOLUTION_STAT_BONUS,
   evolutionLabel,
-  evolutionStars,
   getNextEvolutionProgress,
   getTowerLayerInAscension,
   towerAscensionLabel,
@@ -327,20 +327,20 @@ export const TowerScreen: React.FC = () => {
                       {roster.length} / 24
                     </span>
                   </div>
-                  <div className="max-h-[440px] overflow-y-auto pr-1">
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                  <div className="max-h-[440px] overflow-y-auto -mx-2 px-2">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 py-4">
                       {roster.map((char) => {
                         const isActive = char.rosterId === selectedRosterId;
-                        const evolutionLocked =
-                          isRosterCharacterEvolutionLocked(char);
-                        const recruitLocked =
-                          isRosterCharacterRecruitLocked(char);
                         const progress = xpProgress(char.level, char.xp);
                         const nextEvo = getNextEvolutionProgress(
                           char.level,
                           char.xp,
                           char.evolutionStage,
                         );
+                        const evolutionLocked =
+                          isRosterCharacterEvolutionLocked(char);
+                        const recruitLocked =
+                          isRosterCharacterRecruitLocked(char);
                         const nextEvoText = recruitLocked
                           ? char.recruitLock?.status === "failed"
                             ? "创造失败"
@@ -357,90 +357,57 @@ export const TowerScreen: React.FC = () => {
                         const highestLayer =
                           char.tower.highestEndlessLayer ??
                           char.tower.highestCleared;
+                        const badges = [
+                          {
+                            label: `Lv.${char.level}`,
+                            title: `等级 ${char.level}`,
+                          },
+                          {
+                            label: `L${highestLayer}`,
+                            color: "#66FCF1",
+                            title: `无尽塔最高 L${highestLayer}`,
+                          },
+                        ];
+                        const footerSlot = (
+                          <div className="flex flex-col gap-0.5">
+                            <div className="h-1 rounded bg-[#1F2833] overflow-hidden">
+                              <div
+                                className="h-full bg-[#FFD700]"
+                                style={{
+                                  width: `${Math.round(progress.ratio * 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[8px] text-[#8a8d91]">
+                              <span className="truncate">{nextEvoText}</span>
+                              <span className="tabular-nums shrink-0 text-[#FFD700]/80">
+                                {progress.need
+                                  ? `${progress.current}/${progress.need}`
+                                  : "MAX"}
+                              </span>
+                            </div>
+                          </div>
+                        );
                         return (
-                          <motion.button
+                          <SpiritCard
                             key={char.rosterId}
-                            type="button"
+                            character={char}
+                            size="sm"
+                            selected={isActive}
+                            topRightBadges={badges}
+                            footerSlot={footerSlot}
                             onClick={() => {
                               setSelectedRosterId(char.rosterId);
                               setSelectedLayer(char.tower.nextLayer || 1);
                             }}
-                            whileHover={{ y: -2 }}
-                            whileTap={{ scale: 0.97 }}
-                            className="group relative text-left rounded-lg overflow-hidden border bg-[#0B0C10]/80"
-                            style={{
-                              borderColor: isActive
-                                ? "#FFD700"
-                                : "rgba(255,215,0,0.22)",
-                              boxShadow: isActive
-                                ? "0 0 18px rgba(255,215,0,0.45)"
-                                : "none",
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setSelectedRosterId(char.rosterId);
+                                setSelectedLayer(char.tower.nextLayer || 1);
+                              }
                             }}
-                          >
-                            <div className="relative aspect-[4/3]">
-                              <CharacterAvatar
-                                imageUrl={char.imageUrl}
-                                name={char.name}
-                                themeColor="#FFD700"
-                                className="w-full h-full transition-transform group-hover:scale-105"
-                                iconSize={32}
-                              />
-                              {isActive && (
-                                <div className="absolute inset-0 border-2 border-[#FFD700] shadow-[inset_0_0_18px_rgba(255,215,0,0.35)]" />
-                              )}
-                              <div className="absolute top-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#FFD700]">
-                                Lv.{char.level}
-                              </div>
-                              {char.evolutionStage > 0 && (
-                                <div className="absolute top-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#FFD700]">
-                                  {"★".repeat(
-                                    evolutionStars(char.evolutionStage),
-                                  )}
-                                </div>
-                              )}
-                              <div className="absolute right-1.5 bottom-9 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-[#66FCF1]">
-                                L{highestLayer}
-                              </div>
-                              {(evolutionLocked || recruitLocked) && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/68">
-                                  <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
-                                    <Lock size={10} className="mr-1 inline" />
-                                    {recruitLocked
-                                      ? char.recruitLock?.status === "failed"
-                                        ? "创造失败"
-                                        : "创造中"
-                                      : "进化更新中"}
-                                  </div>
-                                </div>
-                              )}
-                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
-                                <div className="truncate text-xs font-black font-display text-[#FFD700]">
-                                  {char.name}
-                                </div>
-                                <div className="truncate text-[9px] text-[#C5C6C7]">
-                                  {evolutionLabel(char.evolutionStage)}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="p-2">
-                              <div className="h-1 rounded bg-[#1F2833] overflow-hidden">
-                                <div
-                                  className="h-full bg-[#FFD700]"
-                                  style={{
-                                    width: `${Math.round(progress.ratio * 100)}%`,
-                                  }}
-                                />
-                              </div>
-                              <div className="mt-1 flex items-center justify-between text-[9px] text-[#8a8d91] gap-2">
-                                <span className="truncate">{nextEvoText}</span>
-                                <span className="tabular-nums shrink-0 text-[#FFD700]/80">
-                                  {progress.need
-                                    ? `${progress.current}/${progress.need}`
-                                    : "MAX"}
-                                </span>
-                              </div>
-                            </div>
-                          </motion.button>
+                          />
                         );
                       })}
                     </div>

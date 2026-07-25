@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CharacterData, Skill, Rarity } from "./useGameStore";
+import type { CharacterData, Skill } from "./useGameStore";
 import { presetCharacters } from "../data/presetCharacters";
 
 /** 进化阶段：0 初始 / 1-6 为每 5 级一次的形态状态 */
@@ -25,8 +25,12 @@ export interface RecruitLock {
   status: "generating" | "failed";
   description: string;
   startedAt: number;
+  /** 生成阶段 0..4，对应 loadingSteps；用于 UI 进度条与阶段图标 */
+  stage?: number;
   error?: string;
 }
+
+export const RECRUIT_STAGE_COUNT = 5;
 
 export interface EvolutionReplay {
   stage: ActiveEvolutionStage;
@@ -243,6 +247,12 @@ const ensureGrowthFields = (
           : "generating",
       description: rawRecruitLock.description,
       startedAt: rawRecruitLock.startedAt,
+      stage:
+        typeof rawRecruitLock.stage === "number" &&
+        rawRecruitLock.stage >= 0 &&
+        rawRecruitLock.stage < RECRUIT_STAGE_COUNT
+          ? rawRecruitLock.stage
+          : 0,
       error: stale
         ? "后台生成已中断，请移除后重新创造。"
         : typeof rawRecruitLock.error === "string"
@@ -342,6 +352,8 @@ interface RosterStore {
   ) => RosterCharacter | null;
   failPendingRecruit: (rosterId: string, error: string) => void;
   retryPendingRecruit: (rosterId: string) => RosterCharacter | null;
+  /** 更新后台生成阶段（0..RECRUIT_STAGE_COUNT-1），驱动 UI 进度条 */
+  updateRecruitStage: (rosterId: string, stage: number) => void;
   removeCharacter: (rosterId: string) => void;
   /** 替换/更新整个 roster 角色记录 */
   updateCharacter: (
@@ -395,6 +407,7 @@ export const useRosterStore = create<RosterStore>()(
             status: "generating",
             description: sourceDescription,
             startedAt: Date.now(),
+            stage: 0,
           },
         });
 
@@ -471,6 +484,7 @@ export const useRosterStore = create<RosterStore>()(
             status: "generating" as const,
             description,
             startedAt: Date.now(),
+            stage: 0,
           },
         };
         set((state) => ({
@@ -479,6 +493,28 @@ export const useRosterStore = create<RosterStore>()(
           ),
         }));
         return revived;
+      },
+      updateRecruitStage: (rosterId, stage) => {
+        const clamped = Math.max(
+          0,
+          Math.min(RECRUIT_STAGE_COUNT - 1, Math.floor(stage)),
+        );
+        set((state) => ({
+          roster: state.roster.map((char) => {
+            if (char.rosterId !== rosterId) return char;
+            if (!char.recruitLock || char.recruitLock.status !== "generating") {
+              return char;
+            }
+            if ((char.recruitLock.stage ?? 0) === clamped) return char;
+            return {
+              ...char,
+              recruitLock: {
+                ...char.recruitLock,
+                stage: clamped,
+              },
+            };
+          }),
+        }));
       },
       removeCharacter: (rosterId) =>
         set((state) => ({

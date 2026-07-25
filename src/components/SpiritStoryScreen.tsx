@@ -23,8 +23,10 @@ import { ParticleField } from "./ParticleField";
 import { CharacterAvatar } from "./CharacterAvatar";
 import { useGameStore } from "../store/useGameStore";
 import {
+  isRosterCharacterRecruitLocked,
   isRosterCharacterUnavailable,
   useRosterStore,
+  RECRUIT_STAGE_COUNT,
   type RosterCharacter,
 } from "../store/useRosterStore";
 import {
@@ -34,8 +36,9 @@ import {
   useSpiritStoryStore,
   type SpiritStoryMessage,
 } from "../store/useSpiritStoryStore";
-import { requestSpiritStory, type SpiritStoryTurn } from "../utils/spiritStory";
+import { requestSpiritStory } from "../utils/spiritStory";
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
+import { LOADING_STEPS } from "./loadingSteps";
 
 const MAX_STORY_PARTICIPANTS = 10;
 const COLLAPSED_ROSTER_COUNT = 8;
@@ -70,12 +73,15 @@ export const SpiritStoryScreen: React.FC = () => {
   const availableRoster = roster.filter(
     (char) => !isRosterCharacterUnavailable(char),
   );
+  const recruitingRoster = roster.filter((char) =>
+    isRosterCharacterRecruitLocked(char),
+  );
+  const displayRoster = [...availableRoster, ...recruitingRoster];
 
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
-  const [streamingTurns, setStreamingTurns] = useState<SpiritStoryTurn[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Draft state (新建故事时使用)
@@ -121,7 +127,7 @@ export const SpiritStoryScreen: React.FC = () => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [activeRoom?.messages.length, isSending, streamingTurns]);
+  }, [activeRoom?.messages.length, isSending]);
 
   useEffect(() => {
     if (!isComposing) return;
@@ -207,7 +213,6 @@ export const SpiritStoryScreen: React.FC = () => {
 
     setError("");
     setInput("");
-    setStreamingTurns([]);
     const playerMessage = appendMessage(currentRoom.id, {
       role: "player",
       content: text,
@@ -224,13 +229,7 @@ export const SpiritStoryScreen: React.FC = () => {
         availableRoster,
         latestRoom,
         playerMessage.content,
-        {
-          onTurnsChunk: (turns) => {
-            setStreamingTurns(turns);
-          },
-        },
       );
-      setStreamingTurns([]);
       applyStoryTurn(
         currentRoom.id,
         result.turns.map((turn) => ({
@@ -249,7 +248,6 @@ export const SpiritStoryScreen: React.FC = () => {
         },
       );
     } catch (err) {
-      setStreamingTurns([]);
       setError(err instanceof Error ? err.message : "多人故事暂时没有回应。");
     } finally {
       setIsSending(false);
@@ -400,48 +398,168 @@ export const SpiritStoryScreen: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {availableRoster
+                {displayRoster
                   .slice(0, isRosterExpanded ? 24 : COLLAPSED_ROSTER_COUNT)
                   .map((char) => {
                     const active = activeIds.includes(char.rosterId);
+                    const isRecruiting = isRosterCharacterRecruitLocked(char);
+                    const isFailed =
+                      isRecruiting && char.recruitLock?.status === "failed";
+                    const stage = char.recruitLock?.stage ?? 0;
+                    const safeStage = Math.min(
+                      RECRUIT_STAGE_COUNT - 1,
+                      Math.max(0, stage),
+                    );
+                    const step = LOADING_STEPS[safeStage] ?? LOADING_STEPS[0];
+                    const StepIcon = step.icon;
+                    const progressPct = Math.round(
+                      ((safeStage + 1) / RECRUIT_STAGE_COUNT) * 100,
+                    );
+                    const accent = isFailed ? "#FF6B9D" : themeColor;
                     return (
                       <button
                         key={char.rosterId}
                         type="button"
-                        onClick={() => toggleParticipant(char.rosterId)}
-                        className="group overflow-hidden rounded-lg border bg-[#0B0C10]/80 text-left transition-all"
+                        onClick={() =>
+                          !isRecruiting && toggleParticipant(char.rosterId)
+                        }
+                        disabled={isRecruiting}
+                        className="group overflow-hidden rounded-lg border bg-[#0B0C10]/80 text-left transition-all disabled:cursor-not-allowed"
                         style={{
-                          borderColor: active
-                            ? themeColor
-                            : "rgba(102,252,241,0.22)",
+                          borderColor: isRecruiting
+                            ? `${accent}55`
+                            : active
+                              ? themeColor
+                              : "rgba(102,252,241,0.22)",
                           boxShadow: active
                             ? `0 0 14px ${themeColor}33`
                             : "none",
                         }}
                       >
                         <div className="relative aspect-[4/3] overflow-hidden bg-[#111827]">
-                          <CharacterAvatar
-                            imageUrl={char.imageUrl}
-                            name={char.name}
-                            themeColor={themeColor}
-                            className="h-full w-full transition-transform group-hover:scale-105"
-                            iconSize={36}
-                          />
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
-                            <div className="truncate text-xs font-black font-display text-[#C5C6C7]">
-                              {char.name}
+                          {isRecruiting ? (
+                            <div
+                              className="relative h-full w-full"
+                              style={{
+                                background: `radial-gradient(ellipse at 50% 45%, ${accent}22 0%, rgba(11,12,16,0.95) 60%, #05070A 100%)`,
+                              }}
+                            >
+                              {!isFailed && (
+                                <motion.div
+                                  aria-hidden
+                                  className="absolute inset-0 flex items-center justify-center"
+                                  animate={{ rotate: 360 }}
+                                  transition={{
+                                    duration: 18,
+                                    repeat: Infinity,
+                                    ease: "linear",
+                                  }}
+                                >
+                                  <div
+                                    className="h-[70%] w-[70%] rounded-full border border-dashed"
+                                    style={{ borderColor: `${accent}55` }}
+                                  />
+                                </motion.div>
+                              )}
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                {isFailed ? (
+                                  <div
+                                    className="flex h-10 w-10 items-center justify-center rounded-full border-2"
+                                    style={{
+                                      borderColor: accent,
+                                      background: `${accent}22`,
+                                      boxShadow: `0 0 12px ${accent}77`,
+                                    }}
+                                  >
+                                    <RotateCcw
+                                      size={16}
+                                      style={{ color: accent }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <motion.div
+                                    animate={{ scale: [1, 1.08, 1] }}
+                                    transition={{
+                                      duration: 1.6,
+                                      repeat: Infinity,
+                                      ease: "easeInOut",
+                                    }}
+                                    className="flex h-10 w-10 items-center justify-center rounded-full border-2"
+                                    style={{
+                                      borderColor: accent,
+                                      background: `radial-gradient(circle at 30% 30%, ${accent}44, rgba(0,0,0,0.4) 70%)`,
+                                      boxShadow: `0 0 14px ${accent}77, inset 0 0 8px ${accent}55`,
+                                    }}
+                                  >
+                                    <StepIcon
+                                      size={16}
+                                      style={{ color: accent }}
+                                    />
+                                  </motion.div>
+                                )}
+                              </div>
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
+                                <div
+                                  className="truncate text-[10px] font-black tracking-[0.2em]"
+                                  style={{ color: accent }}
+                                >
+                                  {isFailed ? "创造失败" : "创造中"}
+                                </div>
+                                <div className="mt-1 flex items-center gap-1">
+                                  <div className="h-[2px] flex-1 overflow-hidden rounded-full bg-black/70">
+                                    <motion.div
+                                      className="h-full rounded-full"
+                                      style={{
+                                        background: `linear-gradient(90deg, ${accent}, #FFD700)`,
+                                        boxShadow: `0 0 6px ${accent}88`,
+                                      }}
+                                      initial={false}
+                                      animate={{
+                                        width: isFailed
+                                          ? "100%"
+                                          : `${progressPct}%`,
+                                      }}
+                                      transition={{
+                                        duration: 0.5,
+                                        ease: "easeOut",
+                                      }}
+                                    />
+                                  </div>
+                                  <span
+                                    className="text-[8px] font-black tabular-nums"
+                                    style={{ color: accent }}
+                                  >
+                                    {isFailed ? "ERR" : `${progressPct}%`}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="truncate text-[9px] text-[#8a8d91]">
-                              Lv.{char.level} ·{" "}
-                              {evolutionLabel(char.evolutionStage)}
-                            </div>
-                          </div>
+                          ) : (
+                            <>
+                              <CharacterAvatar
+                                imageUrl={char.imageUrl}
+                                name={char.name}
+                                themeColor={themeColor}
+                                className="h-full w-full transition-transform group-hover:scale-105"
+                                iconSize={36}
+                              />
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-2">
+                                <div className="truncate text-xs font-black font-display text-[#C5C6C7]">
+                                  {char.name}
+                                </div>
+                                <div className="truncate text-[9px] text-[#8a8d91]">
+                                  Lv.{char.level} ·{" "}
+                                  {evolutionLabel(char.evolutionStage)}
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </button>
                     );
                   })}
               </div>
-              {availableRoster.length > COLLAPSED_ROSTER_COUNT && (
+              {displayRoster.length > COLLAPSED_ROSTER_COUNT && (
                 <button
                   type="button"
                   onClick={() => setIsRosterExpanded((v) => !v)}
@@ -453,8 +571,8 @@ export const SpiritStoryScreen: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <ChevronDown size={12} /> 展开全部 (
-                      {availableRoster.length})
+                      <ChevronDown size={12} /> 展开全部 ({displayRoster.length}
+                      )
                     </>
                   )}
                 </button>
@@ -631,27 +749,7 @@ export const SpiritStoryScreen: React.FC = () => {
                         themeColor={themeColor}
                       />
                     ))}
-                    {isSending &&
-                      streamingTurns.length > 0 &&
-                      streamingTurns.map((turn, idx) => (
-                        <StoryBubble
-                          key={`streaming-${idx}`}
-                          message={{
-                            id: `streaming-${idx}`,
-                            role: turn.role,
-                            content: turn.content,
-                            createdAt: Date.now(),
-                            speakerRosterId: turn.speakerRosterId,
-                            speakerName: turn.speakerName,
-                          }}
-                          allRoster={roster}
-                          activeRosterIds={activeRosterIdSet}
-                          themeColor={themeColor}
-                          streaming
-                        />
-                      ))}
-
-                    {isSending && streamingTurns.length === 0 && (
+                    {isSending && (
                       <motion.div
                         key="typing"
                         initial={{ opacity: 0, y: 8, scale: 0.95 }}

@@ -6,7 +6,10 @@ import type {
   SpiritChatMessage,
   SpiritChatRecord,
 } from "../store/useSpiritChatStore";
-import { extractPartialStringField, looksLikeJsonStart } from "./jsonStream";
+import {
+  extractPartialStringFieldWithStatus,
+  looksLikeJsonStart,
+} from "./jsonStream";
 
 export interface SpiritChatContext {
   recentBattle?: BattleSummary | null;
@@ -235,6 +238,7 @@ bond 是更新后的总羁绊值 0-100，可根据本轮互动微调，普通聊
 
 export interface SpiritChatStreamHandlers {
   onReplyChunk?: (partialReply: string) => void;
+  onReplyComplete?: (finalReply: string) => void;
 }
 
 export async function requestSpiritChat(
@@ -256,12 +260,7 @@ export async function requestSpiritChat(
 
   const apiMode = cfg.apiMode || "custom";
   if (apiMode === "free") {
-    return requestSpiritChatFreeTrial(
-      payload,
-      chat,
-      userMessage,
-      handlers?.onReplyChunk,
-    );
+    return requestSpiritChatFreeTrial(payload, chat, userMessage, handlers);
   }
 
   if (!cfg.apiKey) throw new Error("请先填写 API Key");
@@ -286,23 +285,35 @@ export async function requestSpiritChat(
 
   let rawContent = "";
   let lastEmitted = "";
+  let replyCompleted = false;
   const onReplyChunk = handlers?.onReplyChunk;
+  const onReplyComplete = handlers?.onReplyComplete;
 
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content;
     if (!delta) continue;
     rawContent += delta;
-    if (!onReplyChunk) continue;
+    if (!onReplyChunk && !onReplyComplete) continue;
 
-    let partial: string;
     if (looksLikeJsonStart(rawContent)) {
-      partial = extractPartialStringField(rawContent, "reply");
+      const { value, isComplete } = extractPartialStringFieldWithStatus(
+        rawContent,
+        "reply",
+      );
+      if (value && value !== lastEmitted) {
+        lastEmitted = value;
+        onReplyChunk?.(value);
+      }
+      if (isComplete && !replyCompleted) {
+        replyCompleted = true;
+        onReplyComplete?.(value);
+      }
     } else {
-      partial = rawContent.trim();
-    }
-    if (partial && partial !== lastEmitted) {
-      lastEmitted = partial;
-      onReplyChunk(partial);
+      const partial = rawContent.trim();
+      if (partial && partial !== lastEmitted) {
+        lastEmitted = partial;
+        onReplyChunk?.(partial);
+      }
     }
   }
 
@@ -327,7 +338,7 @@ async function requestSpiritChatFreeTrial(
   payload: Record<string, unknown>,
   chat: SpiritChatRecord,
   userMessage: string,
-  onReplyChunk?: (partialReply: string) => void,
+  handlers?: SpiritChatStreamHandlers,
 ): Promise<SpiritChatResult> {
   let response: Response;
   try {
@@ -351,7 +362,7 @@ async function requestSpiritChatFreeTrial(
       "application/x-ndjson",
     )
   ) {
-    return consumeSpiritChatStream(response, chat, onReplyChunk);
+    return consumeSpiritChatStream(response, chat, handlers);
   }
 
   const raw = await response.json().catch(() => ({}));
@@ -376,14 +387,23 @@ async function requestSpiritChatFreeTrial(
 async function consumeSpiritChatStream(
   response: Response,
   chat: SpiritChatRecord,
-  onReplyChunk?: (partialReply: string) => void,
+  handlers?: SpiritChatStreamHandlers,
 ): Promise<SpiritChatResult> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let lastEmitted = "";
+  let replyCompleted = false;
   let finalResult: SpiritChatResult | null = null;
   let finalError: string | null = null;
+  const onReplyChunk = handlers?.onReplyChunk;
+  const onReplyComplete = handlers?.onReplyComplete;
+
+  const markComplete = (finalValue: string) => {
+    if (replyCompleted) return;
+    replyCompleted = true;
+    onReplyComplete?.(finalValue);
+  };
 
   while (true) {
     const { value, done } = await reader.read();
@@ -400,19 +420,24 @@ async function consumeSpiritChatStream(
         content?: string;
         result?: unknown;
         error?: string;
+        complete?: boolean;
       };
       try {
         event = JSON.parse(line);
       } catch {
         continue;
       }
-      if (event.type === "chunk" && event.content && onReplyChunk) {
+      if (event.type === "chunk" && event.content) {
         if (event.content !== lastEmitted) {
           lastEmitted = event.content;
-          onReplyChunk(event.content);
+          onReplyChunk?.(event.content);
         }
+        if (event.complete) markComplete(event.content);
+      } else if (event.type === "reply_done") {
+        markComplete(event.content ?? lastEmitted);
       } else if (event.type === "done" && event.result) {
         finalResult = normalizeResult(event.result, chat);
+        markComplete(finalResult.reply);
       } else if (event.type === "error") {
         finalError = String(event.error || "词灵会客室免费接口流式响应失败");
       }

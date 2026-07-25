@@ -36,6 +36,7 @@ import { BackButton } from "./BackButton";
 import { CharacterAvatar } from "./CharacterAvatar";
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import { LOADING_STEPS } from "./loadingSteps";
+import { SpiritCard } from "./SpiritCard";
 
 const RECRUIT_COOLDOWN_MS = 60_000;
 const RECRUIT_COOLDOWN_KEY = "word-brawl-recruit-last-generated-at";
@@ -329,136 +330,94 @@ export const CharacterCreateScreen: React.FC = () => {
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
       {roster.map((saved) => {
         const isSelecting = selectingRoster === saved.rosterId;
-        const evolutionLocked = isRosterCharacterEvolutionLocked(saved);
-        const recruitLocked = isRosterCharacterRecruitLocked(saved);
         const isDisabled =
           isRosterCharacterUnavailable(saved) ||
           isGenerating ||
           !!selectingPreset ||
           !!selectingRoster;
-        const ultimateSkill = saved.skills.find(
-          (s) => s.isUltimate || s.type === "ultimate",
-        );
-        const lockText = recruitLocked
-          ? saved.recruitLock?.status === "failed"
-            ? "生成失败"
-            : "后台生成中"
-          : "进化更新中";
-        return (
-          <motion.div
-            key={saved.rosterId}
-            whileHover={!isDisabled ? { scale: 1.03, y: -2 } : {}}
-            className="relative group rounded-lg overflow-hidden border-2 transition-all bg-[#0B0C10]/80"
-            style={{
-              borderColor: `rgba(${themeColorHex}, 0.35)`,
-              boxShadow: `0 0 0 0 rgba(${themeColorHex}, 0)`,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => handleSelectRosterCharacter(saved)}
-              disabled={isDisabled}
-              className="w-full text-left disabled:opacity-50"
-            >
-              <div className="relative aspect-square overflow-hidden bg-[#1F2833]">
-                <CharacterAvatar
-                  imageUrl={saved.imageUrl}
-                  name={saved.name}
-                  themeColor={themeColor}
-                  className="w-full h-full transition-transform duration-300 group-hover:scale-110"
-                  iconSize={36}
-                />
-                {/* 顶部选择提示条 */}
-                <div
-                  className="absolute top-0 left-0 right-0 h-6 flex items-center px-2 text-[9px] tracking-widest font-display opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{
-                    background: `linear-gradient(to bottom, rgba(${themeColorHex}, 0.85), transparent)`,
-                    color: "#0B0C10",
-                  }}
-                >
-                  ▸ 出战
-                </div>
-                {isSelecting && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                      className="w-6 h-6 border-2 border-transparent rounded-full"
-                      style={{ borderTopColor: themeColor }}
-                    />
-                  </div>
-                )}
-                {(evolutionLocked || recruitLocked) && (
-                  <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                    <div className="rounded border border-[#FFD700]/60 bg-[#0B0C10]/85 px-2 py-1 text-[9px] font-black tracking-widest text-[#FFD700]">
-                      {lockText}
-                    </div>
-                  </div>
-                )}
-                {/* 底部名字 + 大招标签 */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent p-2">
-                  <div
-                    className="text-xs font-bold font-display truncate"
-                    style={{ color: themeColor }}
-                  >
-                    {saved.name}
-                  </div>
-                  {ultimateSkill && (
-                    <div className="flex items-center gap-1 text-[9px] text-[#FFD700]/90 truncate mt-0.5">
-                      <Flame size={9} />
-                      <span className="truncate">{ultimateSkill.name}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="p-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[10px]">
-                <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Heart size={9} className="text-pink-400" /> {saved.maxHp}
-                </span>
-                <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Zap size={9} className="text-yellow-400" /> {saved.attack}
-                </span>
-                <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Shield size={9} className="text-blue-400" /> {saved.defense}
-                </span>
-                <span className="flex items-center gap-1 text-[#C5C6C7]">
-                  <Gauge size={9} className="text-green-400" /> {saved.speed}
-                </span>
-              </div>
-            </button>
-            {/* 详情按钮 */}
-            <button
-              type="button"
+        const badges = [
+          { label: `Lv.${saved.level}`, title: `等级 ${saved.level}` },
+        ];
+        const actionSlot = (
+          <>
+            <span
+              role="button"
+              tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation();
                 setInspectingRosterId(saved.rosterId);
               }}
-              disabled={isDisabled}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setInspectingRosterId(saved.rosterId);
+                }
+              }}
               aria-label={`查看 ${saved.name} 详情`}
-              className="absolute top-1 left-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#66FCF1] disabled:opacity-0"
+              className="cursor-pointer rounded bg-black/70 px-1.5 py-0.5 text-center text-[8px] font-black text-[#66FCF1] transition-all hover:brightness-125"
             >
-              <Info size={12} />
-            </button>
-            {/* 删除按钮 */}
-            <button
-              type="button"
+              详情
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation();
                 if (window.confirm(`确定要将 ${saved.name} 移出麾下吗？`)) {
                   removeCharacter(saved.rosterId);
                 }
               }}
-              disabled={isDisabled}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (window.confirm(`确定要将 ${saved.name} 移出麾下吗？`)) {
+                    removeCharacter(saved.rosterId);
+                  }
+                }
+              }}
               aria-label={`移除 ${saved.name}`}
-              className="absolute top-1 right-1 w-6 h-6 rounded bg-black/65 text-[#8a8d91] flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-[#FF003C] disabled:opacity-0"
+              className="cursor-pointer rounded bg-black/70 px-1.5 py-0.5 text-center text-[8px] font-black text-[#FF6B9D] transition-all hover:brightness-125"
             >
-              <Trash2 size={12} />
-            </button>
-          </motion.div>
+              删除
+            </span>
+          </>
+        );
+        return (
+          <div key={saved.rosterId} className="relative">
+            <SpiritCard
+              character={saved}
+              size="md"
+              topRightBadges={badges}
+              actionSlot={actionSlot}
+              hoverHint="▸ 出战"
+              onClick={() => {
+                if (!isDisabled) handleSelectRosterCharacter(saved);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  if (!isDisabled) handleSelectRosterCharacter(saved);
+                }
+              }}
+              className={isDisabled ? "opacity-50 pointer-events-none" : ""}
+            />
+            {isSelecting && (
+              <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-lg bg-black/60">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    ease: "linear",
+                  }}
+                  className="w-6 h-6 border-2 border-transparent rounded-full"
+                  style={{ borderTopColor: themeColor }}
+                />
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
