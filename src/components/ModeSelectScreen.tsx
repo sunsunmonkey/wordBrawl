@@ -553,6 +553,12 @@ export const ModeSelectScreen: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <IconButton
+            onClick={startSocial}
+            icon={<MessageCircle size={16} />}
+            label="社交"
+            accent="#A78BFA"
+          />
+          <IconButton
             onClick={goRoster}
             icon={<UsersRound size={16} />}
             label={`我的词灵 · ${rosterCount}`}
@@ -801,27 +807,31 @@ export const ModeSelectScreen: React.FC = () => {
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.99 }}
               transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              className="group relative w-full overflow-hidden border border-[#A78BFA]/40 bg-gradient-to-r from-[#A78BFA]/15 via-[#66FCF1]/8 to-transparent px-5 py-4 text-left transition-all hover:border-[#A78BFA]"
+              className="group relative w-full overflow-hidden border border-white/10 bg-black/30 backdrop-blur-sm px-5 py-4 text-left transition-all hover:border-[#A78BFA]/40"
             >
               <span
                 aria-hidden
-                className="absolute top-0 left-0 w-3 h-3 border-t border-l border-[#A78BFA]"
+                className="absolute top-0 left-0 w-3 h-3 border-t border-l opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
               />
               <span
                 aria-hidden
-                className="absolute top-0 right-0 w-3 h-3 border-t border-r border-[#A78BFA]"
+                className="absolute top-0 right-0 w-3 h-3 border-t border-r opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
               />
               <span
                 aria-hidden
-                className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-[#A78BFA]"
+                className="absolute bottom-0 left-0 w-3 h-3 border-b border-l opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
               />
               <span
                 aria-hidden
-                className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-[#A78BFA]"
+                className="absolute bottom-0 right-0 w-3 h-3 border-b border-r opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
               />
               <span
                 aria-hidden
-                className="pointer-events-none absolute -top-20 -right-10 h-44 w-44 rounded-full blur-3xl opacity-25 group-hover:opacity-40 transition-opacity"
+                className="pointer-events-none absolute -top-20 -right-10 h-44 w-44 rounded-full blur-3xl opacity-0 group-hover:opacity-30 transition-opacity duration-500"
                 style={{ background: "#A78BFA" }}
               />
               <div className="relative flex items-center gap-4">
@@ -855,8 +865,8 @@ export const ModeSelectScreen: React.FC = () => {
                     社交&朋友
                   </div>
                   <div className="text-[11px] text-white/50 mt-1 leading-relaxed">
-                    带词灵开房间群聊 · @词灵 persona 回复 · 群聊房 5 位 / 1v1
-                    对战房 3 位分开创建
+                    带词灵开房间群聊 · @词灵 persona 回复 · 每人最多 5 位词灵 ·
+                    房内随时发起约战
                   </div>
                 </div>
                 <ChevronRight

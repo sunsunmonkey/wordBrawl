@@ -5,7 +5,6 @@ import {
   DoorOpen,
   KeyRound,
   LogIn,
-  MessagesSquare,
   Plus,
   Sparkles,
   Swords,
@@ -21,10 +20,8 @@ import {
 import { usePlayerStore, serializeSpirit } from "../store/usePlayerStore";
 import { useSocialStore } from "../store/useSocialStore";
 import {
-  MAX_BATTLE_CARRIED_SPIRITS,
   MAX_CARRIED_SPIRITS,
   PLAYER_AVATAR_COLORS,
-  type SocialRoomMode,
 } from "../store/socialTypes";
 import { startHeartbeat, stopHeartbeat } from "../store/useSocialStore";
 import { BackButton } from "./BackButton";
@@ -40,17 +37,14 @@ export const SocialLobbyScreen: React.FC = () => {
   const { createRoom, joinRoom, error, setError } = useSocialStore();
 
   const [localNickname, setLocalNickname] = useState(nickname);
-  // 多选词灵：最多 MAX_CARRIED_SPIRITS 个
+  // 多选词灵：最多 MAX_CARRIED_SPIRITS 个（房主与加入者一致）
   const [selectedRosterIds, setSelectedRosterIds] = useState<string[]>(() =>
     roster.slice(0, 1).map((c) => c.rosterId),
   );
   const [roomCodeInput, setRoomCodeInput] = useState("");
-  // 创建房间的模式：群聊房 / 1v1 对战房（决定词灵携带上限）
-  const [createMode, setCreateMode] = useState<SocialRoomMode>("chat");
 
-  /** 当前模式下的词灵携带上限 */
-  const carryLimit =
-    createMode === "battle" ? MAX_BATTLE_CARRIED_SPIRITS : MAX_CARRIED_SPIRITS;
+  /** 词灵携带上限（统一为 MAX_CARRIED_SPIRITS，不再区分房间类型） */
+  const carryLimit = MAX_CARRIED_SPIRITS;
 
   useEffect(() => {
     setLocalNickname(nickname);
@@ -85,15 +79,6 @@ export const SocialLobbyScreen: React.FC = () => {
     });
   };
 
-  /** 切换创建模式，并自动截断已选词灵到新模式上限 */
-  const switchCreateMode = (mode: SocialRoomMode) => {
-    setCreateMode(mode);
-    const limit =
-      mode === "battle" ? MAX_BATTLE_CARRIED_SPIRITS : MAX_CARRIED_SPIRITS;
-    setSelectedRosterIds((prev) => prev.slice(0, limit));
-    setError("");
-  };
-
   const buildSpirits = () => selectedRosterList.map((c) => serializeSpirit(c));
 
   const enterRoom = () => {
@@ -101,22 +86,18 @@ export const SocialLobbyScreen: React.FC = () => {
     setPhase("SOCIAL_ROOM");
   };
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = (quickBattle = false) => {
     const trimmed = localNickname.trim();
     if (!trimmed) {
       setError("请先填写昵称");
       return;
     }
     if (selectedRosterList.length === 0) {
-      setError(
-        createMode === "battle"
-          ? "1v1 对战需要至少携带 1 位词灵"
-          : "请至少携带 1 位词灵",
-      );
+      setError("请至少携带 1 位词灵");
       return;
     }
     setProfile({ nickname: trimmed, avatarColor });
-    createRoom(buildSpirits(), createMode);
+    createRoom(buildSpirits(), { quickBattle });
     enterRoom();
   };
 
@@ -171,7 +152,7 @@ export const SocialLobbyScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="relative z-10 px-6 md:px-10 lg:px-16 pt-20 pb-12 max-w-[1320px] mx-auto">
+      <div className="relative z-10 px-6 md:px-10 lg:px-16 pt-20 pb-12 max-w-[1280px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -197,13 +178,12 @@ export const SocialLobbyScreen: React.FC = () => {
               </span>
             </h1>
             <p className="mt-3 text-sm text-white/50 max-w-xl leading-relaxed">
-              带上词灵开房间：群聊房最多 {MAX_CARRIED_SPIRITS} 位、1v1
-              对战房最多 {MAX_BATTLE_CARRIED_SPIRITS}{" "}
-              位。@词灵群聊互动，或开对战房等对手来打。把链接或房间码发给朋友即可加入。
+              带上词灵开房间：每人最多 {MAX_CARRIED_SPIRITS}{" "}
+              位词灵。@词灵群聊互动，房内随时发起约战。把链接或房间码发给朋友即可加入。
             </p>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+          <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
             {/* 左侧：玩家身份 + 房间操作 */}
             <div className="flex flex-col gap-5">
               {/* 昵称 + 头像色 */}
@@ -268,7 +248,7 @@ export const SocialLobbyScreen: React.FC = () => {
                 </div>
               </section>
 
-              {/* 创建房间：先选模式，再创建 */}
+              {/* 创建房间 */}
               <section className="relative border border-[#66FCF1]/35 bg-black/30 backdrop-blur-sm p-5">
                 <CornerAccents color="#66FCF1" />
                 <div className="mb-3 flex items-center gap-2">
@@ -278,106 +258,35 @@ export const SocialLobbyScreen: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs text-white/45 leading-relaxed mb-3">
-                  选择房间类型，词灵携带上限会跟着切换。
+                  开一个房间，最多带 {MAX_CARRIED_SPIRITS} 位词灵。群聊 @
+                  词灵会回复，房内随时向他人发起约战；也可快速对战，打完继续聊。
                 </p>
-                {/* 模式切换 Tab */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => switchCreateMode("chat")}
-                    className={`relative flex items-center gap-2 rounded border-2 px-3 py-2.5 text-left transition-all ${
-                      createMode === "chat"
-                        ? "border-[#66FCF1] bg-[#66FCF1]/12"
-                        : "border-white/10 bg-black/40 hover:border-[#66FCF1]/50"
-                    }`}
-                  >
-                    <MessagesSquare
-                      size={15}
-                      className={
-                        createMode === "chat"
-                          ? "text-[#66FCF1]"
-                          : "text-white/40"
-                      }
-                    />
-                    <div className="min-w-0">
-                      <div
-                        className={`text-[11px] font-black tracking-[0.2em] ${
-                          createMode === "chat"
-                            ? "text-[#66FCF1]"
-                            : "text-white/50"
-                        }`}
-                      >
-                        群聊房
-                      </div>
-                      <div className="text-[9px] text-white/40 mt-0.5">
-                        最多 {MAX_CARRIED_SPIRITS} 位 · 多人聊天
-                      </div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchCreateMode("battle")}
-                    className={`relative flex items-center gap-2 rounded border-2 px-3 py-2.5 text-left transition-all ${
-                      createMode === "battle"
-                        ? "border-[#FF003C] bg-[#FF003C]/12"
-                        : "border-white/10 bg-black/40 hover:border-[#FF003C]/50"
-                    }`}
-                  >
-                    <Swords
-                      size={15}
-                      className={
-                        createMode === "battle"
-                          ? "text-[#FF003C]"
-                          : "text-white/40"
-                      }
-                    />
-                    <div className="min-w-0">
-                      <div
-                        className={`text-[11px] font-black tracking-[0.2em] ${
-                          createMode === "battle"
-                            ? "text-[#FF003C]"
-                            : "text-white/50"
-                        }`}
-                      >
-                        1v1 对战
-                      </div>
-                      <div className="text-[9px] text-white/40 mt-0.5">
-                        最多 {MAX_BATTLE_CARRIED_SPIRITS} 位 · 加入即开战
-                      </div>
-                    </div>
-                  </button>
-                </div>
-                {/* 当前模式说明 */}
-                <div className="mb-3 rounded border border-white/8 bg-black/30 px-3 py-2 text-[10px] leading-relaxed text-white/55">
-                  {createMode === "chat" ? (
-                    <span>
-                      <span className="text-[#66FCF1] font-bold">群聊房：</span>
-                      多人聊天 · @词灵 persona 回复 · 房内手动约战
-                    </span>
-                  ) : (
-                    <span>
-                      <span className="text-[#FF003C] font-bold">对战房：</span>
-                      专用 1v1 · 对手加入自动开战 · 跳过群聊
-                    </span>
-                  )}
-                </div>
-                {/* 统一创建按钮 */}
+                {/* 创建按钮 */}
                 <button
                   type="button"
-                  onClick={handleCreateRoom}
+                  onClick={() => handleCreateRoom(false)}
                   disabled={!localNickname.trim()}
-                  className={`group relative w-full flex items-center justify-center gap-2 rounded border-2 px-4 py-3 text-sm font-black tracking-[0.25em] transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                    createMode === "chat"
-                      ? "border-[#66FCF1] text-[#66FCF1] hover:bg-[#66FCF1] hover:text-[#0B0C10]"
-                      : "border-[#FF003C] text-[#FF003C] hover:bg-[#FF003C] hover:text-white"
-                  }`}
+                  className="group relative w-full flex items-center justify-center gap-2 rounded border-2 border-[#66FCF1] px-4 py-3 text-sm font-black tracking-[0.25em] text-[#66FCF1] transition-all hover:bg-[#66FCF1] hover:text-[#0B0C10] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Plus size={15} />
-                  创建{createMode === "chat" ? "群聊房" : "1v1 对战房"}
+                  创建房间
                   <ArrowRight
                     size={14}
                     className="transition-transform group-hover:translate-x-1"
                   />
+                </button>
+                {/* 快速对战入口 */}
+                <button
+                  type="button"
+                  onClick={() => handleCreateRoom(true)}
+                  disabled={!localNickname.trim()}
+                  className="group relative mt-2 w-full flex items-center justify-center gap-2 rounded border-2 border-[#FF003C] bg-[#FF003C]/8 px-4 py-2.5 text-xs font-black tracking-[0.2em] text-[#FF003C] transition-all hover:bg-[#FF003C] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Swords size={14} />
+                  快速对战
+                  <span className="text-[9px] font-normal text-white/50 tracking-normal">
+                    对手加入即开战
+                  </span>
                 </button>
                 {selectedRosterList.length === 0 && (
                   <div className="mt-2 text-[10px] text-[#FFD700]/70 font-mono tracking-wider">
@@ -396,7 +305,7 @@ export const SocialLobbyScreen: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs text-white/45 leading-relaxed mb-3">
-                  输入朋友给的 6 位房间码（群聊房 / 对战房均可）。
+                  输入朋友给的 6 位房间码即可加入。
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -433,30 +342,15 @@ export const SocialLobbyScreen: React.FC = () => {
 
             {/* 右侧：词灵多选 */}
             <section className="relative border border-white/10 bg-black/30 backdrop-blur-sm p-5 flex flex-col">
-              <CornerAccents
-                color={createMode === "battle" ? "#FF003C" : "#FFD700"}
-              />
+              <CornerAccents color="#FFD700" />
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span
-                    className="w-1 h-1"
-                    style={{
-                      background:
-                        createMode === "battle" ? "#FF003C" : "#FFD700",
-                    }}
-                  />
+                  <span className="w-1 h-1 bg-[#FFD700]" />
                   <span className="text-[10px] font-mono tracking-[0.35em] text-white/60">
                     CARRY · SPIRITS
                   </span>
-                  {/* 当前模式徽章 */}
-                  <span
-                    className={`text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded border ${
-                      createMode === "battle"
-                        ? "border-[#FF003C]/50 text-[#FF003C]"
-                        : "border-[#66FCF1]/50 text-[#66FCF1]"
-                    }`}
-                  >
-                    {createMode === "battle" ? "1v1" : "CHAT"}
+                  <span className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded border border-[#66FCF1]/50 text-[#66FCF1]">
+                    CHAT
                   </span>
                 </div>
                 <span
@@ -470,18 +364,8 @@ export const SocialLobbyScreen: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-white/45 leading-relaxed mb-4">
-                当前模式{" "}
-                <span
-                  className={`font-bold ${
-                    createMode === "battle"
-                      ? "text-[#FF003C]"
-                      : "text-[#66FCF1]"
-                  }`}
-                >
-                  {createMode === "battle" ? "1v1 对战房" : "群聊房"}
-                </span>{" "}
-                最多带 {carryLimit} 位词灵。群里 @
-                它们会回复；约战时默认用第一位出战，房间内可切换。
+                <span className="font-bold text-[#66FCF1]">房间</span> 最多带{" "}
+                {carryLimit} 位词灵。群里 @ 它们会回复，房间内可切换。
               </p>
 
               {availableRoster.length === 0 ? (
@@ -500,7 +384,7 @@ export const SocialLobbyScreen: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[420px] overflow-y-auto scrollbar-thin px-1 py-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[420px] overflow-y-auto scrollbar-thin px-1 py-1">
                     {availableRoster.map((char) => {
                       const isSelected = selectedRosterIds.includes(
                         char.rosterId,

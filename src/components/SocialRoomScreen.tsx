@@ -4,12 +4,18 @@ import {
   Check,
   Copy,
   DoorOpen,
+  Eye,
+  Globe2,
+  Heart,
   Loader2,
   LogOut,
+  MessageCircle,
+  Quote,
   Send,
   Shield,
   Sparkles,
   Swords,
+  Trophy,
   Users,
   X,
 } from "lucide-react";
@@ -23,7 +29,8 @@ import type {
   SocialPlayer,
 } from "../store/socialTypes";
 import { BackButton } from "./BackButton";
-import { CharacterAvatar } from "./CharacterAvatar";
+import { SpiritCard } from "./SpiritCard";
+import { RARITY_CONFIGS } from "../store/useGameStore";
 import { requestGroupSpiritChat } from "../utils/groupSpiritChat";
 
 const MAX_INPUT = 200;
@@ -63,6 +70,13 @@ export const SocialRoomScreen: React.FC = () => {
   const [streamingSpiritId, setStreamingSpiritId] = useState<string | null>(
     null,
   );
+  // 词灵详情查看：点击玩家列表里的词灵卡，弹出精美大卡 + persona
+  const [inspectSpirit, setInspectSpirit] = useState<{
+    spirit: SerializedSpirit;
+    ownerName: string;
+    isMine: boolean;
+    isActive: boolean;
+  } | null>(null);
   const lastSpiritReplyAtRef = useRef<Record<string, number>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -151,12 +165,12 @@ export const SocialRoomScreen: React.FC = () => {
     return me?.activeSpirit ?? me?.carriedSpirits?.[0] ?? null;
   }, [currentRoom, playerId]);
 
-  const isBattleRoom = currentRoom?.mode === "battle";
+  const isQuickBattle = currentRoom?.quickBattle ?? false;
 
-  // 1v1 对战房间：双方都在且有出战词灵时，房主自动发起约战并接受
+  // 快速对战房间：双方都在且有出战词灵时，房主自动发起约战
   const autoStartRef = useRef(false);
   useEffect(() => {
-    if (!isBattleRoom || !currentRoom) return;
+    if (!isQuickBattle || !currentRoom) return;
     if (autoStartRef.current) return;
     if (currentRoom.activeBattle || currentRoom.pendingChallenge) return;
     if (currentRoom.players.length < 2) return;
@@ -166,23 +180,20 @@ export const SocialRoomScreen: React.FC = () => {
     if (playerId !== host.playerId) return; // 仅房主发起
     autoStartRef.current = true;
     createChallenge(guest);
-    // 房主作为发起方，约战邀请的 toPlayerId 是 guest，需要 guest 接受
-    // 这里房主无法替 guest 接受，所以等待 guest 端自动接受
-  }, [isBattleRoom, currentRoom, playerId, createChallenge]);
+  }, [isQuickBattle, currentRoom, playerId, createChallenge]);
 
-  // 1v1 对战房间：guest 自动接受约战
+  // 快速对战房间：guest 自动接受约战
   const pendingChallengeForBattle = currentRoom?.pendingChallenge ?? null;
   useEffect(() => {
-    if (!isBattleRoom) return;
+    if (!isQuickBattle) return;
     const pending = pendingChallengeForBattle;
     if (!pending || pending.status !== "pending") return;
     if (pending.toPlayerId !== playerId) return;
-    // guest 端立即接受
     const t = setTimeout(() => {
       resolveChallenge(pending.id, "accepted");
     }, 600);
     return () => clearTimeout(t);
-  }, [isBattleRoom, pendingChallengeForBattle, playerId, resolveChallenge]);
+  }, [isQuickBattle, pendingChallengeForBattle, playerId, resolveChallenge]);
 
   if (!currentRoom) {
     return (
@@ -345,20 +356,19 @@ export const SocialRoomScreen: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
               <span
                 className={`text-base md:text-lg font-black tracking-wider ${
-                  isBattleRoom ? "text-[#FF003C]" : "text-[#A78BFA]"
+                  isQuickBattle ? "text-[#FF003C]" : "text-[#A78BFA]"
                 }`}
                 style={{
-                  textShadow: isBattleRoom
+                  textShadow: isQuickBattle
                     ? "0 0 12px rgba(255,0,60,0.55)"
                     : "0 0 12px rgba(167,139,250,0.55)",
                 }}
               >
-                {isBattleRoom ? "对战房 " : "房间 "}
-                {currentRoom.roomCode}
+                房间 {currentRoom.roomCode}
               </span>
-              {isBattleRoom && (
+              {isQuickBattle && (
                 <span className="text-[9px] font-mono tracking-widest text-[#FF003C]/80 border border-[#FF003C]/40 px-1.5 py-0.5 rounded">
-                  1v1 BATTLE
+                  快速对战
                 </span>
               )}
               <button
@@ -374,7 +384,7 @@ export const SocialRoomScreen: React.FC = () => {
             <div className="text-[10px] font-mono tracking-widest text-white/40 mt-0.5">
               {currentRoom.players.length} 位契约者 ·{" "}
               {mentionableSpirits.length} 位词灵
-              {isBattleRoom && currentRoom.players.length < 2 && (
+              {isQuickBattle && currentRoom.players.length < 2 && (
                 <span className="text-[#FFD700]"> · 等待对手加入...</span>
               )}
             </div>
@@ -406,7 +416,6 @@ export const SocialRoomScreen: React.FC = () => {
                 player={p}
                 isMe={p.playerId === playerId}
                 canChallenge={
-                  !isBattleRoom &&
                   Boolean(mySpirit) &&
                   Boolean(p.activeSpirit) &&
                   p.playerId !== playerId &&
@@ -416,6 +425,20 @@ export const SocialRoomScreen: React.FC = () => {
                 onSetBattleSpirit={
                   p.playerId === playerId ? setBattleSpirit : undefined
                 }
+                onInspectSpirit={(spirit) => {
+                  const carried = p.carriedSpirits?.length
+                    ? p.carriedSpirits
+                    : p.activeSpirit
+                      ? [p.activeSpirit]
+                      : [];
+                  const active = p.activeSpirit ?? carried[0] ?? null;
+                  setInspectSpirit({
+                    spirit,
+                    ownerName: p.nickname,
+                    isMine: p.playerId === playerId,
+                    isActive: active?.rosterId === spirit.rosterId,
+                  });
+                }}
               />
             ))}
           </div>
@@ -423,8 +446,8 @@ export const SocialRoomScreen: React.FC = () => {
             <div className="flex items-center gap-1.5">
               <Sparkles size={11} className="text-[#FFD700]" />
               <span>
-                {isBattleRoom
-                  ? "对战房 · 对手加入即自动开战"
+                {isQuickBattle
+                  ? "快速对战 · 对手加入后自动开战，打完可继续聊天"
                   : "带词灵才能约战 · 点自己的词灵切换出战"}
               </span>
             </div>
@@ -570,6 +593,24 @@ export const SocialRoomScreen: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 词灵详情查看弹层：双方都能看到对方词灵卡 */}
+      <AnimatePresence>
+        {inspectSpirit && (
+          <SpiritDetailModal
+            data={inspectSpirit}
+            onClose={() => setInspectSpirit(null)}
+            onSetBattleSpirit={
+              inspectSpirit.isMine && !inspectSpirit.isActive
+                ? (rosterId) => {
+                    setBattleSpirit(rosterId);
+                    setInspectSpirit(null);
+                  }
+                : undefined
+            }
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -580,7 +621,15 @@ const PlayerCard: React.FC<{
   canChallenge: boolean;
   onChallenge: () => void;
   onSetBattleSpirit?: (rosterId: string) => void;
-}> = ({ player, isMe, canChallenge, onChallenge, onSetBattleSpirit }) => {
+  onInspectSpirit: (spirit: SerializedSpirit) => void;
+}> = ({
+  player,
+  isMe,
+  canChallenge,
+  onChallenge,
+  onSetBattleSpirit,
+  onInspectSpirit,
+}) => {
   const carried = player.carriedSpirits?.length
     ? player.carriedSpirits
     : player.activeSpirit
@@ -634,51 +683,49 @@ const PlayerCard: React.FC<{
         </div>
       </div>
 
-      {/* 词灵列表：自己可切换出战，他人仅展示 */}
+      {/* 词灵卡墙：复用 SpiritCard 生成卡样式；点击查看大卡；自己的非出战词灵可一键切换 */}
       {carried.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
           {carried.map((s) => {
             const isActive = active?.rosterId === s.rosterId;
-            const clickable = isMe && onSetBattleSpirit && !isActive;
+            const canSwitch = isMe && onSetBattleSpirit && !isActive;
             return (
-              <button
-                key={s.rosterId}
-                type="button"
-                disabled={!clickable}
-                onClick={() => onSetBattleSpirit?.(s.rosterId)}
-                title={clickable ? `切换 ${s.name} 出战` : s.name}
-                className={`relative flex items-center gap-1.5 rounded border px-1.5 py-1 transition-all ${
-                  isActive
-                    ? "border-[#FFD700]/70 bg-[#FFD700]/12"
-                    : "border-white/10 bg-black/40"
-                } ${
-                  clickable
-                    ? "hover:border-[#FFD700]/50 cursor-pointer"
-                    : "cursor-default"
-                }`}
-              >
-                <div className="h-6 w-6 shrink-0 overflow-hidden rounded">
-                  <CharacterAvatar
-                    imageUrl={s.imageUrl}
-                    name={s.name}
-                    themeColor={isActive ? "#FFD700" : player.avatarColor}
-                    className="h-full w-full"
-                    iconSize={11}
-                  />
-                </div>
-                <span
-                  className={`text-[10px] truncate max-w-[70px] ${
-                    isActive ? "text-[#FFD700] font-bold" : "text-white/70"
-                  }`}
-                >
-                  {s.name}
-                </span>
-                {isActive && (
-                  <span className="text-[7px] font-mono tracking-widest text-[#FFD700]/80">
-                    战
-                  </span>
+              <div key={s.rosterId} className="relative group/card">
+                <SpiritCard
+                  character={s.combatSnapshot}
+                  size="sm"
+                  selected={isActive}
+                  showStats
+                  onClick={() => onInspectSpirit(s)}
+                  topRightBadges={
+                    isActive
+                      ? [
+                          {
+                            label: "战",
+                            color: "#0B0C10",
+                            background: "#FFD700",
+                            title: "当前出战",
+                          },
+                        ]
+                      : undefined
+                  }
+                />
+                {/* 自己的非出战词灵：hover 显示一键出战按钮 */}
+                {canSwitch && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSetBattleSpirit?.(s.rosterId);
+                    }}
+                    title={`切换 ${s.name} 出战`}
+                    className="absolute inset-x-1 bottom-1 z-20 flex items-center justify-center gap-0.5 rounded border border-[#FFD700] bg-[#FFD700]/90 py-0.5 text-[8px] font-black tracking-widest text-[#0B0C10] opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-[#FFD700]"
+                  >
+                    <Swords size={8} />
+                    出战
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -991,3 +1038,295 @@ const ChallengeModal: React.FC<{
 
 // 保留 DoorOpen 引用避免 tree-shake 警告
 void DoorOpen;
+
+/**
+ * 词灵详情弹层：房间内任一玩家点击词灵卡时弹出。
+ * 左侧复用 SpiritCard（lg）展示立绘 / 稀有度 / 战力 / 属性，
+ * 右侧展示 persona（原型 / 性格 / 说话方式 / 口头禅 / 世界观 / 战斗台词）。
+ */
+const SpiritDetailModal: React.FC<{
+  data: {
+    spirit: SerializedSpirit;
+    ownerName: string;
+    isMine: boolean;
+    isActive: boolean;
+  };
+  onClose: () => void;
+  onSetBattleSpirit?: (rosterId: string) => void;
+}> = ({ data, onClose, onSetBattleSpirit }) => {
+  const { spirit, ownerName, isMine, isActive } = data;
+  const rarity = spirit.combatSnapshot.rarity ?? "R";
+  const rarityCfg = RARITY_CONFIGS[rarity];
+  const persona = spirit.persona;
+
+  // 关闭：点击遮罩 / ESC
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 overflow-y-auto"
+    >
+      <motion.div
+        initial={{ scale: 0.92, y: 20, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.92, y: 20, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 28 }}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-3xl rounded-2xl border bg-[#0B0C10] p-5 md:p-6 my-auto"
+        style={{
+          borderColor: `${rarityCfg.primaryColor}55`,
+          boxShadow: `0 0 50px rgba(${rarityCfg.rgb}, 0.22), 0 12px 40px rgba(0,0,0,0.55)`,
+        }}
+      >
+        {/* 关闭按钮 */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="关闭"
+          className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/70 hover:text-white hover:border-white/50 transition-all"
+        >
+          <X size={15} />
+        </button>
+
+        {/* 顶部：所属契约者 + 稀有度标签 */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap pr-10">
+          <span
+            className="text-[9px] font-mono tracking-[0.35em]"
+            style={{ color: `${rarityCfg.primaryColor}cc` }}
+          >
+            SPIRIT · {rarityCfg.labelEn}
+          </span>
+          <span className="text-white/20">·</span>
+          <span className="text-[10px] text-white/55">
+            所属契约者：
+            <span className="font-bold text-white/85">{ownerName}</span>
+            {isMine && (
+              <span className="ml-1.5 text-[8px] font-mono text-[#66FCF1]/85 border border-[#66FCF1]/30 px-1 rounded">
+                YOU
+              </span>
+            )}
+          </span>
+          {isActive && (
+            <span className="ml-auto flex items-center gap-1 rounded bg-[#FFD700] px-2 py-0.5 text-[9px] font-black tracking-widest text-[#0B0C10]">
+              <Swords size={10} />
+              当前出战
+            </span>
+          )}
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-[260px_1fr]">
+          {/* 左：大卡 */}
+          <div className="mx-auto w-full max-w-[260px]">
+            <SpiritCard character={spirit.combatSnapshot} size="lg" showStats />
+            {/* 自己的非出战词灵：切换出战按钮 */}
+            {isMine && !isActive && onSetBattleSpirit && (
+              <button
+                type="button"
+                onClick={() => onSetBattleSpirit(spirit.rosterId)}
+                className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-[#FFD700] bg-[#FFD700]/10 py-2.5 text-xs font-black tracking-widest text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all"
+              >
+                <Swords size={13} />
+                设为出战
+              </button>
+            )}
+          </div>
+
+          {/* 右：persona 详情 */}
+          <div className="min-w-0 flex flex-col gap-3 max-h-[60vh] overflow-y-auto scrollbar-thin pr-1">
+            {/* 名字 + archetype */}
+            <div>
+              <div
+                className="font-display font-black leading-tight"
+                style={{
+                  fontSize: "clamp(1.4rem, 3vw, 1.9rem)",
+                  color: "#fff",
+                  textShadow: `0 0 16px rgba(${rarityCfg.rgb}, 0.55)`,
+                }}
+              >
+                {spirit.name}
+              </div>
+              <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px]">
+                <PersonaChip
+                  icon={<Sparkles size={10} />}
+                  label="原型"
+                  value={persona.archetype}
+                  color={rarityCfg.primaryColor}
+                />
+                <PersonaChip
+                  icon={<Heart size={10} />}
+                  label="性格"
+                  value={persona.temperament}
+                  color="#F472B6"
+                />
+              </div>
+            </div>
+
+            {/* 说话方式 */}
+            <PersonaRow
+              icon={<MessageCircle size={11} />}
+              label="说话方式"
+              color={rarityCfg.primaryColor}
+            >
+              {persona.speechStyle}
+            </PersonaRow>
+
+            {/* 世界观锚点 */}
+            {persona.worldAnchors.length > 0 && (
+              <PersonaRow
+                icon={<Globe2 size={11} />}
+                label="世界观"
+                color={rarityCfg.primaryColor}
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {persona.worldAnchors.map((w, i) => (
+                    <span
+                      key={i}
+                      className="rounded border border-white/12 bg-black/40 px-2 py-0.5 text-[10px] text-white/75"
+                    >
+                      {w}
+                    </span>
+                  ))}
+                </div>
+              </PersonaRow>
+            )}
+
+            {/* 口头禅 */}
+            {persona.catchphrases.length > 0 && (
+              <PersonaRow
+                icon={<Quote size={11} />}
+                label="口头禅"
+                color={rarityCfg.primaryColor}
+              >
+                <div className="flex flex-col gap-1">
+                  {persona.catchphrases.map((c, i) => (
+                    <div
+                      key={i}
+                      className="rounded-l border-l-2 bg-black/30 px-2 py-1 text-[11px] italic text-white/80"
+                      style={{ borderColor: rarityCfg.primaryColor }}
+                    >
+                      “{c}”
+                    </div>
+                  ))}
+                </div>
+              </PersonaRow>
+            )}
+
+            {/* 战斗台词 */}
+            {(persona.battleCry ||
+              persona.victoryLine ||
+              persona.defeatLine) && (
+              <div className="grid grid-cols-1 gap-1.5">
+                {persona.battleCry && (
+                  <BattleLine
+                    icon={<Swords size={10} />}
+                    label="出战宣言"
+                    text={persona.battleCry}
+                    color="#FF003C"
+                  />
+                )}
+                {persona.victoryLine && (
+                  <BattleLine
+                    icon={<Trophy size={10} />}
+                    label="胜利台词"
+                    text={persona.victoryLine}
+                    color="#FFD700"
+                  />
+                )}
+                {persona.defeatLine && (
+                  <BattleLine
+                    icon={<Shield size={10} />}
+                    label="失败台词"
+                    text={persona.defeatLine}
+                    color="#9CA3AF"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* 简介 */}
+            {spirit.sourceDescription && (
+              <PersonaRow
+                icon={<Eye size={11} />}
+                label="来历"
+                color={rarityCfg.primaryColor}
+              >
+                <p className="text-[11px] leading-relaxed text-white/70">
+                  {spirit.sourceDescription}
+                </p>
+              </PersonaRow>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const PersonaChip: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  color: string;
+}> = ({ icon, label, value, color }) => (
+  <span
+    className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5"
+    style={{
+      borderColor: `${color}55`,
+      background: `${color}12`,
+      color: `${color}`,
+    }}
+  >
+    {icon}
+    <span className="opacity-70">{label}</span>
+    <span className="font-bold text-white/85">{value}</span>
+  </span>
+);
+
+const PersonaRow: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+  children: React.ReactNode;
+}> = ({ icon, label, color, children }) => (
+  <div className="rounded-lg border border-white/8 bg-black/25 p-2.5">
+    <div
+      className="mb-1.5 flex items-center gap-1.5 text-[9px] font-mono tracking-[0.3em]"
+      style={{ color: `${color}cc` }}
+    >
+      {icon}
+      <span>{label}</span>
+    </div>
+    <div className="text-[11px] text-white/85 leading-relaxed">{children}</div>
+  </div>
+);
+
+const BattleLine: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  text: string;
+  color: string;
+}> = ({ icon, label, text, color }) => (
+  <div
+    className="rounded border-l-2 bg-black/30 px-2.5 py-1.5"
+    style={{ borderColor: color }}
+  >
+    <div
+      className="flex items-center gap-1 text-[9px] font-mono tracking-widest"
+      style={{ color }}
+    >
+      {icon}
+      <span>{label}</span>
+    </div>
+    <div className="mt-0.5 text-[11px] italic text-white/80">“{text}”</div>
+  </div>
+);

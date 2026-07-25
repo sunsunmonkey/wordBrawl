@@ -163,12 +163,18 @@ export const ROOM_EMPTY_TTL_MS = 5 * 60 * 1000;
 
 /**
  * 旧版房间数据迁移：
- *  - 补 mode 字段（默认 chat）
+ *  - 移除已废弃的 mode 字段（房间不再区分聊天/对战）
+ *  - 补 quickBattle 字段（旧房间默认 false）
  *  - 补 carriedSpirits 字段（从 activeSpirit 推导）
  */
 const migrateRoom = (room: SocialRoom): SocialRoom => {
-  if (!room.mode) {
-    room.mode = "chat";
+  // 兼容旧数据：旧版带有 mode 字段，现已废弃，剔除后避免后续误用
+  const { mode: _deprecatedMode, ...rest } = room as SocialRoom & {
+    mode?: unknown;
+  };
+  room = rest;
+  if (typeof room.quickBattle !== "boolean") {
+    room.quickBattle = false;
   }
   room.players = room.players.map((p) => {
     if (!Array.isArray(p.carriedSpirits)) {

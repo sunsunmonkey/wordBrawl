@@ -1,14 +1,8 @@
 import type { RosterCharacter } from "../store/useRosterStore";
 import type { BattleEvent } from "../store/useGameStore";
 
-/** 群聊房玩家最多携带的词灵数量 */
+/** 房间内每位玩家最多携带的词灵数量（房主与加入者一致） */
 export const MAX_CARRIED_SPIRITS = 5;
-
-/** 1v1 对战房玩家最多携带的词灵数量 */
-export const MAX_BATTLE_CARRIED_SPIRITS = 3;
-
-/** 社交房间模式：群聊房间 / 1v1 对战房间 */
-export type SocialRoomMode = "chat" | "battle";
 
 /** 社交房间内玩家身份（临时态，localStorage 持久化） */
 export interface SocialPlayer {
@@ -144,17 +138,17 @@ export interface SocialBattleReport {
   highlights: string[];
 }
 
-/** 社交房间 */
+/** 社交房间（群聊 + 房内约战，不再区分房间模式） */
 export interface SocialRoom {
   roomCode: string;
-  /** 房间模式：群聊 / 1v1 对战 */
-  mode: SocialRoomMode;
   players: SocialPlayer[];
   messages: SocialChatMessage[];
   /** 当前活跃对战（无则 null） */
   activeBattle: SocialBattleState | null;
   /** 当前待响应的约战邀请 */
   pendingChallenge: ChallengeInvite | null;
+  /** 是否为快速对战房间：第二个玩家加入后自动开战 */
+  quickBattle: boolean;
   createdAt: number;
   updatedAt: number;
 }

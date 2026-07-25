@@ -2,7 +2,6 @@ import { create } from "zustand";
 import {
   generateMessageId,
   generateRoomCode,
-  MAX_BATTLE_CARRIED_SPIRITS,
   MAX_CARRIED_SPIRITS,
   type ChallengeInvite,
   type SocialBattleReport,
@@ -10,7 +9,6 @@ import {
   type SocialChatMessage,
   type SocialPlayer,
   type SocialRoom,
-  type SocialRoomMode,
   type SerializedSpirit,
 } from "./socialTypes";
 import {
@@ -31,10 +29,10 @@ interface SocialStore {
   /** 错误信息 */
   error: string;
 
-  /** 创建房间 */
+  /** 创建房间（quickBattle 为 true 时，第二个玩家加入后自动开战） */
   createRoom: (
     spirits: SerializedSpirit[],
-    mode?: SocialRoomMode,
+    options?: { quickBattle?: boolean },
   ) => SocialRoom;
   /** 加入房间 */
   joinRoom: (roomCode: string, spirits: SerializedSpirit[]) => boolean;
@@ -88,15 +86,9 @@ interface SocialStore {
 
 const SYSTEM_COLOR = "#8a8d91";
 
-/** 根据房间模式返回携带词灵上限 */
-const carryLimit = (mode: SocialRoomMode): number =>
-  mode === "battle" ? MAX_BATTLE_CARRIED_SPIRITS : MAX_CARRIED_SPIRITS;
-
-/** 按房间模式截断携带词灵列表 */
-const clampCarried = (
-  spirits: SerializedSpirit[],
-  mode: SocialRoomMode,
-): SerializedSpirit[] => spirits.slice(0, carryLimit(mode));
+/** 截断携带词灵列表到上限（房主与加入者统一为 MAX_CARRIED_SPIRITS） */
+const clampCarried = (spirits: SerializedSpirit[]): SerializedSpirit[] =>
+  spirits.slice(0, MAX_CARRIED_SPIRITS);
 
 const buildSystemMessage = (content: string): SocialChatMessage => ({
   id: generateMessageId(),
@@ -135,11 +127,11 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
     isConnecting: false,
     error: "",
 
-    createRoom: (spirits, mode = "chat") => {
+    createRoom: (spirits, options = {}) => {
       const { playerId, nickname, avatarColor } = usePlayerStore.getState();
       const roomCode = generateRoomCode();
       const now = Date.now();
-      const carried = clampCarried(spirits, mode);
+      const carried = clampCarried(spirits);
       const me: SocialPlayer = {
         playerId,
         nickname,
@@ -149,20 +141,20 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         isOnline: true,
         lastSeenAt: now,
       };
+      const quickBattle = options.quickBattle ?? false;
       const room: SocialRoom = {
         roomCode,
-        mode,
         players: [me],
-        messages:
-          mode === "battle"
-            ? [
-                buildSystemMessage(
-                  `${nickname} 开启了 1v1 对战房间 ${roomCode}，等待对手加入`,
-                ),
-              ]
-            : [buildSystemMessage(`${nickname} 创建了房间 ${roomCode}`)],
+        messages: [
+          buildSystemMessage(
+            quickBattle
+              ? `${nickname} 开启了快速对战房间 ${roomCode}，等待对手加入`
+              : `${nickname} 创建了房间 ${roomCode}`,
+          ),
+        ],
         activeBattle: null,
         pendingChallenge: null,
+        quickBattle,
         createdAt: now,
         updatedAt: now,
       };
@@ -186,7 +178,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       const { playerId, nickname, avatarColor } = usePlayerStore.getState();
       const now = Date.now();
       const others = existing.players.filter((p) => p.playerId !== playerId);
-      const carried = clampCarried(spirits, existing.mode);
+      const carried = clampCarried(spirits);
       const me: SocialPlayer = {
         playerId,
         nickname,
@@ -201,11 +193,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         players: [...others, me],
         messages: pruneMessages([
           ...existing.messages,
-          buildSystemMessage(
-            existing.mode === "battle"
-              ? `${nickname} 加入对战房间，准备开战`
-              : `${nickname} 加入了房间`,
-          ),
+          buildSystemMessage(`${nickname} 加入了房间`),
         ]),
         updatedAt: now,
       };
@@ -273,7 +261,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       const room = get().currentRoom;
       if (!room) return;
       const { playerId } = usePlayerStore.getState();
-      const carried = clampCarried(spirits, room.mode);
+      const carried = clampCarried(spirits);
       const updated: SocialRoom = {
         ...room,
         players: room.players.map((p) =>
