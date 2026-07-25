@@ -130,10 +130,35 @@ const GeneratingOverlay: React.FC<{
 }> = ({ stage, themeColor, size }) => {
   const totalStages = RECRUIT_STAGE_COUNT;
   const clamped = Math.max(0, Math.min(totalStages - 1, stage));
+  const lastStage = totalStages - 1;
   const CurrentIcon = LOADING_STEPS[clamped]?.icon;
   const stepText = LOADING_STEPS[clamped]?.text ?? "生成中";
-  const percent = Math.round(((clamped + 1) / totalStages) * 100);
   const compact = size === "sm";
+
+  // 每个阶段的进度“天花板”：文本阶段（0..lastStage-1）平滑铺到 ~76%，
+  // 图像阶段（lastStage）逼近 96%；真正的 100% 交给揭示动画接管。
+  const ceilingFor = React.useCallback(
+    (s: number) =>
+      s >= lastStage ? 96 : 8 + Math.round(((s + 1) / lastStage) * 68),
+    [lastStage],
+  );
+
+  // 显示进度对当前阶段天花板做缓动逼近：越接近越慢，因此即使文本阶段
+  // 长时间停在同一 stage，进度条也始终在“微微前进”，不会看起来卡死。
+  const [display, setDisplay] = React.useState(0);
+  React.useEffect(() => {
+    const id = window.setInterval(() => {
+      setDisplay((prev) => {
+        const target = ceilingFor(clamped);
+        if (prev >= target) return prev;
+        const next = prev + Math.max((target - prev) * 0.06, 0.25);
+        return Math.min(next, target);
+      });
+    }, 60);
+    return () => window.clearInterval(id);
+  }, [clamped, ceilingFor]);
+
+  const percent = Math.round(display);
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col overflow-hidden">
@@ -226,15 +251,13 @@ const GeneratingOverlay: React.FC<{
           className="h-1 rounded-full overflow-hidden"
           style={{ background: `${themeColor}22` }}
         >
-          <motion.div
-            className="h-full"
+          <div
+            className="h-full rounded-full transition-[width] duration-150 ease-linear"
             style={{
+              width: `${percent}%`,
               background: `linear-gradient(90deg, ${themeColor}88, ${themeColor})`,
               boxShadow: `0 0 8px ${themeColor}`,
             }}
-            initial={false}
-            animate={{ width: `${percent}%` }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
           />
         </div>
         <div
