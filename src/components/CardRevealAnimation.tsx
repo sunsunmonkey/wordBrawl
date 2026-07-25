@@ -308,12 +308,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
             </motion.div>
 
             {/* 英雄卡牌 */}
-            <HeroCard
-              character={character}
-              size="lg"
-              animate={true}
-              showStats={true}
-            />
+            <HeroCard character={character} size="lg" showStats={true} />
 
             {/* 词灵原型（如果有） */}
             {character.spiritProfile?.archetype && phase === "done" && (

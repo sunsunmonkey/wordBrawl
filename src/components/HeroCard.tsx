@@ -13,7 +13,6 @@ interface HeroCardProps {
   character: CharacterData;
   size?: "sm" | "md" | "lg";
   showStats?: boolean;
-  animate?: boolean;
   className?: string;
   selected?: boolean;
   onClick?: () => void;
@@ -112,7 +111,6 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   character,
   size = "md",
   showStats = true,
-  animate = false,
   className = "",
   selected = false,
   onClick,
@@ -153,7 +151,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   return (
     <motion.div
       onClick={onClick}
-      className={`relative rounded-2xl ${sizeCfg.card} ${className} ${onClick ? "cursor-pointer" : ""}`}
+      className={`group relative rounded-2xl ${sizeCfg.card} ${className} ${onClick ? "cursor-pointer" : ""}`}
       style={{
         background: "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
         border: `${1 + tier * 0.5}px solid`,
@@ -165,27 +163,21 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}),
           inset 0 0 ${glowSize * 1.2}px rgba(${config.rgb}, ${glowIntensity * 0.12})
         `,
+        contain: "layout paint style",
+        willChange: "transform",
       }}
       animate={
-        animate
+        selected
           ? {
-              boxShadow: [
-                `0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}), 0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}), inset 0 0 ${glowSize * 1.2}px rgba(${config.rgb}, ${glowIntensity * 0.12})`,
-                `0 0 ${glowSize + 8}px rgba(${config.rgb}, ${glowIntensity + 0.12}), 0 0 ${glowSize * 3}px rgba(${config.rgb}, ${glowIntensity * 0.55}), inset 0 0 ${glowSize * 1.5}px rgba(${config.rgb}, ${glowIntensity * 0.18})`,
-                `0 0 ${glowSize}px rgba(${config.rgb}, ${glowIntensity}), 0 0 ${glowSize * 2.5}px rgba(${config.rgb}, ${glowIntensity * 0.4}), inset 0 0 ${glowSize * 1.2}px rgba(${config.rgb}, ${glowIntensity * 0.12})`,
-              ],
+              y: -4,
+              boxShadow: `
+                0 0 ${glowSize + 10}px rgba(${config.rgb}, ${glowIntensity + 0.18}),
+                0 0 ${glowSize * 3.2}px rgba(${config.rgb}, ${glowIntensity * 0.65}),
+                0 8px 24px rgba(0,0,0,0.45),
+                inset 0 0 ${glowSize * 2}px rgba(${config.rgb}, ${glowIntensity * 0.22})
+              `,
             }
-          : selected
-            ? {
-                y: -4,
-                boxShadow: `
-                  0 0 ${glowSize + 10}px rgba(${config.rgb}, ${glowIntensity + 0.18}),
-                  0 0 ${glowSize * 3.2}px rgba(${config.rgb}, ${glowIntensity * 0.65}),
-                  0 8px 24px rgba(0,0,0,0.45),
-                  inset 0 0 ${glowSize * 2}px rgba(${config.rgb}, ${glowIntensity * 0.22})
-                `,
-              }
-            : {}
+          : {}
       }
       whileHover={
         onClick
@@ -226,31 +218,18 @@ export const HeroCard: React.FC<HeroCardProps> = ({
 
       {/* 顶部高光 */}
       {(rarity === "UR" || rarity === "SSR") && (
-        <motion.div
-          className="absolute top-2 left-1/2 -translate-x-1/2 w-2/3 h-[1px] z-10"
+        <div
+          className="absolute top-2 left-1/2 -translate-x-1/2 w-2/3 h-[1px] z-10 opacity-70"
           style={{
             background: `linear-gradient(90deg, transparent, ${config.primaryColor}, transparent)`,
           }}
-          animate={animate ? { opacity: [0.35, 0.85, 0.35] } : {}}
-          transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
 
-      {/* 扫光 */}
-      {(animate || rarity === "UR" || rarity === "SSR") && (
-        <motion.div
-          className="absolute inset-0 pointer-events-none z-30 rounded-2xl overflow-hidden"
-          initial={{ x: "-100%", opacity: 0 }}
-          animate={{
-            x: ["-100%", "200%"],
-            opacity: [0, rarity === "UR" ? 0.14 : 0.08, 0],
-          }}
-          transition={{
-            duration: rarity === "UR" ? 3.5 : 5,
-            repeat: Infinity,
-            ease: "easeInOut",
-            repeatDelay: rarity === "UR" ? 1 : 2.5,
-          }}
+      {/* 扫光（仅 hover 触发，避免抽卡时无限循环重绘） */}
+      {(rarity === "UR" || rarity === "SSR") && (
+        <div
+          className="absolute inset-0 pointer-events-none z-30 rounded-2xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-300"
           style={{
             background: `linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)`,
           }}
@@ -365,7 +344,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           </div>
 
           {/* 等级 + 星级 + 战力 */}
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center justify-center gap-3 mb-1.5">
             <div
               className={`${sizeCfg.levelBadge} rounded-full flex flex-col items-center justify-center font-black border flex-shrink-0`}
               style={{
@@ -379,32 +358,18 @@ export const HeroCard: React.FC<HeroCardProps> = ({
               <span className="leading-none -mt-0.5">{level}</span>
             </div>
 
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col items-center gap-0.5">
               <div className="flex gap-0.5">
                 {Array.from({ length: config.starCount }).map((_, i) => (
-                  <motion.div
+                  <Star
                     key={i}
-                    animate={
-                      animate && (rarity === "UR" || rarity === "SSR")
-                        ? { opacity: [0.55, 1, 0.55] }
-                        : {}
-                    }
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                      delay: i * 0.18,
-                      ease: "easeInOut",
+                    size={sizeCfg.starSize}
+                    fill={config.primaryColor}
+                    color={config.primaryColor}
+                    style={{
+                      filter: `drop-shadow(0 0 3px ${config.glowColor})`,
                     }}
-                  >
-                    <Star
-                      size={sizeCfg.starSize}
-                      fill={config.primaryColor}
-                      color={config.primaryColor}
-                      style={{
-                        filter: `drop-shadow(0 0 3px ${config.glowColor})`,
-                      }}
-                    />
-                  </motion.div>
+                  />
                 ))}
               </div>
               <div
