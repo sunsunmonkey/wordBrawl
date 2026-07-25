@@ -413,7 +413,7 @@ export const SpiritCard: React.FC<SpiritCardProps> = ({
   const rgb = rarityConfig?.rgb ?? neutralRgb;
   const tier = revealedRarity ? RARITY_TIER[revealedRarity] : 0;
 
-  const borderWidth = 1 + 0.35 * tier;
+  const borderWidth = 1; // 统一为 1px，避免亚像素模糊，与其他 UI 元素对齐
   const borderAlpha = selected ? 0.9 : 0.42 + tier * 0.11;
   const shadowAlpha = 0.05 + tier * 0.05;
   const isUR = revealedRarity === "UR";

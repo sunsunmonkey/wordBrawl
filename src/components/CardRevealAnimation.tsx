@@ -24,6 +24,20 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
   const isHighRarity = rarity === "SSR" || rarity === "UR";
   const isUr = rarity === "UR";
 
+  // 卡包顶部撕开的锯齿形切口
+  const tornTopClip = React.useMemo(() => {
+    const teeth = 14;
+    const step = 100 / teeth;
+    const pts: string[] = ["0% 100%"];
+    for (let i = 0; i <= teeth; i++) {
+      const x = (i * step).toFixed(2);
+      const y = i % 2 === 0 ? 12 : 0;
+      pts.push(`${x}% ${y}%`);
+    }
+    pts.push("100% 100%");
+    return `polygon(${pts.join(", ")})`;
+  }, []);
+
   useEffect(() => {
     setCanSkip(false);
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -32,17 +46,17 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
     timers.push(setTimeout(() => setCanSkip(true), 800));
 
     if (isUr) {
-      timers.push(setTimeout(() => setPhase("burst"), 2200));
-      timers.push(setTimeout(() => setPhase("reveal"), 3000));
-      timers.push(setTimeout(() => setPhase("done"), 3800));
+      timers.push(setTimeout(() => setPhase("burst"), 2400));
+      timers.push(setTimeout(() => setPhase("reveal"), 3200));
+      timers.push(setTimeout(() => setPhase("done"), 4000));
     } else if (isHighRarity) {
-      timers.push(setTimeout(() => setPhase("burst"), 1800));
-      timers.push(setTimeout(() => setPhase("reveal"), 2500));
-      timers.push(setTimeout(() => setPhase("done"), 3200));
+      timers.push(setTimeout(() => setPhase("burst"), 2000));
+      timers.push(setTimeout(() => setPhase("reveal"), 2700));
+      timers.push(setTimeout(() => setPhase("done"), 3400));
     } else {
-      timers.push(setTimeout(() => setPhase("burst"), 1400));
-      timers.push(setTimeout(() => setPhase("reveal"), 2000));
-      timers.push(setTimeout(() => setPhase("done"), 2600));
+      timers.push(setTimeout(() => setPhase("burst"), 1800));
+      timers.push(setTimeout(() => setPhase("reveal"), 2400));
+      timers.push(setTimeout(() => setPhase("done"), 3000));
     }
 
     return () => timers.forEach(clearTimeout);
@@ -143,79 +157,147 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 卡包阶段 */}
+      {/* 卡包阶段：从卡包中抽出卡牌 */}
       <AnimatePresence>
         {phase === "pack" && (
           <motion.div
             className="relative z-10"
-            initial={{ y: -300, rotateX: -45, scale: 0.5, opacity: 0 }}
+            style={{ perspective: 1000 }}
+            initial={{ y: -320, rotateX: -35, scale: 0.5, opacity: 0 }}
             animate={{
-              y: [null, 30, -10, 0],
-              rotateX: [null, 10, -5, 0],
-              scale: [null, 1.1, 0.95, 1],
+              y: [null, 30, -6, 0],
+              rotateX: [null, 8, -3, 0],
+              scale: [null, 1.08, 0.97, 1],
               opacity: 1,
             }}
             exit={{
-              scale: isUr ? 3 : isHighRarity ? 2 : 1.5,
+              scale: isUr ? 2.4 : isHighRarity ? 1.8 : 1.4,
               opacity: 0,
-              filter: "brightness(3)",
+              filter: "brightness(2.6)",
             }}
             transition={{
-              duration: isUr ? 2 : 1.5,
-              times: [0, 0.6, 0.85, 1],
+              duration: 0.9,
+              times: [0, 0.55, 0.82, 1],
               ease: "easeOut",
             }}
           >
-            <div
-              className="w-48 h-72 rounded-xl flex items-center justify-center relative"
-              style={{
-                background: `linear-gradient(145deg, #1F2833, #0B0C10)`,
-                border: `3px solid`,
-                borderImage: `${config.borderGradient} 1`,
-                boxShadow: `0 0 40px ${config.glowColor}, 0 0 80px ${config.glowColor}60, inset 0 0 40px rgba(${config.rgb}, 0.15)`,
-              }}
-            >
-              <div
-                className="absolute inset-2 rounded-lg flex items-center justify-center"
+            {/* 抽卡整体容器 */}
+            <div className="relative w-52 h-80 flex items-end justify-center">
+              {/* 从卡包中滑出的卡牌 */}
+              <motion.div
+                className="absolute left-1/2 -translate-x-1/2 w-40 h-60 rounded-lg overflow-hidden"
                 style={{
-                  background: `linear-gradient(135deg, rgba(${config.rgb}, 0.2), transparent)`,
-                  border: `1px dashed rgba(${config.rgb}, 0.4)`,
+                  bottom: 40,
+                  background: `linear-gradient(160deg, rgba(${config.rgb}, 0.35), #0B0C10 60%)`,
+                  border: `2px solid ${config.primaryColor}`,
+                  boxShadow: `0 0 30px ${config.glowColor}, inset 0 0 30px rgba(${config.rgb}, 0.25)`,
+                  transformOrigin: "bottom center",
+                }}
+                initial={{ y: 0, scale: 0.98 }}
+                animate={{ y: isUr ? -150 : -130, scale: 1 }}
+                transition={{
+                  delay: isUr ? 0.9 : 0.7,
+                  duration: isUr ? 0.9 : 0.7,
+                  ease: [0.16, 1, 0.3, 1],
                 }}
               >
-                <div className="text-center">
-                  <Sparkles
-                    size={48}
-                    className="mx-auto mb-3 animate-pulse"
-                    style={{ color: config.primaryColor }}
+                {/* 卡牌背面纹理 */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="absolute inset-3 rounded border border-dashed"
+                    style={{ borderColor: `rgba(${config.rgb}, 0.4)` }}
                   />
-                  <div
-                    className="text-lg font-black tracking-[0.3em]"
-                    style={{ color: config.primaryColor }}
-                  >
-                    词灵
-                  </div>
-                  <div
-                    className="text-xs tracking-widest mt-1"
-                    style={{ color: config.secondaryColor }}
-                  >
-                    SPIRIT CARD
+                  <div className="text-center">
+                    <div
+                      className="text-3xl font-black tracking-[0.2em]"
+                      style={{
+                        color: config.primaryColor,
+                        textShadow: `0 0 16px ${config.glowColor}`,
+                      }}
+                    >
+                      ?
+                    </div>
                   </div>
                 </div>
+                {/* 卡面高光扫过 */}
+                <motion.div
+                  className="absolute inset-0"
+                  style={{
+                    background: `linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%)`,
+                  }}
+                  animate={{ x: ["-120%", "120%"] }}
+                  transition={{
+                    duration: 1.2,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: isUr ? 0.9 : 0.7,
+                  }}
+                />
+              </motion.div>
+
+              {/* 卡包本体（覆盖卡牌下半部分，形成"抽出"效果） */}
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-56 z-10">
+                {/* 撕裂飞散的顶盖 */}
+                <motion.div
+                  className="absolute -top-2 left-0 w-full h-10"
+                  style={{
+                    background: `linear-gradient(180deg, ${config.primaryColor}, rgba(${config.rgb}, 0.2))`,
+                    clipPath:
+                      "polygon(0 100%, 6% 0, 14% 100%, 22% 10%, 30% 100%, 38% 0, 46% 100%, 54% 10%, 62% 100%, 70% 0, 78% 100%, 86% 10%, 94% 100%, 100% 0, 100% 100%)",
+                    transformOrigin: "bottom center",
+                  }}
+                  initial={{ y: 0, opacity: 1, rotateX: 0 }}
+                  animate={{ y: -60, opacity: 0, rotateX: -90 }}
+                  transition={{ delay: 0.45, duration: 0.4, ease: "easeOut" }}
+                />
+                {/* 卡包主体 */}
+                <div
+                  className="absolute inset-0 rounded-b-xl rounded-t-sm overflow-hidden"
+                  style={{
+                    background: `linear-gradient(145deg, #1F2833, #0B0C10)`,
+                    border: `3px solid`,
+                    borderImage: `${config.borderGradient} 1`,
+                    clipPath: tornTopClip,
+                    boxShadow: `0 0 40px ${config.glowColor}, 0 0 80px ${config.glowColor}60, inset 0 0 40px rgba(${config.rgb}, 0.15)`,
+                  }}
+                >
+                  {/* 内层箔膜光泽 */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: `linear-gradient(135deg, rgba(${config.rgb}, 0.25), transparent 55%)`,
+                    }}
+                  />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pt-6">
+                    <Sparkles
+                      size={40}
+                      className="animate-pulse"
+                      style={{ color: config.primaryColor }}
+                    />
+                    <div
+                      className="text-base font-black tracking-[0.35em]"
+                      style={{ color: config.primaryColor }}
+                    >
+                      词灵
+                    </div>
+                    <div
+                      className="text-[10px] tracking-widest"
+                      style={{ color: config.secondaryColor }}
+                    >
+                      SPIRIT PACK
+                    </div>
+                  </div>
+                  {/* 撕口发光 */}
+                  <motion.div
+                    className="absolute top-0 inset-x-0 h-3"
+                    style={{
+                      background: `linear-gradient(180deg, ${config.glowColor}, transparent)`,
+                    }}
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  />
+                </div>
               </div>
-              {/* 扫描线 */}
-              <motion.div
-                className="absolute inset-x-2 h-1"
-                style={{
-                  background: `linear-gradient(90deg, transparent, ${config.primaryColor}, transparent)`,
-                  boxShadow: `0 0 20px ${config.glowColor}`,
-                }}
-                animate={{ y: ["-140px", "140px"] }}
-                transition={{
-                  duration: 1.5,
-                  repeat: Infinity,
-                  ease: "linear",
-                }}
-              />
             </div>
           </motion.div>
         )}

@@ -154,7 +154,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
       className={`group relative rounded-2xl ${sizeCfg.card} ${className} ${onClick ? "cursor-pointer" : ""}`}
       style={{
         background: "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
-        border: `${1 + tier * 0.5}px solid`,
+        border: `1px solid`,
         borderColor: `${config.primaryColor}${Math.round(borderAlpha * 255)
           .toString(16)
           .padStart(2, "0")}`,
