@@ -193,6 +193,8 @@ export interface CharacterData {
   isPreset?: boolean;
   /** 稀有度：N/R/SR/SSR/UR */
   rarity?: Rarity;
+  /** 角色等级 */
+  level?: number;
 }
 
 export interface BattleEvent {
