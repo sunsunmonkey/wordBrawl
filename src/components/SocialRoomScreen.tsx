@@ -49,7 +49,7 @@ const stripAtPrefix = (text: string): string =>
 export const SocialRoomScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
   const { apiKey, baseUrl, model, apiMode } = useGameStore();
-  const { playerId } = usePlayerStore();
+  const { playerId, nickname } = usePlayerStore();
   const {
     currentRoom,
     leaveRoom,
@@ -132,7 +132,7 @@ export const SocialRoomScreen: React.FC = () => {
     if (!currentRoom) return;
     const link = `${window.location.origin}${window.location.pathname}#room=${currentRoom.roomCode}`;
     try {
-      await navigator.clipboard.writeText(`${currentRoom.roomCode} · ${link}`);
+      await navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -165,6 +165,28 @@ export const SocialRoomScreen: React.FC = () => {
     const me = currentRoom.players.find((p) => p.playerId === playerId);
     return me?.activeSpirit ?? me?.carriedSpirits?.[0] ?? null;
   }, [currentRoom, playerId]);
+
+  // 我方词灵的 rosterId 集合：用于在 @词灵 快捷条里区分自己/对方
+  const mySpiritIds = useMemo<Set<string>>(() => {
+    if (!currentRoom) return new Set();
+    const me = currentRoom.players.find((p) => p.playerId === playerId);
+    const ids = new Set<string>();
+    me?.carriedSpirits?.forEach((s) => ids.add(s.rosterId));
+    if (me?.activeSpirit) ids.add(me.activeSpirit.rosterId);
+    return ids;
+  }, [currentRoom, playerId]);
+
+  // 房间内可被 @ 的其他玩家（自己不出现在快捷条里）
+  const mentionablePlayers = useMemo(() => {
+    if (!currentRoom) return [];
+    return currentRoom.players.filter((p) => p.playerId !== playerId);
+  }, [currentRoom, playerId]);
+
+  // 玩家昵称集合（用于聊天气泡里区分 @人 与 @词灵 的高亮颜色）
+  const playerNameSet = useMemo(
+    () => new Set(currentRoom?.players.map((p) => p.nickname) ?? []),
+    [currentRoom],
+  );
 
   const isQuickBattle = currentRoom?.quickBattle ?? false;
 
@@ -339,6 +361,14 @@ export const SocialRoomScreen: React.FC = () => {
     inputRef.current?.focus();
   };
 
+  const handleQuickMentionPlayer = (nickname: string) => {
+    setInput((prev) => {
+      const prefix = prev && !prev.endsWith(" ") ? `${prev} ` : prev;
+      return `${prefix}@${nickname} `;
+    });
+    inputRef.current?.focus();
+  };
+
   const pending = currentRoom.pendingChallenge;
   const isPendingForMe =
     pending && pending.toPlayerId === playerId && pending.status === "pending";
@@ -468,6 +498,8 @@ export const SocialRoomScreen: React.FC = () => {
                 key={msg.id}
                 message={msg}
                 isMe={msg.senderId === playerId}
+                playerNames={playerNameSet}
+                myNickname={nickname}
               />
             ))}
             {/* 流式词灵回复气泡 / 正在输入占位 */}
@@ -503,34 +535,95 @@ export const SocialRoomScreen: React.FC = () => {
             </div>
           )}
 
+          {/* 快捷 @ 玩家 */}
+          {mentionablePlayers.length > 0 && (
+            <div className="shrink-0 flex items-center gap-2 px-4 md:px-6 py-2 border-t border-white/5 overflow-x-auto scrollbar-hide">
+              <span className="shrink-0 text-[9px] font-mono tracking-[0.28em] text-white/30">
+                @ 契约者 ▸
+              </span>
+              {mentionablePlayers.map((p) => (
+                <button
+                  key={p.playerId}
+                  type="button"
+                  onClick={() => handleQuickMentionPlayer(p.nickname)}
+                  disabled={isSending}
+                  className="shrink-0 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-mono transition-all disabled:opacity-40"
+                  style={{
+                    borderColor: `${p.avatarColor}66`,
+                    color: p.avatarColor,
+                    background: `${p.avatarColor}1a`,
+                  }}
+                >
+                  <span
+                    className="h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-black"
+                    style={{
+                      background: `${p.avatarColor}44`,
+                      color: p.avatarColor,
+                    }}
+                  >
+                    {p.nickname.slice(0, 1).toUpperCase()}
+                  </span>
+                  {p.nickname}
+                  {!p.isOnline && (
+                    <span className="text-[8px] text-white/30">离线</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* 快捷 @ 词灵 */}
           {mentionableSpirits.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-4 md:px-6 py-2 border-t border-white/5 overflow-x-auto scrollbar-hide">
-              <span className="shrink-0 text-[9px] font-mono tracking-[0.28em] text-white/30">
+              <span className="shrink-0 flex items-center gap-2 text-[9px] font-mono tracking-[0.28em] text-white/30">
                 @ 词灵 ▸
+                <span className="flex items-center gap-1 tracking-normal">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#FFD700]" />
+                  <span className="text-[#FFD700]/70">我方</span>
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#66FCF1] ml-1" />
+                  <span className="text-[#66FCF1]/70">对方</span>
+                </span>
               </span>
-              {mentionableSpirits.map((s) => (
-                <button
-                  key={s.rosterId}
-                  type="button"
-                  onClick={() => handleQuickMention(s)}
-                  disabled={isSending}
-                  className="shrink-0 flex items-center gap-1.5 rounded-full border border-[#FFD700]/40 bg-[#FFD700]/10 px-2.5 py-1 text-[10px] font-mono text-[#FFD700] hover:bg-[#FFD700]/20 transition-all disabled:opacity-40"
-                >
-                  {s.imageUrl ? (
-                    <img
-                      src={s.imageUrl}
-                      alt=""
-                      className="h-4 w-4 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="h-4 w-4 rounded-full bg-[#FFD700]/30 flex items-center justify-center text-[8px] font-black">
-                      {s.name.slice(0, 1)}
+              {mentionableSpirits.map((s) => {
+                const isMine = mySpiritIds.has(s.rosterId);
+                const accent = isMine ? "#FFD700" : "#66FCF1";
+                return (
+                  <button
+                    key={s.rosterId}
+                    type="button"
+                    onClick={() => handleQuickMention(s)}
+                    disabled={isSending}
+                    className="shrink-0 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-mono transition-all disabled:opacity-40"
+                    style={{
+                      borderColor: `${accent}66`,
+                      color: accent,
+                      background: `${accent}1a`,
+                    }}
+                  >
+                    {s.imageUrl ? (
+                      <img
+                        src={s.imageUrl}
+                        alt=""
+                        className="h-4 w-4 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span
+                        className="h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-black"
+                        style={{ background: `${accent}4d`, color: accent }}
+                      >
+                        {s.name.slice(0, 1)}
+                      </span>
+                    )}
+                    {s.name}
+                    <span
+                      className="text-[8px] tracking-normal opacity-70"
+                      style={{ color: accent }}
+                    >
+                      {isMine ? "我方" : "对方"}
                     </span>
-                  )}
-                  {s.name}
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -545,7 +638,7 @@ export const SocialRoomScreen: React.FC = () => {
               value={input}
               maxLength={MAX_INPUT}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={`在房间 ${currentRoom.roomCode} 发言... (@词灵 触发回复, Enter 发送)`}
+              placeholder={`在房间 ${currentRoom.roomCode} 发言... (@词灵 触发回复 · @契约者 提醒队友 · Enter 发送)`}
               disabled={isSending}
               className="flex-1 bg-black/50 border border-[#A78BFA]/35 focus:border-[#A78BFA] outline-none px-4 py-2.5 text-sm text-white placeholder:text-white/30 transition-colors disabled:opacity-60"
             />
@@ -749,7 +842,9 @@ const PlayerCard: React.FC<{
 const ChatMessageBubble: React.FC<{
   message: SocialChatMessage;
   isMe: boolean;
-}> = ({ message, isMe }) => {
+  playerNames?: Set<string>;
+  myNickname?: string;
+}> = ({ message, isMe, playerNames, myNickname }) => {
   // 系统消息：居中灰条
   if (message.type === "system") {
     return (
@@ -835,17 +930,24 @@ const ChatMessageBubble: React.FC<{
             color: "#E5E7EB",
           }}
         >
-          {renderContentWithMentions(message.content, message.mentions)}
+          {renderContentWithMentions(
+            message.content,
+            message.mentions,
+            playerNames,
+            myNickname,
+          )}
         </div>
       </div>
     </motion.div>
   );
 };
 
-/** 把 @名字 高亮显示 */
+/** 把 @名字 高亮显示：@词灵 金色，@契约者 紫色，@我 额外加底色 */
 const renderContentWithMentions = (
   content: string,
   mentions?: string[],
+  playerNames?: Set<string>,
+  myNickname?: string,
 ): React.ReactNode => {
   if (!mentions || mentions.length === 0) return content;
   const parts: React.ReactNode[] = [];
@@ -857,13 +959,21 @@ const renderContentWithMentions = (
     if (match.index > lastIndex) {
       parts.push(content.slice(lastIndex, match.index));
     }
+    const name = match[1];
+    const isPlayer = playerNames?.has(name) ?? false;
+    const isMe = Boolean(myNickname) && name === myNickname;
+    const color = isPlayer ? "#A78BFA" : "#FFD700";
     parts.push(
       <span
         key={`m-${key++}`}
-        className="text-[#FFD700] font-bold"
-        style={{ textShadow: "0 0 8px rgba(255,215,0,0.4)" }}
+        className="font-bold rounded px-0.5"
+        style={{
+          color,
+          textShadow: `0 0 8px ${isPlayer ? "rgba(167,139,250,0.4)" : "rgba(255,215,0,0.4)"}`,
+          background: isMe ? "rgba(167,139,250,0.22)" : undefined,
+        }}
       >
-        @{match[1]}
+        @{name}
       </span>,
     );
     lastIndex = regex.lastIndex;

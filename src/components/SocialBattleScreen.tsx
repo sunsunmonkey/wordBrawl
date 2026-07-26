@@ -1,25 +1,51 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Heart, Loader2, Sparkles, Swords, Trophy, Zap } from "lucide-react";
+import { Loader2, Swords, Trophy } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import { usePlayerStore } from "../store/usePlayerStore";
 import { useSocialStore } from "../store/useSocialStore";
 import type {
+  SerializedSpirit,
   SocialBattleReport,
   SocialBattleState,
 } from "../store/socialTypes";
-import type { BattleEvent, Skill } from "../store/useGameStore";
+import type { CharacterData, BattleEvent, Skill } from "../store/useGameStore";
 import { BattleEngine, ULTIMATE_THRESHOLD } from "../utils/battleEngine";
 import { socialTransport } from "../utils/socialTransport";
-import { CharacterAvatar } from "./CharacterAvatar";
+// 复用九层塔（Tower/BattleScreen）的战斗演出层，保证两套系统观感一致。
+import { CharacterCard, UltimateOverlayView, useBattleFx } from "./battleFx";
 
-const TURN_TIMEOUT_MS = 12_000;
-const ACTION_DELAY_MS = 800;
+const TURN_TIMEOUT_MS = 15_000;
+/** 单招演出时长（普攻/技能）：留足受击飘字 + 震屏时间 */
+const SKILL_FX_MS = 1_200;
+/** 大招演出时长：预警 500 + 蓄力 400 + 释放 2100 + 收尾缓冲 */
+const ULTIMATE_FX_MS = 3_400;
 
 const isUltimateSkill = (skill: Skill): boolean =>
   skill.type === "ultimate" || !!skill.isUltimate;
 
 type Side = "host" | "guest";
+
+/**
+ * 把序列化词灵 + 实时 HP/充能 组装成 Tower CharacterCard 所需的 CharacterData。
+ * displayedHp / displayedCharge 是“已播放到当前日志”的数值，驱动血条平滑动画。
+ */
+const toCharacterData = (
+  spirit: SerializedSpirit,
+  hp: number,
+  maxHp: number,
+  charge: number,
+): CharacterData => {
+  const snap = spirit.combatSnapshot;
+  return {
+    ...snap,
+    name: spirit.name,
+    hp,
+    maxHp,
+    ultimateCharge: charge,
+    imageUrl: spirit.imageUrl ?? snap.imageUrl,
+  };
+};
 
 export const SocialBattleScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
@@ -34,15 +60,27 @@ export const SocialBattleScreen: React.FC = () => {
     setActiveBattle,
   } = useSocialStore();
 
-  // 引擎只存在于 host 端
+  // ===== 演出层（Tower 共享）=====
+  const {
+    ultimateOverlay,
+    shakeScreen,
+    hitSide,
+    attackerSide,
+    popups,
+    playLogEffects,
+    resetFx,
+  } = useBattleFx();
+
+  // ===== host 权威引擎 =====
   const engineRef = useRef<BattleEngine | null>(null);
   const [pendingSkills, setPendingSkills] = useState<{
     host?: Skill;
     guest?: Skill;
   }>({});
   const [turnDeadline, setTurnDeadline] = useState<number>(0);
+  const resolvingRef = useRef(false);
+
   const [now, setNow] = useState(Date.now());
-  const [resolvedLogs, setResolvedLogs] = useState<BattleEvent[]>([]);
   const [finished, setFinished] = useState(false);
 
   const battle = activeBattle ?? currentRoom?.activeBattle ?? null;
@@ -56,13 +94,43 @@ export const SocialBattleScreen: React.FC = () => {
         : null
     : null;
 
-  // 心跳定时器（每秒更新进度条 + 检查超时）
+  // ===== 日志驱动的演出进度（两端各自播放）=====
+  // 用 log.id 记录已播放的日志（对滑动窗口截断稳健）；caughtUp 表示演出已追平权威状态。
+  const playedIdsRef = useRef<Set<string>>(new Set());
+  const [caughtUp, setCaughtUp] = useState(true);
+  const [displayHp, setDisplayHp] = useState<{ host: number; guest: number }>({
+    host: battle?.hostHp ?? 0,
+    guest: battle?.guestHp ?? 0,
+  });
+  const [displayCharge, setDisplayCharge] = useState<{
+    host: number;
+    guest: number;
+  }>({ host: battle?.hostCharge ?? 0, guest: battle?.guestCharge ?? 0 });
+  const playingRef = useRef(false);
+  const initializedRef = useRef(false);
+  const battleRef = useRef<SocialBattleState | null>(battle);
+  battleRef.current = battle;
+
+  // 首次看到对战时，把当前所有日志标记为“已播放”，避免重挂载/中途加入时重放历史伤害。
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 200);
+    if (!battle || initializedRef.current) return;
+    initializedRef.current = true;
+    battle.logs.forEach((l) => playedIdsRef.current.add(l.id));
+    setDisplayHp({ host: battle.hostHp, guest: battle.guestHp });
+    setDisplayCharge({ host: battle.hostCharge, guest: battle.guestCharge });
+    setCaughtUp(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battle?.battleId]);
+
+  // 心跳定时器：驱动倒计时进度
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, []);
 
-  // host 初始化引擎
+  // ---------------------------------------------------------------------------
+  // host：初始化引擎并进入 fighting
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!battle || !isHost || engineRef.current) return;
     if (battle.phase !== "preparing") return;
@@ -71,7 +139,6 @@ export const SocialBattleScreen: React.FC = () => {
       battle.guestSpirit.combatSnapshot,
     );
     engineRef.current = engine;
-    // 进入 fighting 状态
     const openingLogs = engine.createOpeningLogs();
     const state = engine.getState();
     const nextState: SocialBattleState = {
@@ -87,82 +154,72 @@ export const SocialBattleScreen: React.FC = () => {
       phase: "fighting",
       updatedAt: Date.now(),
     };
-    setResolvedLogs(openingLogs);
     updateBattleState(nextState);
     setTurnDeadline(Date.now() + TURN_TIMEOUT_MS);
   }, [battle, isHost, updateBattleState]);
 
-  // host 监听客机的技能选择
+  // ---------------------------------------------------------------------------
+  // host：监听 guest 出招上行
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!isHost || !battle) return;
     const unsub = socialTransport.subscribe((event) => {
       if (event.kind !== "battle-action") return;
       if (event.battleId !== battle.battleId) return;
+      if (event.skillName === "__forfeit__") {
+        // guest 认输：host 直接判 host 胜
+        void handleRemoteForfeit();
+        return;
+      }
       if (event.actorPlayerId === battle.guestPlayerId) {
         const skill = battle.guestSpirit.combatSnapshot.skills.find(
           (s) => s.name === event.skillName,
         );
-        if (skill) {
-          setPendingSkills((prev) => ({ ...prev, guest: skill }));
-        }
+        if (skill) setPendingSkills((prev) => ({ ...prev, guest: skill }));
       } else if (event.actorPlayerId === battle.hostPlayerId) {
         const skill = battle.hostSpirit.combatSnapshot.skills.find(
           (s) => s.name === event.skillName,
         );
-        if (skill) {
-          setPendingSkills((prev) => ({ ...prev, host: skill }));
-        }
+        if (skill) setPendingSkills((prev) => ({ ...prev, host: skill }));
       }
     });
     return unsub;
-  }, [isHost, battle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, battle?.battleId]);
 
-  // host 在双方都选完或超时时结算回合
+  // ---------------------------------------------------------------------------
+  // host：双方选完 / 超时 → 结算整回合（逐招演出）
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!isHost || !engineRef.current || !battle) return;
-    if (battle.phase !== "fighting") return;
-    if (finished) return;
+    if (battle.phase !== "fighting" || finished) return;
+    if (resolvingRef.current) return;
 
     const bothReady =
       Boolean(pendingSkills.host) && Boolean(pendingSkills.guest);
     const timedOut = now >= turnDeadline && turnDeadline > 0;
-
     if (!bothReady && !timedOut) return;
 
     const engine = engineRef.current;
-    if (!engine) return;
-
-    // 自动补全未选技能
     const hostSkill =
       pendingSkills.host ?? engine.chooseSkill(engine.p1, engine.p2);
     const guestSkill =
       pendingSkills.guest ?? engine.chooseSkill(engine.p2, engine.p1);
-
-    // 速度决定先后
     const hostFirst = engine.p1.speed >= engine.p2.speed;
-    const firstSide: Side = hostFirst ? "host" : "guest";
-    const secondSide: Side = hostFirst ? "guest" : "host";
 
+    resolvingRef.current = true;
     void resolveTurn(
       engine,
       battle,
-      firstSide,
-      secondSide,
+      hostFirst ? "host" : "guest",
+      hostFirst ? "guest" : "host",
       hostSkill,
       guestSkill,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    pendingSkills,
-    now,
-    turnDeadline,
-    isHost,
-    battle,
-    finished,
-    updateBattleState,
-  ]);
+  }, [pendingSkills, now, turnDeadline, isHost, battle, finished]);
 
-  /** host 结算一回合 */
+  /** host 结算一回合：逐招 executeSkill → 逐招广播（每招之间留出演出时间）。 */
   const resolveTurn = async (
     engine: BattleEngine,
     current: SocialBattleState,
@@ -172,73 +229,91 @@ export const SocialBattleScreen: React.FC = () => {
     guestSkill: Skill,
   ) => {
     setPendingSkills({});
-    const newLogs: BattleEvent[] = [];
 
-    const executeOnce = (side: Side, skill: Skill) => {
-      if (engine.isBattleOver()) return;
+    const executeOnce = (side: Side): BattleEvent | null => {
+      if (engine.isBattleOver()) return null;
       const attackerId = side === "host" ? "player1" : "player2";
-      // 大招未就绪则降级为普通攻击第一招
-      let actualSkill = skill;
-      if (
-        isUltimateSkill(skill) &&
-        !engine.canUseUltimate(side === "host" ? engine.p1 : engine.p2)
-      ) {
-        const fallback = engine.p1.skills.find((s) => !isUltimateSkill(s));
-        if (fallback) actualSkill = fallback;
+      const raw = side === "host" ? hostSkill : guestSkill;
+      const actor = side === "host" ? engine.p1 : engine.p2;
+      let skill = raw;
+      // 大招未就绪 → 降级为首个普攻
+      if (isUltimateSkill(raw) && !engine.canUseUltimate(actor)) {
+        const fallback = actor.skills.find((s) => !isUltimateSkill(s));
+        if (fallback) skill = fallback;
       }
-      const result = engine.executeSkill(attackerId, actualSkill);
-      newLogs.push(result.log);
+      return engine.executeSkill(attackerId, skill).log;
     };
 
-    executeOnce(firstSide, firstSide === "host" ? hostSkill : guestSkill);
-    // 推送中间状态
-    await pushEngineState(engine, current, newLogs, false);
-    await sleep(ACTION_DELAY_MS);
+    // 第一招
+    const firstLog = executeOnce(firstSide);
+    if (firstLog) {
+      await broadcastStep(engine, current, firstLog, false);
+      await sleep(firstLog.isUltimate ? ULTIMATE_FX_MS : SKILL_FX_MS);
+    }
 
-    executeOnce(secondSide, secondSide === "host" ? hostSkill : guestSkill);
+    // 若第一招已终结战斗则跳过第二招
+    let over = engine.isBattleOver();
+    let secondLog: BattleEvent | null = null;
+    if (!over) {
+      secondLog = executeOnce(secondSide);
+      over = engine.isBattleOver();
+    }
 
-    // 检查胜负
-    let isFinished = false;
-    let report: SocialBattleReport | undefined;
-    if (engine.isBattleOver()) {
+    if (over) {
+      // 结算：补一条击败日志
       const winnerSide: Side =
         engine.getWinner() === "player1" ? "host" : "guest";
       const defeatLog = engine.createDefeatLog(
         winnerSide === "host" ? "player2" : "player1",
       );
-      newLogs.push(defeatLog);
-      isFinished = true;
-      report = buildReport(current, winnerSide, engine.currentTurn, newLogs);
-    } else {
-      engine.currentTurn += 1;
-    }
-
-    await pushEngineState(engine, current, newLogs, isFinished, report);
-
-    if (isFinished && report) {
+      const report = buildReport(
+        current,
+        winnerSide,
+        engine.getState().currentTurn,
+        collectAllLogs(current, [firstLog, secondLog, defeatLog]),
+      );
+      // 先播第二招（若有），再上结束态
+      if (secondLog) {
+        await broadcastStep(engine, current, secondLog, false);
+        await sleep(secondLog.isUltimate ? ULTIMATE_FX_MS : SKILL_FX_MS);
+      }
+      const finalState = broadcastStep(
+        engine,
+        current,
+        defeatLog,
+        true,
+        report,
+      );
+      await finalState;
       setFinished(true);
-      finishBattle(buildFinishedState(current, engine, newLogs, report));
-      // 战报回群聊（短暂延迟让玩家看到结束动画）
-      setTimeout(() => {
-        sendBattleReport(report!);
-      }, 2500);
-    } else {
-      setTurnDeadline(Date.now() + TURN_TIMEOUT_MS);
+      finishBattle(buildFinishedState(current, engine, report, defeatLog));
+      setTimeout(() => sendBattleReport(report), 2600);
+      resolvingRef.current = false;
+      return;
     }
+
+    // 未结束：播第二招 + 进入下一回合
+    if (secondLog) {
+      await broadcastStep(engine, current, secondLog, false);
+      await sleep(secondLog.isUltimate ? ULTIMATE_FX_MS : SKILL_FX_MS);
+    }
+    setTurnDeadline(Date.now() + TURN_TIMEOUT_MS);
+    resolvingRef.current = false;
   };
 
-  const pushEngineState = async (
+  /** host 广播“单招后”的权威状态；返回 Promise 便于串行。 */
+  const broadcastStep = async (
     engine: BattleEngine,
     current: SocialBattleState,
-    newLogs: BattleEvent[],
+    newLog: BattleEvent,
     isFinished: boolean,
     report?: SocialBattleReport,
   ) => {
+    const base = battleRef.current ?? current;
     const state = engine.getState();
-    const mergedLogs = [...resolvedLogs, ...newLogs].slice(-30);
-    setResolvedLogs(mergedLogs);
+    const mergedLogs = [...base.logs, newLog].slice(-40);
     const next: SocialBattleState = {
-      ...current,
+      ...base,
       currentTurn: state.currentTurn,
       hostHp: state.p1.hp,
       guestHp: state.p2.hp,
@@ -251,13 +326,100 @@ export const SocialBattleScreen: React.FC = () => {
       ...(report ? { report, winnerPlayerId: report.winnerPlayerId } : {}),
       updatedAt: Date.now(),
     };
+    battleRef.current = next;
     updateBattleState(next);
-    await sleep(120);
+    await sleep(60);
   };
 
-  // 处理玩家选择技能
+  // ---------------------------------------------------------------------------
+  // 演出播放器（两端通用）：监听 battle.logs，逐条播放尚未播过的日志。
+  // 每播一条：先 playLogEffects(log)，再把 displayHp/displayCharge 推到该招后的值。
+  // ---------------------------------------------------------------------------
+  const logs = battle?.logs ?? [];
+
+  const advancePlayer = useCallback(async () => {
+    if (playingRef.current) return;
+    const b = battleRef.current;
+    if (!b) return;
+    const played = playedIdsRef.current;
+    const pending = b.logs.filter((l) => !played.has(l.id));
+    if (pending.length === 0) {
+      setCaughtUp(true);
+      return;
+    }
+    playingRef.current = true;
+    setCaughtUp(false);
+
+    for (const log of pending) {
+      // 播放过程中可能有更新的权威状态到来，用最新引用取 maxHp
+      const cur = battleRef.current ?? b;
+      await playLogEffects(log);
+      applyLogToDisplay(log, cur);
+      played.add(log.id);
+      // system 开场日志之间不停顿，招式间隔由 host 的节奏控制
+      if (log.attacker !== "system") {
+        await sleep(120);
+      }
+    }
+    playingRef.current = false;
+    // 追平后把血量/充能对齐权威值，消除舍入误差
+    const fin = battleRef.current;
+    if (fin) {
+      setDisplayHp({ host: fin.hostHp, guest: fin.guestHp });
+      setDisplayCharge({ host: fin.hostCharge, guest: fin.guestCharge });
+      // 新回合出招窗口打开：清空本地锁定的招式（guest 不走 resolveTurn 无法自清）
+      if (fin.phase === "fighting") setPendingSkills({});
+    }
+    setCaughtUp(true);
+  }, [playLogEffects]);
+
+  /** 依据单条日志把 displayHp/displayCharge 平滑推进（受击方掉血，攻击方回血/充能）。 */
+  const applyLogToDisplay = (log: BattleEvent, b: SocialBattleState) => {
+    if (log.attacker === "system") return;
+    const attackerSideKey: Side = log.attacker === "player1" ? "host" : "guest";
+    const defenderSideKey: Side = attackerSideKey === "host" ? "guest" : "host";
+
+    setDisplayHp((prev) => {
+      const nextAtt = { ...prev };
+      if (log.damage) {
+        const maxHp = defenderSideKey === "host" ? b.hostMaxHp : b.guestMaxHp;
+        nextAtt[defenderSideKey] = Math.max(
+          0,
+          Math.min(maxHp, prev[defenderSideKey] - log.damage),
+        );
+      }
+      if (log.heal) {
+        const maxHp = attackerSideKey === "host" ? b.hostMaxHp : b.guestMaxHp;
+        nextAtt[attackerSideKey] = Math.max(
+          0,
+          Math.min(maxHp, prev[attackerSideKey] + log.heal),
+        );
+      }
+      return nextAtt;
+    });
+
+    setDisplayCharge((prev) => {
+      const next = { ...prev };
+      if (typeof log.attackerCharge === "number")
+        next[attackerSideKey] = log.attackerCharge;
+      if (typeof log.defenderCharge === "number")
+        next[defenderSideKey] = log.defenderCharge;
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    void advancePlayer();
+  }, [advancePlayer, logs.length]);
+
+  // ---------------------------------------------------------------------------
+  // 出招
+  // ---------------------------------------------------------------------------
   const handleSkillPick = (skill: Skill) => {
     if (!battle || !mySide || finished) return;
+    if (battle.phase !== "fighting") return;
+    // 演出未播完时禁止提前出招
+    if (!caughtUp) return;
     if (isUltimateSkill(skill)) {
       const charge = mySide === "host" ? battle.hostCharge : battle.guestCharge;
       if (charge < ULTIMATE_THRESHOLD) return;
@@ -266,48 +428,57 @@ export const SocialBattleScreen: React.FC = () => {
       setPendingSkills((prev) => ({ ...prev, host: skill }));
     } else {
       setPendingSkills((prev) => ({ ...prev, guest: skill }));
-    }
-    // 客机需要通过 transport 通知 host
-    if (!isHost) {
       sendBattleAction(skill.name);
     }
   };
 
-  // 自动结束动画后返回房间
+  const handleRemoteForfeit = async () => {
+    const b = battleRef.current;
+    if (!b || finished) return;
+    const report = buildReport(b, "host", b.currentTurn, b.logs);
+    setFinished(true);
+    finishBattle({
+      ...b,
+      phase: "finished",
+      winnerPlayerId: report.winnerPlayerId,
+      report,
+    });
+    setTimeout(() => sendBattleReport(report), 1500);
+  };
+
+  // 结束后自动返回房间
   useEffect(() => {
     if (!finished) return;
     const t = setTimeout(() => {
+      resetFx();
       setActiveBattle(null);
       setPhase("SOCIAL_ROOM");
-    }, 4000);
+    }, 4200);
     return () => clearTimeout(t);
-  }, [finished, setActiveBattle, setPhase]);
+  }, [finished, setActiveBattle, setPhase, resetFx]);
 
-  // 退出按钮
   const handleForfeit = () => {
     if (!battle || finished) return;
-    if (window.confirm("确认放弃这场对战？")) {
-      const winnerSide: Side = mySide === "host" ? "guest" : "host";
-      const report = buildReport(
-        battle,
-        winnerSide,
-        battle.currentTurn,
-        battle.logs,
-      );
-      if (isHost) {
-        finishBattle(
-          buildFinishedState(battle, engineRef.current, battle.logs, report),
-        );
-      } else {
-        sendBattleAction("__forfeit__");
-      }
-      setFinished(true);
-      setTimeout(() => {
-        sendBattleReport(report);
-        setActiveBattle(null);
-        setPhase("SOCIAL_ROOM");
-      }, 1500);
+    if (!window.confirm("确认放弃这场对战？")) return;
+    const winnerSide: Side = mySide === "host" ? "guest" : "host";
+    const report = buildReport(
+      battle,
+      winnerSide,
+      battle.currentTurn,
+      battle.logs,
+    );
+    if (isHost) {
+      finishBattle(buildFinishedState(battle, engineRef.current, report));
+    } else {
+      sendBattleAction("__forfeit__");
     }
+    setFinished(true);
+    setTimeout(() => {
+      sendBattleReport(report);
+      resetFx();
+      setActiveBattle(null);
+      setPhase("SOCIAL_ROOM");
+    }, 1500);
   };
 
   if (!battle || !mySide) {
@@ -327,33 +498,57 @@ export const SocialBattleScreen: React.FC = () => {
     );
   }
 
-  const hostSpirit = battle.hostSpirit;
-  const guestSpirit = battle.guestSpirit;
-  const hostHpPct = Math.max(0, (battle.hostHp / battle.hostMaxHp) * 100);
-  const guestHpPct = Math.max(0, (battle.guestHp / battle.guestMaxHp) * 100);
-  const hostChargePct = Math.min(
-    100,
-    (battle.hostCharge / ULTIMATE_THRESHOLD) * 100,
+  // 左=host, 右=guest（与 FX 层 player1/player2 约定一致）
+  const leftChar = toCharacterData(
+    battle.hostSpirit,
+    displayHp.host,
+    battle.hostMaxHp,
+    displayCharge.host,
   );
-  const guestChargePct = Math.min(
-    100,
-    (battle.guestCharge / ULTIMATE_THRESHOLD) * 100,
+  const rightChar = toCharacterData(
+    battle.guestSpirit,
+    displayHp.guest,
+    battle.guestMaxHp,
+    displayCharge.guest,
   );
 
+  const animationCaughtUp = caughtUp;
   const myPendingSkill =
     mySide === "host" ? pendingSkills.host : pendingSkills.guest;
-  const mySkills = (mySide === "host" ? hostSpirit : guestSpirit).combatSnapshot
-    .skills;
   const isMyTurnReady = Boolean(myPendingSkill);
+  const iAmActive =
+    battle.phase === "fighting" &&
+    !finished &&
+    animationCaughtUp &&
+    !isMyTurnReady;
+
+  // 只有轮到“可出招”窗口时才把 onSkillSelect 给自己那张卡
+  const hostCanPick = mySide === "host" && iAmActive;
+  const guestCanPick = mySide === "guest" && iAmActive;
 
   const timeLeft = Math.max(0, Math.ceil((turnDeadline - now) / 1000));
   const showTimeout =
-    battle.phase === "fighting" && !finished && turnDeadline > 0;
+    battle.phase === "fighting" &&
+    !finished &&
+    turnDeadline > 0 &&
+    animationCaughtUp;
 
   return (
-    <div className="min-h-screen grid-bg relative overflow-hidden flex flex-col">
-      {/* 顶部 */}
-      <header className="shrink-0 px-4 md:px-6 py-3 border-b border-[#FF003C]/25 bg-[#0B0C10]/80 backdrop-blur-md flex items-center justify-between">
+    <div
+      className={`h-dvh max-h-dvh flex flex-col overflow-hidden p-3 md:p-4 relative grid-bg ${shakeScreen ? "shake" : ""}`}
+    >
+      {/* 中心聚光 */}
+      <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-radial from-yellow-500/30 to-transparent rounded-full blur-3xl" />
+      </div>
+
+      {/* 大招全屏过场 */}
+      <AnimatePresence>
+        {ultimateOverlay && <UltimateOverlayView overlay={ultimateOverlay} />}
+      </AnimatePresence>
+
+      {/* 顶部 HUD */}
+      <div className="shrink-0 z-10 flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
           <Swords size={16} className="text-[#FF003C]" />
           <span
@@ -367,7 +562,7 @@ export const SocialBattleScreen: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {showTimeout && (
+          {showTimeout && iAmActive && (
             <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest text-white/60">
               <Loader2 size={11} className="animate-spin" />
               {timeLeft}s
@@ -383,278 +578,109 @@ export const SocialBattleScreen: React.FC = () => {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
-      {/* 双方角色区 */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        <div className="grid grid-cols-2 gap-2 px-4 md:px-8 pt-6 pb-3">
-          {/* Host 角色 */}
-          <CombatantPanel
-            spirit={hostSpirit}
-            nickname={battle.hostNickname}
-            hpPct={hostHpPct}
-            chargePct={hostChargePct}
-            isMe={mySide === "host"}
-            isLeft
-            ready={Boolean(pendingSkills.host)}
-          />
-          {/* Guest 角色 */}
-          <CombatantPanel
-            spirit={guestSpirit}
-            nickname={battle.guestNickname}
-            hpPct={guestHpPct}
-            chargePct={guestChargePct}
-            isMe={mySide === "guest"}
-            isLeft={false}
-            ready={Boolean(pendingSkills.guest)}
-          />
-        </div>
+      {/* 战场：左右大立绘 + 中间战斗日志 */}
+      <div className="min-h-0 flex-1 flex flex-col md:flex-row gap-3 items-stretch max-w-7xl w-full mx-auto z-10 overflow-hidden">
+        <CharacterCard
+          char={leftChar}
+          isLeft
+          beingHit={hitSide === "left"}
+          isAttacking={attackerSide === "left"}
+          isActiveTurn={hostCanPick}
+          canUseSkills={hostCanPick}
+          onSkillSelect={hostCanPick ? handleSkillPick : undefined}
+          popups={popups.left}
+        />
 
-        {/* 战斗日志 */}
-        <div className="flex-1 min-h-0 mx-4 md:mx-8 mb-3 rounded-lg border border-white/10 bg-black/40 overflow-hidden flex flex-col">
-          <div className="shrink-0 px-3 py-1.5 border-b border-white/5 text-[9px] font-mono tracking-[0.3em] text-white/40">
-            BATTLE LOG
+        <div className="min-h-0 flex-1 flex flex-col bg-[#0B0C10]/90 border-2 border-[#45A29E]/40 rounded-xl overflow-hidden shadow-2xl relative backdrop-blur-md">
+          <div className="bg-gradient-to-r from-[#1F2833] via-[#0B0C10] to-[#1F2833] p-3 text-center text-xs font-black tracking-[0.3em] border-b border-[#45A29E]/30 flex justify-between items-center">
+            <span className="text-[#66FCF1] flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              REC
+            </span>
+            <span className="text-[#C5C6C7]">▶ COMBAT LOG ◀</span>
+            <span className="text-[#FF003C]">TURN {battle.currentTurn}</span>
           </div>
-          <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-2 space-y-1.5">
-            {resolvedLogs.length === 0 && battle.logs.length === 0 ? (
-              <div className="text-[11px] text-white/30 italic">
-                战斗即将开始...
+
+          <BattleLogList logs={battle.logs} />
+
+          {/* 状态提示条 */}
+          <div className="shrink-0 border-t border-[#45A29E]/25 bg-[#1F2833]/55 px-3 py-2 text-center">
+            {finished ? (
+              <FinishedBanner battle={battle} />
+            ) : battle.phase === "preparing" ? (
+              <div className="text-[11px] text-[#FFD700] tracking-wider flex items-center justify-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" />
+                战斗准备中...
+              </div>
+            ) : !animationCaughtUp ? (
+              <div className="text-[11px] text-[#66FCF1] tracking-wider flex items-center justify-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" />
+                演出进行中...
+              </div>
+            ) : isMyTurnReady ? (
+              <div className="text-[11px] text-[#7FFF9F] tracking-wider flex items-center justify-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" />
+                已锁定招式，等待对手...
               </div>
             ) : (
-              (resolvedLogs.length > 0 ? resolvedLogs : battle.logs)
-                .slice(-20)
-                .map((log, idx) => (
-                  <motion.div
-                    key={`${log.id}-${idx}`}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={`text-[11px] leading-relaxed ${
-                      log.attacker === "system"
-                        ? "text-[#FFD700]"
-                        : log.isUltimate
-                          ? "text-[#FF6B9D] font-bold"
-                          : log.isCrit
-                            ? "text-[#FFD700] font-bold"
-                            : "text-white/70"
-                    }`}
-                  >
-                    {log.message}
-                  </motion.div>
-                ))
+              <div className="text-[11px] text-[#FFD700] tracking-wider font-bold">
+                ▼ 从你的角色卡选择招式 ▼
+              </div>
             )}
           </div>
         </div>
 
-        {/* 技能选择 */}
-        <div className="shrink-0 px-4 md:px-8 pb-4">
-          {finished ? (
-            <FinishedBanner battle={battle} />
-          ) : battle.phase === "preparing" ? (
-            <div className="rounded-lg border border-[#FFD700]/30 bg-[#FFD700]/8 px-4 py-3 text-center text-xs text-[#FFD700] tracking-wider">
-              <Loader2 size={13} className="animate-spin inline mr-1.5" />
-              战斗准备中...
-            </div>
-          ) : (
-            <SkillPicker
-              skills={mySkills}
-              currentCharge={
-                mySide === "host" ? battle.hostCharge : battle.guestCharge
-              }
-              onPick={handleSkillPick}
-              disabled={isMyTurnReady}
-              pickedSkillName={myPendingSkill?.name}
-            />
-          )}
-        </div>
+        <CharacterCard
+          char={rightChar}
+          isLeft={false}
+          beingHit={hitSide === "right"}
+          isAttacking={attackerSide === "right"}
+          isActiveTurn={guestCanPick}
+          canUseSkills={guestCanPick}
+          onSkillSelect={guestCanPick ? handleSkillPick : undefined}
+          popups={popups.right}
+        />
       </div>
     </div>
   );
 };
 
-const CombatantPanel: React.FC<{
-  spirit: SocialBattleState["hostSpirit"];
-  nickname: string;
-  hpPct: number;
-  chargePct: number;
-  isMe: boolean;
-  isLeft: boolean;
-  ready: boolean;
-}> = ({ spirit, nickname, hpPct, chargePct, isMe, isLeft, ready }) => {
-  const themeColor = isLeft ? "#66FCF1" : "#FF003C";
-  const hpColor = hpPct > 60 ? "#22ff88" : hpPct > 30 ? "#FFD700" : "#FF003C";
+/** 战斗日志滚动列表（自动滚到底部）。 */
+const BattleLogList: React.FC<{ logs: BattleEvent[] }> = ({ logs }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [logs.length]);
   return (
-    <motion.div
-      layout
-      className={`relative rounded-lg border p-3 ${
-        isMe ? "border-[#FFD700]/50" : "border-white/15"
-      } bg-black/40`}
+    <div
+      ref={ref}
+      className="flex-1 overflow-y-auto scrollbar-thin px-3 py-2 space-y-1.5"
     >
-      {isMe && (
-        <div className="absolute -top-2 left-3 text-[8px] font-mono tracking-widest text-[#FFD700] bg-[#0B0C10] px-1.5 border border-[#FFD700]/40 rounded">
-          YOU
-        </div>
-      )}
-      <div
-        className={`flex items-center gap-2.5 ${isLeft ? "" : "flex-row-reverse text-right"}`}
-      >
-        <div
-          className="h-12 w-12 shrink-0 overflow-hidden rounded border"
-          style={{ borderColor: `${themeColor}55` }}
-        >
-          <CharacterAvatar
-            imageUrl={spirit.imageUrl}
-            name={spirit.name}
-            themeColor={themeColor}
-            className="h-full w-full"
-            iconSize={20}
-          />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div
-            className="flex items-center gap-1.5"
-            style={{ justifyContent: isLeft ? "flex-start" : "flex-end" }}
-          >
-            <span
-              className="text-sm font-bold truncate"
-              style={{ color: themeColor }}
-            >
-              {spirit.name}
-            </span>
-            {ready && (
-              <span className="text-[8px] font-mono text-[#7FFF9F] border border-[#7FFF9F]/40 px-1 rounded">
-                READY
-              </span>
-            )}
-          </div>
-          <div className="text-[10px] text-white/40 truncate">
-            {nickname} · {spirit.persona.archetype}
-          </div>
-        </div>
-      </div>
-      <div className="mt-2 space-y-1">
-        <div className="flex items-center gap-1.5">
-          <Heart size={10} style={{ color: hpColor }} />
-          <div className="flex-1 h-2 rounded-full bg-black/60 overflow-hidden border border-white/5">
-            <motion.div
-              className="h-full rounded-full"
-              style={{ background: hpColor }}
-              animate={{ width: `${hpPct}%` }}
-              transition={{ duration: 0.5 }}
-            />
-          </div>
-          <span
-            className="text-[9px] font-mono tabular-nums"
-            style={{ color: hpColor }}
-          >
-            {Math.round(hpPct)}%
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Zap size={10} className="text-[#FFD700]" />
-          <div className="flex-1 h-1 rounded-full bg-black/60 overflow-hidden">
-            <motion.div
-              className="h-full rounded-full"
-              style={{
-                background: chargePct >= 100 ? "#FF6B9D" : "#FFD700",
-                boxShadow: chargePct >= 100 ? "0 0 8px #FF6B9D" : "none",
-              }}
-              animate={{ width: `${chargePct}%` }}
-              transition={{ duration: 0.4 }}
-            />
-          </div>
-          <span className="text-[8px] font-mono tabular-nums text-[#FFD700]">
-            {chargePct >= 100 ? "ULT" : `${Math.round(chargePct)}%`}
-          </span>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const SkillPicker: React.FC<{
-  skills: Skill[];
-  currentCharge: number;
-  onPick: (skill: Skill) => void;
-  disabled: boolean;
-  pickedSkillName?: string;
-}> = ({ skills, currentCharge, onPick, disabled, pickedSkillName }) => {
-  const ult = skills.find(isUltimateSkill);
-  const normalSkills = skills.filter((s) => !isUltimateSkill(s));
-  const canUseUlt = ult && currentCharge >= ULTIMATE_THRESHOLD;
-
-  return (
-    <div className="rounded-lg border border-[#A78BFA]/30 bg-[#0B0C10]/70 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-mono tracking-[0.3em] text-white/50">
-          选择技能
-        </span>
-        {disabled && (
-          <span className="text-[10px] font-mono text-[#7FFF9F] flex items-center gap-1">
-            <Loader2 size={10} className="animate-spin" />
-            等待对手...
-          </span>
-        )}
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {normalSkills.slice(0, 4).map((skill) => {
-          const picked = pickedSkillName === skill.name;
-          return (
-            <button
-              key={skill.name}
-              type="button"
-              onClick={() => onPick(skill)}
-              disabled={disabled}
-              className={`text-left rounded border px-2.5 py-2 transition-all ${
-                picked
-                  ? "border-[#7FFF9F] bg-[#7FFF9F]/15"
-                  : "border-white/15 bg-black/30 hover:border-[#A78BFA] hover:bg-[#A78BFA]/10"
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              <div className="text-[11px] font-bold text-white truncate">
-                {skill.name}
-              </div>
-              <div className="text-[9px] text-white/40 truncate mt-0.5">
-                {skill.type === "attack"
-                  ? `攻击 ×${skill.damageMultiplier}`
-                  : skill.type === "heal"
-                    ? `治疗 ${skill.healPercent ?? 0}%`
-                    : skill.type === "buff"
-                      ? `增益 ${skill.buffPercent ?? 0}%`
-                      : skill.type === "debuff"
-                        ? `减益 ${skill.buffPercent ?? 0}%`
-                        : skill.type}
-              </div>
-            </button>
-          );
-        })}
-        {ult && (
-          <button
-            type="button"
-            onClick={() => onPick(ult)}
-            disabled={disabled || !canUseUlt}
-            className={`text-left rounded border-2 px-2.5 py-2 transition-all ${
-              canUseUlt
-                ? pickedSkillName === ult.name
-                  ? "border-[#FF6B9D] bg-[#FF6B9D]/15"
-                  : "border-[#FF6B9D]/70 bg-[#FF6B9D]/8 hover:bg-[#FF6B9D]/20"
-                : "border-white/10 bg-black/40 opacity-50 cursor-not-allowed"
+      {logs.length === 0 ? (
+        <div className="text-[11px] text-white/30 italic">战斗即将开始...</div>
+      ) : (
+        logs.slice(-24).map((log, idx) => (
+          <motion.div
+            key={`${log.id}-${idx}`}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className={`text-[11px] leading-relaxed ${
+              log.attacker === "system"
+                ? "text-[#FFD700]"
+                : log.isUltimate
+                  ? "text-[#FF6B9D] font-bold"
+                  : log.isCrit
+                    ? "text-[#FFD700] font-bold"
+                    : "text-white/70"
             }`}
-            style={
-              canUseUlt
-                ? { boxShadow: "0 0 14px rgba(255,107,157,0.3)" }
-                : undefined
-            }
           >
-            <div className="text-[11px] font-black text-[#FF6B9D] truncate flex items-center gap-1">
-              <Sparkles size={10} />
-              {ult.name}
-            </div>
-            <div className="text-[9px] text-[#FF6B9D]/70 truncate mt-0.5">
-              大招 ×{ult.damageMultiplier}
-            </div>
-          </button>
-        )}
-      </div>
+            {log.message}
+          </motion.div>
+        ))
+      )}
     </div>
   );
 };
@@ -664,38 +690,37 @@ const FinishedBanner: React.FC<{ battle: SocialBattleState }> = ({
 }) => {
   if (!battle.report) return null;
   const { report } = battle;
-  const isHostWin = report.winnerPlayerId === battle.hostPlayerId;
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="rounded-lg border-2 border-[#FFD700]/50 bg-[#FFD700]/10 p-4 text-center"
+      className="text-left"
     >
-      <div className="flex items-center justify-center gap-2 mb-2">
-        <Trophy size={20} className="text-[#FFD700]" />
+      <div className="flex items-center justify-center gap-2 mb-1.5">
+        <Trophy size={18} className="text-[#FFD700]" />
         <span
-          className="text-lg font-black tracking-wider text-[#FFD700]"
+          className="text-base font-black tracking-wider text-[#FFD700]"
           style={{ textShadow: "0 0 12px rgba(255,215,0,0.5)" }}
         >
           {report.winnerNickname} 胜利
         </span>
       </div>
-      <div className="text-xs text-white/70 mb-3">
+      <div className="text-[11px] text-white/70 text-center mb-2">
         {report.winnerSpiritName} 击败了 {report.loserNickname} 的{" "}
         {report.loserSpiritName}
       </div>
       <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
-        <div className="rounded bg-black/40 p-2">
-          <div className="text-white/40">回合数</div>
+        <div className="rounded bg-black/40 p-1.5 text-center">
+          <div className="text-white/40">回合</div>
           <div className="text-[#FFD700] font-bold">{report.totalTurns}</div>
         </div>
-        <div className="rounded bg-black/40 p-2">
+        <div className="rounded bg-black/40 p-1.5 text-center">
           <div className="text-white/40">胜方输出</div>
           <div className="text-[#7FFF9F] font-bold">
             {report.damageDealtByWinner}
           </div>
         </div>
-        <div className="rounded bg-black/40 p-2">
+        <div className="rounded bg-black/40 p-1.5 text-center">
           <div className="text-white/40">败方输出</div>
           <div className="text-[#FF6B9D] font-bold">
             {report.damageDealtByLoser}
@@ -703,15 +728,13 @@ const FinishedBanner: React.FC<{ battle: SocialBattleState }> = ({
         </div>
       </div>
       {report.highlights.length > 0 && (
-        <div className="mt-3 text-[11px] text-white/60 italic">
+        <div className="mt-2 text-[11px] text-white/60 italic text-center">
           {report.highlights[0]}
         </div>
       )}
-      <div className="mt-3 text-[10px] font-mono text-white/40 tracking-widest">
+      <div className="mt-2 text-[10px] font-mono text-white/40 tracking-widest text-center">
         即将返回房间...
       </div>
-      {/* 标记 isHostWin 用于未来扩展（如统计） */}
-      <span className="hidden">{isHostWin ? "host-win" : "guest-win"}</span>
     </motion.div>
   );
 };
@@ -720,6 +743,14 @@ const FinishedBanner: React.FC<{ battle: SocialBattleState }> = ({
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 汇总本回合日志（用于战报统计），过滤 null。 */
+const collectAllLogs = (
+  current: SocialBattleState,
+  newLogs: (BattleEvent | null)[],
+): BattleEvent[] => {
+  return [...current.logs, ...newLogs.filter((l): l is BattleEvent => !!l)];
+};
 
 const buildReport = (
   battle: SocialBattleState,
@@ -735,7 +766,6 @@ const buildReport = (
   const winnerNickname = isHostWin ? battle.hostNickname : battle.guestNickname;
   const loserNickname = isHostWin ? battle.guestNickname : battle.hostNickname;
 
-  // 估算双方输出：从日志里累加 damage
   let damageDealtByWinner = 0;
   let damageDealtByLoser = 0;
   const skillUseCount: Record<string, number> = {};
@@ -763,15 +793,9 @@ const buildReport = (
     );
   }
   const critLog = logs.find((l) => l.isCrit);
-  if (critLog) {
-    highlights.push(`暴击一击改变战局`);
-  }
-  if (totalTurns <= 3) {
-    highlights.push(`${totalTurns} 回合速胜！`);
-  }
-  if (highlights.length === 0) {
-    highlights.push(`${winnerSpirit.name} 艰难取胜`);
-  }
+  if (critLog) highlights.push(`暴击一击改变战局`);
+  if (totalTurns <= 3) highlights.push(`${totalTurns} 回合速胜！`);
+  if (highlights.length === 0) highlights.push(`${winnerSpirit.name} 艰难取胜`);
 
   return {
     winnerPlayerId,
@@ -791,10 +815,13 @@ const buildReport = (
 const buildFinishedState = (
   current: SocialBattleState,
   engine: BattleEngine | null,
-  logs: BattleEvent[],
   report: SocialBattleReport,
+  extraLog?: BattleEvent,
 ): SocialBattleState => {
   const state = engine?.getState();
+  const logs = extraLog
+    ? [...current.logs, extraLog].slice(-40)
+    : current.logs.slice(-40);
   return {
     ...current,
     currentTurn: state?.currentTurn ?? current.currentTurn,
@@ -810,14 +837,10 @@ const buildFinishedState = (
     guestMaxHp: state?.p2.maxHp ?? current.guestMaxHp,
     hostCharge: state?.p1.ultimateCharge ?? current.hostCharge,
     guestCharge: state?.p2.ultimateCharge ?? current.guestCharge,
-    logs: logs.slice(-30),
+    logs,
     phase: "finished",
     winnerPlayerId: report.winnerPlayerId,
     report,
     updatedAt: Date.now(),
   };
 };
-
-// 保留 AnimatePresence 引用（即将用于结算动画）
-void AnimatePresence;
-void useMemo;

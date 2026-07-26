@@ -829,19 +829,6 @@ export const SpiritChatScreen: React.FC = () => {
                         </span>
                       </motion.div>
                     )}
-
-                    {isSending && isFinalizingMeta && (
-                      <motion.div
-                        key="finalizing"
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="flex items-center gap-2 pl-12 text-[10px] tracking-widest text-[#8a8d91]/70"
-                      >
-                        <Loader2 size={11} className="animate-spin" />
-                        <span>整理记忆中...</span>
-                      </motion.div>
-                    )}
                   </AnimatePresence>
                 </div>
               )}

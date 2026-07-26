@@ -14,7 +14,6 @@ import {
 import {
   MAX_ROOM_MESSAGES,
   PLAYER_OFFLINE_TIMEOUT_MS,
-  ROOM_EMPTY_TTL_MS,
   socialTransport,
 } from "../utils/socialTransport";
 import { usePlayerStore } from "./usePlayerStore";
@@ -34,8 +33,8 @@ interface SocialStore {
     spirits: SerializedSpirit[],
     options?: { quickBattle?: boolean },
   ) => SocialRoom;
-  /** 加入房间 */
-  joinRoom: (roomCode: string, spirits: SerializedSpirit[]) => boolean;
+  /** 加入房间（异步：从后端拉取房间状态） */
+  joinRoom: (roomCode: string, spirits: SerializedSpirit[]) => Promise<boolean>;
   /** 离开当前房间 */
   leaveRoom: () => void;
   /** 设置错误 */
@@ -80,8 +79,8 @@ interface SocialStore {
   applyTransportEvent: (
     event: import("./socialTypes").SocialTransportEvent,
   ) => void;
-  /** 内部：从 localStorage 加载房间 */
-  hydrateRoom: (roomCode: string) => void;
+  /** 内部：从后端加载房间（异步） */
+  hydrateRoom: (roomCode: string) => Promise<void>;
 }
 
 const SYSTEM_COLOR = "#8a8d91";
@@ -164,15 +163,16 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       return room;
     },
 
-    joinRoom: (roomCode, spirits) => {
+    joinRoom: async (roomCode, spirits) => {
       const code = roomCode.trim().toUpperCase();
       if (code.length !== 6) {
         set({ error: "房间码为 6 位字符" });
         return false;
       }
-      const existing = socialTransport.loadRoom(code);
+      set({ isConnecting: true, error: "" });
+      const existing = await socialTransport.fetchRoom(code);
       if (!existing) {
-        set({ error: `房间 ${code} 不存在或已被销毁` });
+        set({ error: `房间 ${code} 不存在或已被销毁`, isConnecting: false });
         return false;
       }
       const { playerId, nickname, avatarColor } = usePlayerStore.getState();
@@ -204,7 +204,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         playerId,
         roomCode: code,
       });
-      set({ currentRoom: updated, error: "" });
+      set({ currentRoom: updated, error: "", isConnecting: false });
       return true;
     },
 
@@ -214,6 +214,8 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       const { playerId, nickname } = usePlayerStore.getState();
       const remaining = room.players.filter((p) => p.playerId !== playerId);
       const now = Date.now();
+      // 通知后端离开（后端在无人时删除房间）
+      void socialTransport.leaveRoom(room.roomCode, playerId);
       if (remaining.length === 0) {
         socialTransport.deleteRoom(room.roomCode);
       } else {
@@ -570,7 +572,18 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         case "room-state": {
           // 仅当事件来自当前所在房间时才更新
           if (current && current.roomCode === event.room.roomCode) {
-            const merged = pruneOfflinePlayers(event.room);
+            const incoming = pruneOfflinePlayers(event.room);
+            // 合并消息：避免刚发出、后端尚未回传的本地乐观消息被轮询覆盖丢失
+            const byId = new Map<string, (typeof incoming.messages)[number]>();
+            for (const m of current.messages) byId.set(m.id, m);
+            for (const m of incoming.messages) byId.set(m.id, m);
+            const mergedMessages = pruneMessages(
+              [...byId.values()].sort((a, b) => a.timestamp - b.timestamp),
+            );
+            const merged: SocialRoom = {
+              ...incoming,
+              messages: mergedMessages,
+            };
             set({ currentRoom: merged });
             // 同步当前对战
             if (merged.activeBattle) {
@@ -639,11 +652,22 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         case "battle-finish":
           // battle-state 会随之推送，这里无需重复处理
           break;
+        case "room-closed": {
+          // 后端房间已销毁：若正身处该房间则退出
+          if (current && current.roomCode === event.roomCode) {
+            set({
+              currentRoom: null,
+              activeBattle: null,
+              error: "房间已被销毁",
+            });
+          }
+          break;
+        }
       }
     },
 
-    hydrateRoom: (roomCode) => {
-      const room = socialTransport.loadRoom(roomCode);
+    hydrateRoom: async (roomCode) => {
+      const room = await socialTransport.fetchRoom(roomCode);
       if (room) {
         set({ currentRoom: pruneOfflinePlayers(room) });
       }
@@ -655,13 +679,16 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 export const startHeartbeat = (): void => {
+  // 进入房间：开启后端轮询，实时拉取其他设备的状态
+  const room = useSocialStore.getState().currentRoom;
+  if (room) socialTransport.startPolling(room.roomCode);
   if (heartbeatTimer) return;
   heartbeatTimer = setInterval(() => {
     const room = useSocialStore.getState().currentRoom;
     if (!room) return;
     const { playerId } = usePlayerStore.getState();
     const now = Date.now();
-    // 更新本地玩家 lastSeenAt
+    // 更新本地玩家 lastSeenAt，并把在场状态推送到后端（合并写保活）
     const updated: SocialRoom = {
       ...room,
       players: room.players.map((p) =>
@@ -669,25 +696,14 @@ export const startHeartbeat = (): void => {
       ),
       updatedAt: now,
     };
-    socialTransport.persistRoom(updated);
-    socialTransport.broadcast({
-      kind: "heartbeat",
-      roomCode: room.roomCode,
-      playerId,
-      timestamp: now,
-    });
-    // 清理空置房间
-    const allOffline = updated.players.every(
-      (p) => now - p.lastSeenAt > PLAYER_OFFLINE_TIMEOUT_MS,
-    );
-    if (allOffline && now - updated.updatedAt > ROOM_EMPTY_TTL_MS) {
-      socialTransport.deleteRoom(room.roomCode);
-      useSocialStore.setState({ currentRoom: null });
-    }
+    useSocialStore.setState({ currentRoom: updated });
+    // room-state 广播会同步本地 Tab、写本地快照并提交后端
+    socialTransport.broadcast({ kind: "room-state", room: updated });
   }, 10_000);
 };
 
 export const stopHeartbeat = (): void => {
+  socialTransport.stopPolling();
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;

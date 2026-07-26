@@ -6,6 +6,7 @@ import {
   Check,
   DoorOpen,
   KeyRound,
+  Loader2,
   LogIn,
   Plus,
   Sparkles,
@@ -35,7 +36,8 @@ export const SocialLobbyScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
   const roster = useRosterStore((s) => s.roster);
   const { nickname, avatarColor, setProfile } = usePlayerStore();
-  const { createRoom, joinRoom, error, setError } = useSocialStore();
+  const { createRoom, joinRoom, error, setError, isConnecting } =
+    useSocialStore();
 
   const [localNickname, setLocalNickname] = useState(nickname);
   // 多选词灵：最多 MAX_CARRIED_SPIRITS 个（房主与加入者一致）
@@ -43,6 +45,8 @@ export const SocialLobbyScreen: React.FC = () => {
     roster.slice(0, 1).map((c) => c.rosterId),
   );
   const [roomCodeInput, setRoomCodeInput] = useState("");
+  // 深链回填：从 URL #room=CODE 读取房间码，进入即高亮加入区
+  const [fromDeepLink, setFromDeepLink] = useState(false);
   // 超额提醒：点击超过携带上限时短暂闪现
   const [overflowWarning, setOverflowWarning] = useState(false);
   const overflowTimer = useRef<number | null>(null);
@@ -53,6 +57,24 @@ export const SocialLobbyScreen: React.FC = () => {
   useEffect(() => {
     setLocalNickname(nickname);
   }, [nickname]);
+
+  // 深链：读取 #room=CODE 回填房间码，并清理 hash 避免重复触发
+  useEffect(() => {
+    const match = window.location.hash.match(/room=([A-Za-z0-9]{6})/);
+    if (match) {
+      setRoomCodeInput(match[1].toUpperCase());
+      setFromDeepLink(true);
+      try {
+        history.replaceState(
+          null,
+          "",
+          window.location.pathname + window.location.search,
+        );
+      } catch {
+        // 忽略：仅是清理地址栏
+      }
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -119,7 +141,7 @@ export const SocialLobbyScreen: React.FC = () => {
     enterRoom();
   };
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     const trimmed = localNickname.trim();
     if (!trimmed) {
       setError("请先填写昵称");
@@ -131,7 +153,7 @@ export const SocialLobbyScreen: React.FC = () => {
       return;
     }
     setProfile({ nickname: trimmed, avatarColor });
-    const ok = joinRoom(code, buildSpirits());
+    const ok = await joinRoom(code, buildSpirits());
     if (ok) {
       enterRoom();
     }
@@ -271,12 +293,18 @@ export const SocialLobbyScreen: React.FC = () => {
               </section>
 
               {/* 创建房间 */}
-              <section className="relative border border-[#66FCF1]/35 bg-black/30 backdrop-blur-sm p-5">
+              <section
+                className={`relative border bg-black/30 backdrop-blur-sm p-5 ${
+                  fromDeepLink
+                    ? "order-3 border-white/10 opacity-80"
+                    : "order-2 border-[#66FCF1]/35"
+                }`}
+              >
                 <CornerAccents color="#66FCF1" />
                 <div className="mb-3 flex items-center gap-2">
                   <span className="w-1 h-1 bg-[#66FCF1]" />
                   <span className="text-[10px] font-mono tracking-[0.35em] text-[#66FCF1]/85">
-                    N°02 · CREATE ROOM
+                    {fromDeepLink ? "OR · CREATE ROOM" : "N°02 · CREATE ROOM"}
                   </span>
                 </div>
                 <p className="text-xs text-white/45 leading-relaxed mb-4">
@@ -284,12 +312,16 @@ export const SocialLobbyScreen: React.FC = () => {
                   词灵会回复，房内随时向他人发起约战；也可快速对战，打完继续聊。
                 </p>
                 <div className="flex flex-col gap-2.5">
-                  {/* 创建按钮：主操作，实心霓虹 */}
+                  {/* 创建按钮：主操作，实心霓虹；深链进入时降级为幽灵样式 */}
                   <button
                     type="button"
                     onClick={() => handleCreateRoom(false)}
                     disabled={!localNickname.trim()}
-                    className="group relative w-full flex items-center justify-center gap-2 rounded-md bg-[#66FCF1] px-4 py-3 text-sm font-black tracking-[0.25em] text-[#05060a] transition-all hover:brightness-110 hover:shadow-[0_0_24px_rgba(102,252,241,0.55)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:hover:shadow-none"
+                    className={
+                      fromDeepLink
+                        ? "group relative w-full flex items-center justify-center gap-2 rounded-md border border-[#66FCF1]/45 bg-[#66FCF1]/5 px-4 py-2.5 text-xs font-black tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/15 disabled:opacity-40 disabled:cursor-not-allowed"
+                        : "group relative w-full flex items-center justify-center gap-2 rounded-md bg-[#66FCF1] px-4 py-3 text-sm font-black tracking-[0.25em] text-[#05060a] transition-all hover:brightness-110 hover:shadow-[0_0_24px_rgba(102,252,241,0.55)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:hover:shadow-none"
+                    }
                   >
                     <Plus size={15} />
                     创建房间
@@ -320,17 +352,37 @@ export const SocialLobbyScreen: React.FC = () => {
               </section>
 
               {/* 加入房间 */}
-              <section className="relative border border-[#FFD700]/35 bg-black/30 backdrop-blur-sm p-5">
+              <section
+                className={`relative border bg-black/30 backdrop-blur-sm p-5 ${
+                  fromDeepLink
+                    ? "order-1 border-[#FFD700] shadow-[0_0_28px_rgba(255,215,0,0.28)]"
+                    : "order-3 border-[#FFD700]/35"
+                }`}
+              >
                 <CornerAccents color="#FFD700" />
                 <div className="mb-3 flex items-center gap-2">
                   <span className="w-1 h-1 bg-[#FFD700]" />
                   <span className="text-[10px] font-mono tracking-[0.35em] text-[#FFD700]/85">
-                    N°03 · JOIN ROOM
+                    {fromDeepLink ? "N°02 · JOIN ROOM" : "N°03 · JOIN ROOM"}
                   </span>
                 </div>
                 <p className="text-xs text-white/45 leading-relaxed mb-3">
-                  输入朋友给的 6 位房间码即可加入。
+                  {fromDeepLink
+                    ? "朋友邀请你加入他的房间 —— 选好词灵直接点「加入」即可。"
+                    : "输入朋友给的 6 位房间码即可加入。"}
                 </p>
+                {fromDeepLink && (
+                  <div className="mb-3 flex items-center gap-2 rounded border border-[#66FCF1]/50 bg-[#66FCF1]/10 px-3 py-2 text-[11px] text-[#66FCF1]">
+                    <Sparkles size={13} className="shrink-0" />
+                    <span>
+                      已从分享链接识别房间码{" "}
+                      <span className="font-black tracking-widest">
+                        {roomCodeInput}
+                      </span>
+                      ，选好词灵后点「加入」。
+                    </span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -348,11 +400,23 @@ export const SocialLobbyScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleJoinRoom}
-                    disabled={!localNickname.trim() || !roomCodeInput.trim()}
-                    className="flex shrink-0 items-center justify-center gap-1.5 rounded border-2 border-[#FFD700] px-4 text-xs font-black tracking-[0.2em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#FFD700]"
+                    disabled={
+                      !localNickname.trim() ||
+                      !roomCodeInput.trim() ||
+                      isConnecting
+                    }
+                    className={
+                      fromDeepLink
+                        ? "flex shrink-0 items-center justify-center gap-1.5 rounded bg-[#FFD700] px-5 text-xs font-black tracking-[0.2em] text-[#0B0C10] transition-all hover:brightness-110 hover:shadow-[0_0_20px_rgba(255,215,0,0.5)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:hover:shadow-none"
+                        : "flex shrink-0 items-center justify-center gap-1.5 rounded border-2 border-[#FFD700] px-4 text-xs font-black tracking-[0.2em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#FFD700]"
+                    }
                   >
-                    <LogIn size={14} />
-                    加入
+                    {isConnecting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <LogIn size={14} />
+                    )}
+                    {isConnecting ? "连接中" : "加入"}
                   </button>
                 </div>
               </section>

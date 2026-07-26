@@ -1,26 +1,45 @@
 import type { SocialRoom, SocialTransportEvent } from "../store/socialTypes";
 
 /**
- * 社交房间传输层
+ * 社交房间传输层（跨设备真联机版）
  *
- * 演示场景：同浏览器多 tab 互通（用 BroadcastChannel + localStorage 兜底）。
- *  - BroadcastChannel：实时事件广播
- *  - localStorage：房间状态持久化，新 tab 加入时可读取最新状态
+ * 后端：/api/room（Vercel serverless + getCache 共享存储）。
+ *  - 房间状态：put 提交、get 轮询拉取（服务端做消息/玩家合并）
+ *  - 瞬时事件（battle-action 等）：event 推送、get 时附带增量返回
  *
- * 设计为单例：每个 tab 一个 SocialTransport 实例，订阅各自关心的 roomCode。
+ * 同设备多 Tab：额外用 BroadcastChannel 即时互通，减少轮询延迟。
+ * 本地兜底：网络失败时仍走 BroadcastChannel + localStorage 快照，不至于完全不可用。
  */
 
 const ROOM_STORAGE_PREFIX = "word-brawl-social-room:";
-const ROOM_INDEX_KEY = "word-brawl-social-room-index";
 const CHANNEL_NAME = "word-brawl-social";
+const API_ENDPOINT = "/api/room";
+
+/** 轮询间隔：房间列表刷新节奏 */
+export const ROOM_POLL_INTERVAL_MS = 1200;
 
 type EventHandler = (event: SocialTransportEvent) => void;
+
+type RoomGetResponse = {
+  exists: boolean;
+  room?: SocialRoom;
+  rev?: number;
+  eventSeq?: number;
+  events?: { seq: number; event: SocialTransportEvent }[];
+};
 
 class SocialTransport {
   private channel: BroadcastChannel | null = null;
   private listeners = new Set<EventHandler>();
-  private storageListeners = new Set<() => void>();
   private initialized = false;
+
+  /** 当前订阅轮询的房间码 */
+  private pollingRoom: string | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  /** 已消费到的事件序号，避免重复派发瞬时事件 */
+  private lastEventSeq = 0;
+  /** 轮询进行中标记，避免请求叠加 */
+  private polling = false;
 
   init(): void {
     if (this.initialized) return;
@@ -31,22 +50,7 @@ class SocialTransport {
         this.dispatch(e.data);
       };
     }
-    // localStorage 兜底：监听其他 tab 对房间状态的写入
-    if (typeof window !== "undefined") {
-      window.addEventListener("storage", this.handleStorageEvent);
-    }
   }
-
-  private handleStorageEvent = (e: StorageEvent) => {
-    if (!e.key || !e.key.startsWith(ROOM_STORAGE_PREFIX)) return;
-    if (!e.newValue) return;
-    try {
-      const room = JSON.parse(e.newValue) as SocialRoom;
-      this.dispatch({ kind: "room-state", room });
-    } catch {
-      // 忽略无效 JSON
-    }
-  };
 
   /** 订阅传输事件 */
   subscribe(handler: EventHandler): () => void {
@@ -67,7 +71,7 @@ class SocialTransport {
     });
   }
 
-  /** 广播事件到其他 tab */
+  /** 广播事件：本地 Tab 即时互通 + 需要跨设备的事件推到后端 */
   broadcast(event: SocialTransportEvent): void {
     this.init();
     if (this.channel) {
@@ -77,65 +81,192 @@ class SocialTransport {
         console.error("[socialTransport] broadcast failed", err);
       }
     }
-    // 涉及房间状态变更的事件，同步写入 localStorage 触发兜底
-    if (event.kind === "room-state") {
-      this.persistRoom(event.room);
+    switch (event.kind) {
+      case "room-state":
+        // 房间状态：提交后端 + 本地快照兜底。
+        // 聊天 / 约战 / 对战状态都并入房间状态，靠轮询 get 同步，无需单独推事件。
+        this.persistRoom(event.room);
+        void this.putRoom(event.room);
+        break;
+      case "battle-action":
+        // 瞬时对战操作：不落房间状态，必须走事件队列跨设备送达
+        void this.postEvent(event.roomCode, event);
+        break;
+      default:
+        break;
     }
   }
 
-  /** 持久化房间到 localStorage */
+  /** 提交房间状态到后端（合并写） */
+  private async putRoom(room: SocialRoom): Promise<void> {
+    try {
+      await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "put", roomCode: room.roomCode, room }),
+      });
+    } catch {
+      // 网络失败：已有 localStorage 快照兜底
+    }
+  }
+
+  /** 推送瞬时事件到后端队列 */
+  private async postEvent(
+    roomCode: string,
+    event: SocialTransportEvent,
+  ): Promise<void> {
+    if (!roomCode) return;
+    try {
+      await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "event", roomCode, event }),
+      });
+    } catch {
+      // 忽略：本地 BroadcastChannel 已即时送达同设备 Tab
+    }
+  }
+
+  /** 从后端拉取房间（加入 / 刷新用），失败时回退本地快照 */
+  async fetchRoom(roomCode: string): Promise<SocialRoom | null> {
+    const code = roomCode.trim().toUpperCase();
+    try {
+      const resp = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "get", roomCode: code, sinceEvent: 0 }),
+      });
+      if (resp.ok) {
+        const data = (await resp.json()) as RoomGetResponse;
+        if (data.exists && data.room) {
+          const room = migrateRoom(data.room);
+          this.lastEventSeq = data.eventSeq ?? 0;
+          this.persistRoom(room);
+          return room;
+        }
+        return null;
+      }
+    } catch {
+      // 落到本地兜底
+    }
+    return this.loadRoom(code);
+  }
+
+  /**
+   * 开始轮询某个房间：定期 get 后端最新状态与增量事件，派发给监听者。
+   * 进入房间时调用，离开时 stopPolling。
+   */
+  startPolling(roomCode: string): void {
+    this.init();
+    const code = roomCode.trim().toUpperCase();
+    this.pollingRoom = code;
+    if (this.pollTimer) return;
+    this.pollTimer = setInterval(() => {
+      void this.pollOnce();
+    }, ROOM_POLL_INTERVAL_MS);
+  }
+
+  stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    this.pollingRoom = null;
+    this.lastEventSeq = 0;
+  }
+
+  private async pollOnce(): Promise<void> {
+    if (!this.pollingRoom || this.polling) return;
+    this.polling = true;
+    try {
+      const resp = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "get",
+          roomCode: this.pollingRoom,
+          sinceEvent: this.lastEventSeq,
+        }),
+      });
+      if (!resp.ok) return;
+      const data = (await resp.json()) as RoomGetResponse;
+      if (!data.exists || !data.room) {
+        // 房间已被销毁：派发一个空状态标记，让 store 决定是否退出
+        this.dispatch({ kind: "room-closed", roomCode: this.pollingRoom });
+        return;
+      }
+      const room = migrateRoom(data.room);
+      this.persistRoom(room);
+      this.dispatch({ kind: "room-state", room });
+      // 增量瞬时事件（battle-action 等）
+      if (Array.isArray(data.events) && data.events.length) {
+        for (const e of data.events) {
+          if (e.seq > this.lastEventSeq) this.lastEventSeq = e.seq;
+          this.dispatch(e.event);
+        }
+      } else if (typeof data.eventSeq === "number") {
+        this.lastEventSeq = Math.max(this.lastEventSeq, data.eventSeq);
+      }
+    } catch {
+      // 轮询失败：静默重试下一轮
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  /** 提交玩家离开到后端 */
+  async leaveRoom(roomCode: string, playerId: string): Promise<void> {
+    const code = roomCode.trim().toUpperCase();
+    try {
+      await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "leave", roomCode: code, playerId }),
+      });
+    } catch {
+      // 忽略
+    }
+  }
+
+  /** 本地快照：写入 localStorage（网络兜底 + 同设备读取） */
   persistRoom(room: SocialRoom): void {
     if (typeof window === "undefined") return;
     try {
       const key = ROOM_STORAGE_PREFIX + room.roomCode;
       window.localStorage.setItem(key, JSON.stringify(room));
-      // 维护房间索引
-      const indexRaw = window.localStorage.getItem(ROOM_INDEX_KEY);
-      const index: string[] = indexRaw ? JSON.parse(indexRaw) : [];
-      if (!index.includes(room.roomCode)) {
-        index.push(room.roomCode);
-        window.localStorage.setItem(ROOM_INDEX_KEY, JSON.stringify(index));
-      }
     } catch (err) {
       console.error("[socialTransport] persistRoom failed", err);
     }
   }
 
-  /** 读取 localStorage 中的房间状态 */
+  /** 读取本地快照（仅兜底用） */
   loadRoom(roomCode: string): SocialRoom | null {
     if (typeof window === "undefined") return null;
     try {
       const key = ROOM_STORAGE_PREFIX + roomCode.toUpperCase();
       const raw = window.localStorage.getItem(key);
       if (!raw) return null;
-      const room = JSON.parse(raw) as SocialRoom;
-      return migrateRoom(room);
+      return migrateRoom(JSON.parse(raw) as SocialRoom);
     } catch {
       return null;
     }
   }
 
-  /** 删除房间（所有人离开时清理） */
+  /** 删除本地快照 */
   deleteRoom(roomCode: string): void {
     if (typeof window === "undefined") return;
     try {
-      const key = ROOM_STORAGE_PREFIX + roomCode.toUpperCase();
-      window.localStorage.removeItem(key);
-      const indexRaw = window.localStorage.getItem(ROOM_INDEX_KEY);
-      const index: string[] = indexRaw ? JSON.parse(indexRaw) : [];
-      const next = index.filter((c) => c !== roomCode.toUpperCase());
-      window.localStorage.setItem(ROOM_INDEX_KEY, JSON.stringify(next));
+      window.localStorage.removeItem(
+        ROOM_STORAGE_PREFIX + roomCode.toUpperCase(),
+      );
     } catch {
       // 忽略
     }
   }
 
-  /** 销毁传输层（页面卸载时调用） */
+  /** 销毁传输层 */
   destroy(): void {
-    if (typeof window !== "undefined") {
-      window.removeEventListener("storage", this.handleStorageEvent);
-    }
-    this.storageListeners.clear();
+    this.stopPolling();
     if (this.channel) {
       try {
         this.channel.close();
@@ -169,14 +300,13 @@ export const ROOM_EMPTY_TTL_MS = 5 * 60 * 1000;
  */
 const migrateRoom = (room: SocialRoom): SocialRoom => {
   // 兼容旧数据：旧版带有 mode 字段，现已废弃，剔除后避免后续误用
-  const { mode: _deprecatedMode, ...rest } = room as SocialRoom & {
-    mode?: unknown;
-  };
-  room = rest;
+  if ("mode" in room) {
+    delete (room as SocialRoom & { mode?: unknown }).mode;
+  }
   if (typeof room.quickBattle !== "boolean") {
     room.quickBattle = false;
   }
-  room.players = room.players.map((p) => {
+  room.players = (room.players ?? []).map((p) => {
     if (!Array.isArray(p.carriedSpirits)) {
       return {
         ...p,

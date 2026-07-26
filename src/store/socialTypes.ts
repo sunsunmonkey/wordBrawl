@@ -180,7 +180,9 @@ export type SocialTransportEvent =
       roomCode: string;
       playerId: string;
       timestamp: number;
-    };
+    }
+  /** 后端轮询发现房间已被销毁：通知 store 退出当前房间 */
+  | { kind: "room-closed"; roomCode: string };
 
 /** 可选的玩家头像色板 */
 export const PLAYER_AVATAR_COLORS = [

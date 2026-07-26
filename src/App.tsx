@@ -96,6 +96,15 @@ function RevealOverlay() {
 
 function App() {
   const { phase } = useGameStore();
+  const setPhase = useGameStore((s) => s.setPhase);
+
+  // 深链：打开 #room=CODE 时自动进入社交大厅（房间码在大厅回填并可一键加入）
+  useEffect(() => {
+    const match = window.location.hash.match(/room=([A-Za-z0-9]{6})/);
+    if (match) {
+      setPhase("SOCIAL_LOBBY");
+    }
+  }, [setPhase]);
 
   return (
     <div className="min-h-screen bg-[#0B0C10] text-[#C5C6C7] font-mono">
