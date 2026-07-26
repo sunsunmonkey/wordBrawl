@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   ArrowRight,
+  Check,
   DoorOpen,
   KeyRound,
   LogIn,
@@ -9,7 +11,6 @@ import {
   Sparkles,
   Swords,
   Users,
-  X,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
@@ -42,6 +43,9 @@ export const SocialLobbyScreen: React.FC = () => {
     roster.slice(0, 1).map((c) => c.rosterId),
   );
   const [roomCodeInput, setRoomCodeInput] = useState("");
+  // 超额提醒：点击超过携带上限时短暂闪现
+  const [overflowWarning, setOverflowWarning] = useState(false);
+  const overflowTimer = useRef<number | null>(null);
 
   /** 词灵携带上限（统一为 MAX_CARRIED_SPIRITS，不再区分房间类型） */
   const carryLimit = MAX_CARRIED_SPIRITS;
@@ -53,6 +57,7 @@ export const SocialLobbyScreen: React.FC = () => {
   useEffect(() => {
     return () => {
       setError("");
+      if (overflowTimer.current) window.clearTimeout(overflowTimer.current);
     };
   }, [setError]);
 
@@ -74,9 +79,22 @@ export const SocialLobbyScreen: React.FC = () => {
       if (prev.includes(rosterId)) {
         return prev.filter((id) => id !== rosterId);
       }
-      if (prev.length >= carryLimit) return prev;
+      if (prev.length >= carryLimit) {
+        triggerOverflowWarning();
+        return prev;
+      }
       return [...prev, rosterId];
     });
+  };
+
+  /** 触发一次超额提醒（自动 2s 后消失） */
+  const triggerOverflowWarning = () => {
+    setOverflowWarning(true);
+    if (overflowTimer.current) window.clearTimeout(overflowTimer.current);
+    overflowTimer.current = window.setTimeout(
+      () => setOverflowWarning(false),
+      2000,
+    );
   };
 
   const buildSpirits = () => selectedRosterList.map((c) => serializeSpirit(c));
@@ -142,7 +160,7 @@ export const SocialLobbyScreen: React.FC = () => {
       </div>
 
       {/* 顶部 */}
-      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <div className="flex items-center gap-3">
           <BackButton onClick={() => setPhase("MODE_SELECT")} color="#A78BFA" />
           <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
@@ -166,8 +184,12 @@ export const SocialLobbyScreen: React.FC = () => {
               </span>
             </div>
             <h1
-              className="font-display font-black leading-[0.9] tracking-tight"
-              style={{ fontSize: "clamp(2.2rem, 5vw, 3.6rem)" }}
+              className="font-black leading-[0.9] tracking-tight"
+              style={{
+                fontSize: "clamp(2.2rem, 5vw, 3.6rem)",
+                fontFamily:
+                  '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+              }}
             >
               <span className="text-white">社交</span>
               <span
@@ -183,7 +205,7 @@ export const SocialLobbyScreen: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
+          <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr] items-stretch">
             {/* 左侧：玩家身份 + 房间操作 */}
             <div className="flex flex-col gap-5">
               {/* 昵称 + 头像色 */}
@@ -257,39 +279,41 @@ export const SocialLobbyScreen: React.FC = () => {
                     N°02 · CREATE ROOM
                   </span>
                 </div>
-                <p className="text-xs text-white/45 leading-relaxed mb-3">
+                <p className="text-xs text-white/45 leading-relaxed mb-4">
                   开一个房间，最多带 {MAX_CARRIED_SPIRITS} 位词灵。群聊 @
                   词灵会回复，房内随时向他人发起约战；也可快速对战，打完继续聊。
                 </p>
-                {/* 创建按钮 */}
-                <button
-                  type="button"
-                  onClick={() => handleCreateRoom(false)}
-                  disabled={!localNickname.trim()}
-                  className="group relative w-full flex items-center justify-center gap-2 rounded border-2 border-[#66FCF1] px-4 py-3 text-sm font-black tracking-[0.25em] text-[#66FCF1] transition-all hover:bg-[#66FCF1] hover:text-[#0B0C10] disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Plus size={15} />
-                  创建房间
-                  <ArrowRight
-                    size={14}
-                    className="transition-transform group-hover:translate-x-1"
-                  />
-                </button>
-                {/* 快速对战入口 */}
-                <button
-                  type="button"
-                  onClick={() => handleCreateRoom(true)}
-                  disabled={!localNickname.trim()}
-                  className="group relative mt-2 w-full flex items-center justify-center gap-2 rounded border-2 border-[#FF003C] bg-[#FF003C]/8 px-4 py-2.5 text-xs font-black tracking-[0.2em] text-[#FF003C] transition-all hover:bg-[#FF003C] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Swords size={14} />
-                  快速对战
-                  <span className="text-[9px] font-normal text-white/50 tracking-normal">
-                    对手加入即开战
-                  </span>
-                </button>
+                <div className="flex flex-col gap-2.5">
+                  {/* 创建按钮：主操作，实心霓虹 */}
+                  <button
+                    type="button"
+                    onClick={() => handleCreateRoom(false)}
+                    disabled={!localNickname.trim()}
+                    className="group relative w-full flex items-center justify-center gap-2 rounded-md bg-[#66FCF1] px-4 py-3 text-sm font-black tracking-[0.25em] text-[#05060a] transition-all hover:brightness-110 hover:shadow-[0_0_24px_rgba(102,252,241,0.55)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:hover:shadow-none"
+                  >
+                    <Plus size={15} />
+                    创建房间
+                    <ArrowRight
+                      size={14}
+                      className="transition-transform group-hover:translate-x-1"
+                    />
+                  </button>
+                  {/* 快速对战入口：次操作，幽灵红描边 */}
+                  <button
+                    type="button"
+                    onClick={() => handleCreateRoom(true)}
+                    disabled={!localNickname.trim()}
+                    className="group relative w-full flex items-center justify-center gap-2 rounded-md border border-[#FF003C]/55 bg-[#FF003C]/5 px-4 py-2.5 text-xs font-black tracking-[0.2em] text-[#FF6B7D] transition-all hover:border-[#FF003C] hover:bg-[#FF003C]/15 hover:text-[#FF003C] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Swords size={14} />
+                    快速对战
+                    <span className="text-[9px] font-normal text-white/40 tracking-normal">
+                      · 对手加入即开战
+                    </span>
+                  </button>
+                </div>
                 {selectedRosterList.length === 0 && (
-                  <div className="mt-2 text-[10px] text-[#FFD700]/70 font-mono tracking-wider">
+                  <div className="mt-2.5 text-[10px] text-[#FFD700]/70 font-mono tracking-wider">
                     提示：至少携带 1 位词灵才能创建房间
                   </div>
                 )}
@@ -340,84 +364,116 @@ export const SocialLobbyScreen: React.FC = () => {
               )}
             </div>
 
-            {/* 右侧：词灵多选 */}
-            <section className="relative border border-white/10 bg-black/30 backdrop-blur-sm p-5 flex flex-col">
+            {/* 右侧：词灵多选 —— 内容绝对定位，使高度由左栏决定，两栏底部对齐 */}
+            <section className="relative border border-white/10 bg-black/30 backdrop-blur-sm flex flex-col p-5 lg:p-0 lg:overflow-hidden">
               <CornerAccents color="#FFD700" />
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-1 h-1 bg-[#FFD700]" />
-                  <span className="text-[10px] font-mono tracking-[0.35em] text-white/60">
-                    CARRY · SPIRITS
-                  </span>
-                  <span className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded border border-[#66FCF1]/50 text-[#66FCF1]">
-                    CHAT
-                  </span>
-                </div>
-                <span
-                  className={`text-[11px] font-mono font-bold ${
-                    selectedRosterList.length >= carryLimit
-                      ? "text-[#FFD700]"
-                      : "text-white/50"
-                  }`}
-                >
-                  {selectedRosterList.length} / {carryLimit}
-                </span>
-              </div>
-              <p className="text-xs text-white/45 leading-relaxed mb-4">
-                <span className="font-bold text-[#66FCF1]">房间</span> 最多带{" "}
-                {carryLimit} 位词灵。群里 @ 它们会回复，房间内可切换。
-              </p>
-
-              {availableRoster.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center py-12">
-                  <Users size={36} className="text-white/20 mb-3" />
-                  <div className="text-sm text-white/40">
-                    麾下还没有可用词灵
+              <div className="flex min-h-0 flex-1 flex-col lg:absolute lg:inset-0 lg:p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1 h-1 bg-[#FFD700]" />
+                    <span className="text-[10px] font-mono tracking-[0.35em] text-white/60">
+                      CARRY · SPIRITS
+                    </span>
+                    <span className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded border border-[#66FCF1]/50 text-[#66FCF1]">
+                      CHAT
+                    </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setPhase("MODE_SELECT")}
-                    className="mt-4 text-xs text-[#66FCF1] underline-offset-4 hover:underline"
+                  <span
+                    className={`flex items-center gap-1 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded transition-colors ${
+                      selectedRosterList.length >= carryLimit
+                        ? "text-[#0B0C10] bg-[#FFD700]"
+                        : "text-white/60 bg-white/5"
+                    }`}
                   >
-                    返回创造一个
-                  </button>
+                    {selectedRosterList.length} / {carryLimit}
+                    {selectedRosterList.length >= carryLimit && (
+                      <span className="tracking-wider">· 已满</span>
+                    )}
+                  </span>
                 </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[420px] overflow-y-auto scrollbar-thin px-1 py-1">
-                    {availableRoster.map((char) => {
-                      const isSelected = selectedRosterIds.includes(
-                        char.rosterId,
-                      );
-                      return (
-                        <div key={char.rosterId} className="relative">
-                          <SpiritCard
-                            character={char}
-                            size="sm"
-                            selected={isSelected}
-                            onClick={() => toggleSpirit(char.rosterId)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                toggleSpirit(char.rosterId);
-                              }
-                            }}
-                          />
-                          {isSelected && (
-                            <span className="absolute top-1 right-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-[#FFD700] text-[#0B0C10] shadow-[0_0_8px_rgba(255,215,0,0.7)]">
-                              <X size={11} className="rotate-45" />
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
 
-                  {selectedRosterList.length > 0 && (
-                    <SelectedSpiritsPreview spirits={selectedRosterList} />
+                {/* 超额提醒：点击第 N+1 张时闪现 */}
+                <AnimatePresence>
+                  {overflowWarning && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6, height: 0 }}
+                      animate={{ opacity: 1, y: 0, height: "auto" }}
+                      exit={{ opacity: 0, y: -6, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="mb-3 flex items-center gap-2 rounded border border-[#FF6B9D]/50 bg-[#FF6B9D]/10 px-3 py-2 text-[11px] text-[#FF6B9D]"
+                    >
+                      <AlertTriangle size={13} className="shrink-0" />
+                      <span>
+                        最多只能携带 {carryLimit}{" "}
+                        位词灵，请先移除一位再选择其他词灵。
+                      </span>
+                    </motion.div>
                   )}
-                </>
-              )}
+                </AnimatePresence>
+                <p className="text-xs text-white/45 leading-relaxed mb-4">
+                  <span className="font-bold text-[#66FCF1]">房间</span> 最多带{" "}
+                  {carryLimit} 位词灵。群里 @ 它们会回复，房间内可切换。
+                </p>
+
+                {availableRoster.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-12">
+                    <Users size={36} className="text-white/20 mb-3" />
+                    <div className="text-sm text-white/40">
+                      麾下还没有可用词灵
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPhase("MODE_SELECT")}
+                      className="mt-4 text-xs text-[#66FCF1] underline-offset-4 hover:underline"
+                    >
+                      返回创造一个
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 flex-1 min-h-0 max-h-[420px] lg:max-h-none overflow-y-auto scrollbar-thin px-1 py-1 content-start">
+                      {availableRoster.map((char) => {
+                        const isSelected = selectedRosterIds.includes(
+                          char.rosterId,
+                        );
+                        const isFull = selectedRosterList.length >= carryLimit;
+                        // 携带已满时，未选中的卡置灰以示不可再选
+                        const dimmed = !isSelected && isFull;
+                        return (
+                          <div
+                            key={char.rosterId}
+                            className={`relative transition-opacity ${
+                              dimmed ? "opacity-40" : "opacity-100"
+                            }`}
+                          >
+                            <SpiritCard
+                              character={char}
+                              size="sm"
+                              selected={isSelected}
+                              onClick={() => toggleSpirit(char.rosterId)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  toggleSpirit(char.rosterId);
+                                }
+                              }}
+                            />
+                            {isSelected && (
+                              <span className="absolute right-1.5 top-1.5 z-20 flex h-5 w-5 items-center justify-center rounded-full bg-[#FFD700] text-[#0B0C10] shadow-[0_0_8px_rgba(255,215,0,0.7)]">
+                                <Check size={12} strokeWidth={3} />
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {selectedRosterList.length > 0 && (
+                      <SelectedSpiritsPreview spirits={selectedRosterList} />
+                    )}
+                  </>
+                )}
+              </div>
             </section>
           </div>
 

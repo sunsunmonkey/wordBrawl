@@ -51,7 +51,7 @@ export const RosterScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 relative overflow-hidden grid-bg">
+    <div className="min-h-screen flex flex-col items-center px-6 md:px-10 pt-20 pb-10 relative overflow-hidden grid-bg">
       <ParticleField count={25} colors={[themeColor, "#FFD700"]} />
 
       <motion.div
@@ -61,18 +61,28 @@ export const RosterScreen: React.FC = () => {
         style={{ backgroundColor: themeColor }}
       />
 
-      <div className="z-10 w-full max-w-5xl">
-        <div className="flex items-center gap-3 mb-6">
+      {/* 顶部 HUD */}
+      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+        <div className="flex items-center gap-3">
           <BackButton
             onClick={() => setPhase("MODE_SELECT")}
             color={themeColor}
           />
-          <div className="ml-auto flex items-center gap-2 text-[#8a8d91] text-[10px] tracking-widest">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#66FCF1] animate-pulse" />
-            ROSTER ARCHIVE
+          <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
+            <div
+              className="w-6 h-[1px]"
+              style={{ backgroundColor: themeColor }}
+            />
+            <span>WORD-SPIRIT / ROSTER</span>
           </div>
         </div>
+        <div className="flex items-center gap-2 text-[#8a8d91] text-[10px] tracking-widest">
+          <span className="inline-block w-2 h-2 rounded-full bg-[#66FCF1] animate-pulse" />
+          ROSTER ARCHIVE
+        </div>
+      </div>
 
+      <div className="z-10 w-full max-w-5xl">
         <div
           className="bg-[#1F2833]/80 backdrop-blur-md border-2 rounded-xl p-6 corner-frame crt-flicker"
           style={{

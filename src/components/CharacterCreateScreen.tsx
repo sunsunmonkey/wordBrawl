@@ -524,7 +524,7 @@ export const CharacterCreateScreen: React.FC = () => {
       <BackButton
         onClick={handleBack}
         color={themeColor}
-        className="absolute left-6 top-6 z-20"
+        className="fixed left-6 top-6 z-20"
       />
 
       <motion.div

@@ -30,6 +30,7 @@ import type {
 } from "../store/socialTypes";
 import { BackButton } from "./BackButton";
 import { SpiritCard } from "./SpiritCard";
+import { HeroCard } from "./HeroCard";
 import { RARITY_CONFIGS } from "../store/useGameStore";
 import { requestGroupSpiritChat } from "../utils/groupSpiritChat";
 
@@ -683,9 +684,9 @@ const PlayerCard: React.FC<{
         </div>
       </div>
 
-      {/* 词灵卡墙：复用 SpiritCard 生成卡样式；点击查看大卡；自己的非出战词灵可一键切换 */}
+      {/* 词灵卡墙：紧凑立绘缩略，点击查看大卡；自己的非出战词灵可一键切换 */}
       {carried.length > 0 && (
-        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+        <div className="mt-2.5 grid grid-cols-3 gap-2">
           {carried.map((s) => {
             const isActive = active?.rosterId === s.rosterId;
             const canSwitch = isMe && onSetBattleSpirit && !isActive;
@@ -695,7 +696,7 @@ const PlayerCard: React.FC<{
                   character={s.combatSnapshot}
                   size="sm"
                   selected={isActive}
-                  showStats
+                  showStats={false}
                   onClick={() => onInspectSpirit(s)}
                   topRightBadges={
                     isActive
@@ -1059,6 +1060,9 @@ const SpiritDetailModal: React.FC<{
   const rarityCfg = RARITY_CONFIGS[rarity];
   const persona = spirit.persona;
 
+  // 3D 翻面：点击卡片切换正反面
+  const [flipped, setFlipped] = useState(false);
+
   // 关闭：点击遮罩 / ESC
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1082,7 +1086,7 @@ const SpiritDetailModal: React.FC<{
         exit={{ scale: 0.92, y: 20, opacity: 0 }}
         transition={{ type: "spring", stiffness: 320, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-3xl rounded-2xl border bg-[#0B0C10] p-5 md:p-6 my-auto"
+        className="relative w-full max-w-sm rounded-2xl border bg-[#0B0C10] p-5 md:p-6 my-auto"
         style={{
           borderColor: `${rarityCfg.primaryColor}55`,
           boxShadow: `0 0 50px rgba(${rarityCfg.rgb}, 0.22), 0 12px 40px rgba(0,0,0,0.55)`,
@@ -1124,148 +1128,186 @@ const SpiritDetailModal: React.FC<{
           )}
         </div>
 
-        <div className="grid gap-5 md:grid-cols-[260px_1fr]">
-          {/* 左：大卡 */}
-          <div className="mx-auto w-full max-w-[260px]">
-            <SpiritCard character={spirit.combatSnapshot} size="lg" showStats />
-            {/* 自己的非出战词灵：切换出战按钮 */}
-            {isMine && !isActive && onSetBattleSpirit && (
-              <button
-                type="button"
-                onClick={() => onSetBattleSpirit(spirit.rosterId)}
-                className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-[#FFD700] bg-[#FFD700]/10 py-2.5 text-xs font-black tracking-widest text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all"
-              >
-                <Swords size={13} />
-                设为出战
-              </button>
-            )}
-          </div>
+        {/* 3D 翻面卡：正面立绘 / 背面 persona 详情，点击翻面 */}
+        <div className="mx-auto flex w-full max-w-[288px] flex-col items-center">
+          <div
+            className="relative w-72"
+            style={{ perspective: 1600 }}
+            onClick={() => setFlipped((f) => !f)}
+          >
+            <motion.div
+              className="relative w-full cursor-pointer"
+              style={{ transformStyle: "preserve-3d", willChange: "transform" }}
+              animate={{ rotateY: flipped ? 180 : 0 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {/* 正面：大英雄卡 */}
+              <div style={{ backfaceVisibility: "hidden" }}>
+                <HeroCard
+                  character={spirit.combatSnapshot}
+                  size="lg"
+                  showStats
+                />
+              </div>
 
-          {/* 右：persona 详情 */}
-          <div className="min-w-0 flex flex-col gap-3 max-h-[60vh] overflow-y-auto scrollbar-thin pr-1">
-            {/* 名字 + archetype */}
-            <div>
+              {/* 背面：persona 详情 */}
               <div
-                className="font-display font-black leading-tight"
+                className="absolute inset-0 rounded-2xl border overflow-hidden"
                 style={{
-                  fontSize: "clamp(1.4rem, 3vw, 1.9rem)",
-                  color: "#fff",
-                  textShadow: `0 0 16px rgba(${rarityCfg.rgb}, 0.55)`,
+                  backfaceVisibility: "hidden",
+                  transform: "rotateY(180deg)",
+                  background:
+                    "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
+                  borderColor: `${rarityCfg.primaryColor}66`,
+                  boxShadow: `inset 0 0 24px rgba(${rarityCfg.rgb}, 0.12)`,
                 }}
               >
-                {spirit.name}
-              </div>
-              <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px]">
-                <PersonaChip
-                  icon={<Sparkles size={10} />}
-                  label="原型"
-                  value={persona.archetype}
-                  color={rarityCfg.primaryColor}
-                />
-                <PersonaChip
-                  icon={<Heart size={10} />}
-                  label="性格"
-                  value={persona.temperament}
-                  color="#F472B6"
-                />
-              </div>
-            </div>
-
-            {/* 说话方式 */}
-            <PersonaRow
-              icon={<MessageCircle size={11} />}
-              label="说话方式"
-              color={rarityCfg.primaryColor}
-            >
-              {persona.speechStyle}
-            </PersonaRow>
-
-            {/* 世界观锚点 */}
-            {persona.worldAnchors.length > 0 && (
-              <PersonaRow
-                icon={<Globe2 size={11} />}
-                label="世界观"
-                color={rarityCfg.primaryColor}
-              >
-                <div className="flex flex-wrap gap-1.5">
-                  {persona.worldAnchors.map((w, i) => (
-                    <span
-                      key={i}
-                      className="rounded border border-white/12 bg-black/40 px-2 py-0.5 text-[10px] text-white/75"
-                    >
-                      {w}
-                    </span>
-                  ))}
-                </div>
-              </PersonaRow>
-            )}
-
-            {/* 口头禅 */}
-            {persona.catchphrases.length > 0 && (
-              <PersonaRow
-                icon={<Quote size={11} />}
-                label="口头禅"
-                color={rarityCfg.primaryColor}
-              >
-                <div className="flex flex-col gap-1">
-                  {persona.catchphrases.map((c, i) => (
+                <div className="flex h-full flex-col gap-2.5 overflow-y-auto scrollbar-thin p-3">
+                  {/* 名字 + archetype */}
+                  <div>
                     <div
-                      key={i}
-                      className="rounded-l border-l-2 bg-black/30 px-2 py-1 text-[11px] italic text-white/80"
-                      style={{ borderColor: rarityCfg.primaryColor }}
+                      className="font-display font-black leading-tight text-lg"
+                      style={{
+                        color: "#fff",
+                        textShadow: `0 0 16px rgba(${rarityCfg.rgb}, 0.55)`,
+                      }}
                     >
-                      “{c}”
+                      {spirit.name}
                     </div>
-                  ))}
+                    <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[10px]">
+                      <PersonaChip
+                        icon={<Sparkles size={10} />}
+                        label="原型"
+                        value={persona.archetype}
+                        color={rarityCfg.primaryColor}
+                      />
+                      <PersonaChip
+                        icon={<Heart size={10} />}
+                        label="性格"
+                        value={persona.temperament}
+                        color="#F472B6"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 说话方式 */}
+                  <PersonaRow
+                    icon={<MessageCircle size={11} />}
+                    label="说话方式"
+                    color={rarityCfg.primaryColor}
+                  >
+                    {persona.speechStyle}
+                  </PersonaRow>
+
+                  {/* 世界观锚点 */}
+                  {persona.worldAnchors.length > 0 && (
+                    <PersonaRow
+                      icon={<Globe2 size={11} />}
+                      label="世界观"
+                      color={rarityCfg.primaryColor}
+                    >
+                      <div className="flex flex-wrap gap-1.5">
+                        {persona.worldAnchors.map((w, i) => (
+                          <span
+                            key={i}
+                            className="rounded border border-white/12 bg-black/40 px-2 py-0.5 text-[10px] text-white/75"
+                          >
+                            {w}
+                          </span>
+                        ))}
+                      </div>
+                    </PersonaRow>
+                  )}
+
+                  {/* 口头禅 */}
+                  {persona.catchphrases.length > 0 && (
+                    <PersonaRow
+                      icon={<Quote size={11} />}
+                      label="口头禅"
+                      color={rarityCfg.primaryColor}
+                    >
+                      <div className="flex flex-col gap-1">
+                        {persona.catchphrases.map((c, i) => (
+                          <div
+                            key={i}
+                            className="rounded-l border-l-2 bg-black/30 px-2 py-1 text-[11px] italic text-white/80"
+                            style={{ borderColor: rarityCfg.primaryColor }}
+                          >
+                            “{c}”
+                          </div>
+                        ))}
+                      </div>
+                    </PersonaRow>
+                  )}
+
+                  {/* 战斗台词 */}
+                  {(persona.battleCry ||
+                    persona.victoryLine ||
+                    persona.defeatLine) && (
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {persona.battleCry && (
+                        <BattleLine
+                          icon={<Swords size={10} />}
+                          label="出战宣言"
+                          text={persona.battleCry}
+                          color="#FF003C"
+                        />
+                      )}
+                      {persona.victoryLine && (
+                        <BattleLine
+                          icon={<Trophy size={10} />}
+                          label="胜利台词"
+                          text={persona.victoryLine}
+                          color="#FFD700"
+                        />
+                      )}
+                      {persona.defeatLine && (
+                        <BattleLine
+                          icon={<Shield size={10} />}
+                          label="失败台词"
+                          text={persona.defeatLine}
+                          color="#9CA3AF"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* 简介 */}
+                  {spirit.sourceDescription && (
+                    <PersonaRow
+                      icon={<Eye size={11} />}
+                      label="来历"
+                      color={rarityCfg.primaryColor}
+                    >
+                      <p className="text-[11px] leading-relaxed text-white/70">
+                        {spirit.sourceDescription}
+                      </p>
+                    </PersonaRow>
+                  )}
                 </div>
-              </PersonaRow>
-            )}
-
-            {/* 战斗台词 */}
-            {(persona.battleCry ||
-              persona.victoryLine ||
-              persona.defeatLine) && (
-              <div className="grid grid-cols-1 gap-1.5">
-                {persona.battleCry && (
-                  <BattleLine
-                    icon={<Swords size={10} />}
-                    label="出战宣言"
-                    text={persona.battleCry}
-                    color="#FF003C"
-                  />
-                )}
-                {persona.victoryLine && (
-                  <BattleLine
-                    icon={<Trophy size={10} />}
-                    label="胜利台词"
-                    text={persona.victoryLine}
-                    color="#FFD700"
-                  />
-                )}
-                {persona.defeatLine && (
-                  <BattleLine
-                    icon={<Shield size={10} />}
-                    label="失败台词"
-                    text={persona.defeatLine}
-                    color="#9CA3AF"
-                  />
-                )}
               </div>
-            )}
-
-            {/* 简介 */}
-            {spirit.sourceDescription && (
-              <PersonaRow
-                icon={<Eye size={11} />}
-                label="来历"
-                color={rarityCfg.primaryColor}
-              >
-                <p className="text-[11px] leading-relaxed text-white/70">
-                  {spirit.sourceDescription}
-                </p>
-              </PersonaRow>
-            )}
+            </motion.div>
           </div>
+
+          {/* 翻面提示 */}
+          <div className="mt-3 text-[10px] tracking-wider text-white/40">
+            {flipped ? "点击卡片翻回正面" : "点击卡片查看详情"}
+          </div>
+
+          {/* 自己的非出战词灵：切换出战按钮 */}
+          {isMine && !isActive && onSetBattleSpirit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetBattleSpirit(spirit.rosterId);
+              }}
+              className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-[#FFD700] bg-[#FFD700]/10 py-2.5 text-xs font-black tracking-widest text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all"
+            >
+              <Swords size={13} />
+              设为出战
+            </button>
+          )}
         </div>
       </motion.div>
     </motion.div>

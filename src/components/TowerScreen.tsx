@@ -202,7 +202,7 @@ export const TowerScreen: React.FC = () => {
       </div>
 
       {/* 顶部 HUD */}
-      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <div className="flex items-center gap-3">
           <BackButton onClick={() => setPhase("MODE_SELECT")} color="#FFD700" />
           <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
