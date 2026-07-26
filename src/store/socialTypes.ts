@@ -36,6 +36,7 @@ export interface SerializedSpirit {
     archetype: string;
     temperament: string;
     speechStyle: string;
+    slogan?: string;
     catchphrases: string[];
     battleCry: string;
     victoryLine: string;
@@ -101,6 +102,12 @@ export interface SocialBattleState {
   guestSpirit: SerializedSpirit;
   /** 当前回合 */
   currentTurn: number;
+  /** 玩家选择招式的轮次；一轮包含双方各一次行动 */
+  round: number;
+  /** 房主是否正在接收本轮出招 */
+  acceptingActions: boolean;
+  /** 本轮出招截止时间（绝对时间戳） */
+  turnDeadlineAt: number;
   /** 双方 HP 实时快照 */
   hostHp: number;
   guestHp: number;
@@ -145,10 +152,12 @@ export interface SocialRoom {
   messages: SocialChatMessage[];
   /** 当前活跃对战（无则 null） */
   activeBattle: SocialBattleState | null;
+  /** 对战槽位版本；心跳和聊天不得推进该版本 */
+  battleUpdatedAt: number;
   /** 当前待响应的约战邀请 */
   pendingChallenge: ChallengeInvite | null;
-  /** 是否为快速对战房间：第二个玩家加入后自动开战 */
-  quickBattle: boolean;
+  /** 约战槽位版本；心跳和聊天不得推进该版本 */
+  challengeUpdatedAt: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -171,6 +180,8 @@ export type SocialTransportEvent =
       kind: "battle-action";
       roomCode: string;
       battleId: string;
+      actionId: string;
+      round: number;
       actorPlayerId: string;
       skillName: string;
     }

@@ -25,7 +25,7 @@ import {
  *  - players ：按 playerId 合并，同一玩家取 lastSeenAt 更新的一份；
  *              近期在线（OFFLINE_KEEP_MS 内）但本次未上报的玩家予以保留，
  *              以此化解「加入 / 心跳」并发导致的丢人问题
- *  - activeBattle / pendingChallenge / quickBattle：按 updatedAt 取更新者
+ *  - activeBattle / pendingChallenge：各自按独立版本取更新者，避免心跳覆盖业务状态
  */
 
 type LoosePlayer = {
@@ -45,8 +45,9 @@ type LooseRoom = {
   players?: LoosePlayer[];
   messages?: LooseMessage[];
   activeBattle?: unknown;
+  battleUpdatedAt?: number;
   pendingChallenge?: unknown;
-  quickBattle?: boolean;
+  challengeUpdatedAt?: number;
   createdAt?: number;
   updatedAt?: number;
   [key: string]: unknown;
@@ -159,13 +160,34 @@ const mergePlayers = (
   return [...byId.values()];
 };
 
+const getObjectTimestamp = (value: unknown): number => {
+  if (!value || typeof value !== "object") return 0;
+  const record = value as Record<string, unknown>;
+  const updatedAt = Number(record.updatedAt);
+  if (Number.isFinite(updatedAt)) return updatedAt;
+  const createdAt = Number(record.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : 0;
+};
+
 /** 合并 put 上来的房间到既有存储（服务端权威合并） */
 const mergeRoom = (
   existing: LooseRoom,
   incoming: LooseRoom,
   tombstones: Record<string, number> = {},
 ): LooseRoom => {
-  const incomingNewer = (incoming.updatedAt ?? 0) >= (existing.updatedAt ?? 0);
+  const existingBattleVersion =
+    existing.battleUpdatedAt ?? getObjectTimestamp(existing.activeBattle);
+  const incomingBattleVersion =
+    incoming.battleUpdatedAt ?? getObjectTimestamp(incoming.activeBattle);
+  const existingChallengeVersion =
+    existing.challengeUpdatedAt ??
+    getObjectTimestamp(existing.pendingChallenge);
+  const incomingChallengeVersion =
+    incoming.challengeUpdatedAt ??
+    getObjectTimestamp(incoming.pendingChallenge);
+  const incomingBattleNewer = incomingBattleVersion >= existingBattleVersion;
+  const incomingChallengeNewer =
+    incomingChallengeVersion >= existingChallengeVersion;
   return {
     ...existing,
     ...incoming,
@@ -177,16 +199,18 @@ const mergeRoom = (
       incoming.players ?? [],
       tombstones,
     ),
-    // 对战 / 约战：按 updatedAt 取更新者，避免落后端覆盖最新战斗状态
-    activeBattle: incomingNewer
+    // 对战与约战使用独立版本。普通心跳只推进 room.updatedAt，不能回滚业务状态。
+    activeBattle: incomingBattleNewer
       ? (incoming.activeBattle ?? null)
       : (existing.activeBattle ?? null),
-    pendingChallenge: incomingNewer
+    battleUpdatedAt: Math.max(existingBattleVersion, incomingBattleVersion),
+    pendingChallenge: incomingChallengeNewer
       ? (incoming.pendingChallenge ?? null)
       : (existing.pendingChallenge ?? null),
-    quickBattle: incomingNewer
-      ? Boolean(incoming.quickBattle)
-      : Boolean(existing.quickBattle),
+    challengeUpdatedAt: Math.max(
+      existingChallengeVersion,
+      incomingChallengeVersion,
+    ),
     updatedAt: Math.max(existing.updatedAt ?? 0, incoming.updatedAt ?? 0),
   };
 };

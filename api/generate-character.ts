@@ -11,23 +11,25 @@ import {
   setCorsHeaders,
   type ApiRequest,
   type ApiResponse,
-} from './_shared.js';
+} from "./_shared.js";
 
 const ULTIMATE_TYPE_IDS = [
-  'fire',
-  'ice',
-  'shadow',
-  'lightning',
-  'cosmic',
-  'nature',
-  'mecha',
-  'holy',
+  "fire",
+  "ice",
+  "shadow",
+  "lightning",
+  "cosmic",
+  "nature",
+  "mecha",
+  "holy",
 ] as const;
 
 const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 用户会输入一段角色描述，你需要根据这段描述，为角色生成游戏数值和【丰富多样的技能体系】。
 你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。
 重要：所有 JSON key 和字符串必须使用英文半角双引号 "，禁止使用中文弯引号 “ ” 或单引号。
+语言要求（强制）：所有会展示给玩家的文本必须使用简体中文，包括 name、全部 skills 的 name 和 description，以及 spiritProfile 的全部文本字段。禁止输出英文角色名、英文技能名或英文技能描述。
+唯一例外：JSON key、type / ultimateType 等枚举 ID，以及用于生成头像的 imagePrompt 必须保持英文。
 
 技能体系要求（必须包含 4-5 个技能）：
 1. 一个普通攻击（type="attack"，damageMultiplier 1.0）
@@ -39,7 +41,7 @@ const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 5. 一个终极技能/大招（type="ultimate"，isUltimate=true，damageMultiplier 4.4-8.5）
    - 大招必须有 description 字段：详细描述释放时的华丽特效
    - 大招必须有 ultimateType 字段：从以下类型中挑选一个最贴合角色主题的 ID
-     可选类型：${ULTIMATE_TYPE_IDS.join(', ')}
+     可选类型：${ULTIMATE_TYPE_IDS.join(", ")}
    - 例如火焰类角色选 "fire"，冰霜类选 "ice"，机甲类选 "mecha"，宇宙类选 "cosmic"
 
 数值分层要求：
@@ -51,6 +53,10 @@ const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 - 均衡角色也不应平庸：通常总要有一个 90+ 的攻击/速度，或 600+ HP，另配一个清晰短板。
 - 强力攻击技能倍率要按定位分层：坦克 1.7-2.35，均衡角色 2.2-2.75，玻璃炮/刺客 2.75-3.2。
 - 大招倍率也要分层：坦克/消耗型 4.4-6.2，均衡强者 6.0-7.2，玻璃炮/脆皮爆发 7.2-8.5。
+
+词灵人格卡要求：
+- 必须生成 spiritProfile。所有字段紧扣用户输入，不要使用泛用模板。
+- slogan 是卡牌背面的专属一句话：8-24 个中文字符，必须只属于这个角色，不要复用泛用战斗口号。
 
 JSON 结构如下：
 {
@@ -67,64 +73,144 @@ JSON 结构如下：
     { "name": "减益技能名", "description": "技能描述", "damageMultiplier": 0.8, "type": "debuff", "buffPercent": 45, "buffTurns": 3 },
     { "name": "大招名称（要霸气）", "description": "详细的华丽特效描述", "damageMultiplier": 6.8, "type": "ultimate", "isUltimate": true, "ultimateType": "fire" }
   ],
+  "spiritProfile": {
+    "archetype": "词灵原型",
+    "temperament": "性格底色",
+    "speechStyle": "说话方式",
+    "slogan": "卡牌背面展示的专属一句话",
+    "catchphrases": ["短台词1", "短台词2", "短台词3"],
+    "battleCry": "关键出招或大招前的宣言",
+    "victoryLine": "胜利时说的话",
+    "defeatLine": "失败时说的话",
+    "worldAnchors": ["世界观锚点1", "世界观锚点2"],
+    "memorySeeds": ["长期执念或未完成目标"]
+  },
   "imagePrompt": "用于生成头像的英文提示词，pixel art 或 cyberpunk 风格"
 }
 数值范围要求：hp 100-1100，attack 15-170，defense 0-110，speed 1-160。请根据角色设定拉开差距，不要所有角色都给中庸数值；玻璃大炮、重装坦克、极速刺客、低速 Boss 都可以很极端。强角色可以真的强，但必须用另一个低项换取平衡。
 技能名称和描述要紧扣用户输入的角色主题，要有创意、有画面感、有中二气息。`;
 
+const normalizeText = (
+  value: unknown,
+  fallback: string,
+  maxLength: number,
+): string => {
+  const text = String(value || "")
+    .trim()
+    .slice(0, maxLength);
+  return text || fallback;
+};
+
+const normalizeTextList = (
+  value: unknown,
+  maxItems: number,
+  maxLength: number,
+): string[] =>
+  Array.isArray(value)
+    ? value
+        .map((item) =>
+          String(item || "")
+            .trim()
+            .slice(0, maxLength),
+        )
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
+
+const normalizeSpiritProfile = (value: unknown) => {
+  const profile = asRecord(value);
+  if (Object.keys(profile).length === 0) return undefined;
+
+  return {
+    archetype: normalizeText(profile.archetype, "未明词灵", 32),
+    temperament: normalizeText(profile.temperament, "冷静而好战", 36),
+    speechStyle: normalizeText(profile.speechStyle, "短促、有画面感", 48),
+    slogan: normalizeText(profile.slogan, "", 48),
+    catchphrases: normalizeTextList(profile.catchphrases, 4, 32),
+    battleCry: normalizeText(profile.battleCry, "", 48),
+    victoryLine: normalizeText(profile.victoryLine, "", 48),
+    defeatLine: normalizeText(profile.defeatLine, "", 48),
+    worldAnchors: normalizeTextList(profile.worldAnchors, 4, 48),
+    memorySeeds: normalizeTextList(profile.memorySeeds, 4, 48),
+  };
+};
+
 const normalizeCharacter = (value: unknown) => {
   const data = asRecord(value);
   const hp = clamp(data.hp, 100, 1100, 320);
   const skills = Array.isArray(data.skills) ? data.skills : [];
+  const spiritProfile = normalizeSpiritProfile(data.spiritProfile);
 
   return {
-    name: String(data.name || '无名斗士').slice(0, 24),
+    name: String(data.name || "无名斗士").slice(0, 24),
     hp,
     maxHp: hp,
     attack: clamp(data.attack, 15, 170, 62),
     defense: clamp(data.defense, 0, 110, 30),
     speed: clamp(data.speed, 1, 160, 65),
-    imagePrompt: String(data.imagePrompt || 'cyberpunk game character portrait').slice(0, 240),
+    imagePrompt: String(
+      data.imagePrompt || "cyberpunk game character portrait",
+    ).slice(0, 240),
     skills: skills.slice(0, 6).map((skillValue, index: number) => {
       const skill = asRecord(skillValue);
-      const rawType = String(skill.type || 'attack');
-      const type = ['attack', 'heal', 'buff', 'debuff', 'ultimate'].includes(rawType) ? rawType : 'attack';
-      const isUltimate = Boolean(skill.isUltimate) || type === 'ultimate';
-      const requestedUltimateType = String(skill.ultimateType || '');
-      const ultimateType = isUltimate && ULTIMATE_TYPE_IDS.includes(requestedUltimateType as typeof ULTIMATE_TYPE_IDS[number])
-        ? requestedUltimateType
-        : isUltimate
-          ? ULTIMATE_TYPE_IDS[0]
-          : undefined;
+      const rawType = String(skill.type || "attack");
+      const type = ["attack", "heal", "buff", "debuff", "ultimate"].includes(
+        rawType,
+      )
+        ? rawType
+        : "attack";
+      const isUltimate = Boolean(skill.isUltimate) || type === "ultimate";
+      const requestedUltimateType = String(skill.ultimateType || "");
+      const ultimateType =
+        isUltimate &&
+        ULTIMATE_TYPE_IDS.includes(
+          requestedUltimateType as (typeof ULTIMATE_TYPE_IDS)[number],
+        )
+          ? requestedUltimateType
+          : isUltimate
+            ? ULTIMATE_TYPE_IDS[0]
+            : undefined;
 
       return {
         name: String(skill.name || `技能 ${index + 1}`).slice(0, 32),
-        description: String(skill.description || '').slice(0, 240),
-        damageMultiplier: clampNumber(skill.damageMultiplier, 0, isUltimate ? 8.8 : 3.5, isUltimate ? 6.2 : 1),
+        description: String(skill.description || "").slice(0, 240),
+        damageMultiplier: clampNumber(
+          skill.damageMultiplier,
+          0,
+          isUltimate ? 8.8 : 3.5,
+          isUltimate ? 6.2 : 1,
+        ),
         type,
         isUltimate,
         ultimateType,
-        healPercent: skill.healPercent ? clamp(skill.healPercent, 1, 70, 35) : undefined,
-        buffPercent: skill.buffPercent ? clamp(skill.buffPercent, 1, 120, 45) : undefined,
-        buffTurns: skill.buffTurns ? clamp(skill.buffTurns, 1, 6, 3) : undefined,
+        healPercent: skill.healPercent
+          ? clamp(skill.healPercent, 1, 70, 35)
+          : undefined,
+        buffPercent: skill.buffPercent
+          ? clamp(skill.buffPercent, 1, 120, 45)
+          : undefined,
+        buffTurns: skill.buffTurns
+          ? clamp(skill.buffTurns, 1, 6, 3)
+          : undefined,
       };
     }),
     ultimateCharge: 0,
     attackBuff: 0,
     defenseBuff: 0,
     buffTurnsLeft: 0,
+    ...(spiritProfile ? { spiritProfile } : {}),
   };
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(req, res);
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
   }
 
-  if (req.method === 'GET') {
+  if (req.method === "GET") {
     const credentials = getAiCredentials();
     sendJson(res, 200, {
       ok: true,
@@ -134,8 +220,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed" });
     return;
   }
 
@@ -143,7 +229,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   if (!apiKey) {
     sendJson(res, 500, {
-      error: '服务端还没有配置 AI_API_KEY / OPENAI_API_KEY',
+      error: "服务端还没有配置 AI_API_KEY / OPENAI_API_KEY",
     });
     return;
   }
@@ -158,13 +244,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const body = readBody(req);
-  const description = String(body.description || '').trim();
+  const description = String(body.description || "").trim();
   if (!description) {
-    sendJson(res, 400, { error: '请先输入角色描述' });
+    sendJson(res, 400, { error: "请先输入角色描述" });
     return;
   }
   if (description.length > 1000) {
-    sendJson(res, 400, { error: '角色描述太长了，请控制在 1000 字以内' });
+    sendJson(res, 400, { error: "角色描述太长了，请控制在 1000 字以内" });
     return;
   }
 
@@ -172,16 +258,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
+      method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: description },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: description },
         ],
         temperature: 0.95,
       }),
@@ -189,9 +275,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
     if (!upstreamResponse.ok) {
-      console.error('AI upstream error', upstreamResponse.status, upstreamPayload?.error || upstreamPayload);
+      console.error(
+        "AI upstream error",
+        upstreamResponse.status,
+        upstreamPayload?.error || upstreamPayload,
+      );
       sendJson(res, 502, {
-        error: upstreamPayload?.error?.message || '大模型接口调用失败，请检查服务端模型配置',
+        error:
+          upstreamPayload?.error?.message ||
+          "大模型接口调用失败，请检查服务端模型配置",
         usage: chargedUsage,
       });
       return;
@@ -199,7 +291,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
     if (!rawContent) {
-      sendJson(res, 502, { error: '大模型返回内容为空', usage: chargedUsage });
+      sendJson(res, 502, { error: "大模型返回内容为空", usage: chargedUsage });
       return;
     }
 
@@ -216,12 +308,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         error:
           parseError instanceof Error
             ? parseError.message
-            : '大模型返回的内容不是合法 JSON',
+            : "大模型返回的内容不是合法 JSON",
         usage: chargedUsage,
       });
     }
   } catch (error) {
-    console.error('generate-character failed', error);
-    sendJson(res, 500, { error: '角色生成失败，请稍后再试', usage: chargedUsage });
+    console.error("generate-character failed", error);
+    sendJson(res, 500, {
+      error: "角色生成失败，请稍后再试",
+      usage: chargedUsage,
+    });
   }
 }

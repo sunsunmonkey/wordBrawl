@@ -31,7 +31,7 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
     borderGradient: "linear-gradient(135deg, #9CA3AF, #6B7280)",
     starCount: 1,
     powerMultiplier: 0.85,
-    dropRate: 0.40,
+    dropRate: 0.4,
   },
   R: {
     id: "R",
@@ -54,7 +54,8 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
     secondaryColor: "#A855F7",
     rgb: "192, 132, 252",
     glowColor: "rgba(192, 132, 252, 0.8)",
-    borderGradient: "linear-gradient(135deg, #E879F9, #C084FC, #A855F7, #9333EA)",
+    borderGradient:
+      "linear-gradient(135deg, #E879F9, #C084FC, #A855F7, #9333EA)",
     starCount: 3,
     powerMultiplier: 1.15,
     dropRate: 0.17,
@@ -67,7 +68,8 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
     secondaryColor: "#F59E0B",
     rgb: "251, 191, 36",
     glowColor: "rgba(251, 191, 36, 0.9)",
-    borderGradient: "linear-gradient(135deg, #FDE047, #FBBF24, #F59E0B, #D97706)",
+    borderGradient:
+      "linear-gradient(135deg, #FDE047, #FBBF24, #F59E0B, #D97706)",
     starCount: 4,
     powerMultiplier: 1.35,
     dropRate: 0.065,
@@ -80,7 +82,8 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
     secondaryColor: "#FF003C",
     rgb: "255, 107, 157",
     glowColor: "rgba(255, 107, 157, 1)",
-    borderGradient: "linear-gradient(135deg, #66FCF1, #C084FC, #FFD700, #FF6B9D, #FF003C)",
+    borderGradient:
+      "linear-gradient(135deg, #66FCF1, #C084FC, #FFD700, #FF6B9D, #FF003C)",
     starCount: 5,
     powerMultiplier: 1.6,
     dropRate: 0.015,
@@ -100,7 +103,8 @@ export const calculatePowerScore = (char: {
   const def = char.defense;
   const spd = char.speed;
   const baseScore = hp * 0.4 + atk * 2.5 + def * 1.8 + spd * 1.5;
-  const ultimateMult = char.skills?.find((s) => s.isUltimate)?.damageMultiplier || 5;
+  const ultimateMult =
+    char.skills?.find((s) => s.isUltimate)?.damageMultiplier || 5;
   const skillBonus = ultimateMult * 15;
   return Math.round(baseScore + skillBonus);
 };
@@ -152,6 +156,8 @@ export interface SpiritProfile {
   temperament: string;
   /** 说话方式：短句、古风、机械播报、嘲讽等 */
   speechStyle: string;
+  /** 卡牌背面展示的专属一句话 */
+  slogan?: string;
   /** 战斗中可穿插的短台词 */
   catchphrases: string[];
   /** 释放大招或关键行动时的宣言 */

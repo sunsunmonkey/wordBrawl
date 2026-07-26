@@ -22,13 +22,31 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
 }) => {
   const [flipped, setFlipped] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [showSlogan, setShowSlogan] = useState(false);
 
   const rarity: Rarity = character.rarity || "R";
   const config = RARITY_CONFIGS[rarity];
   const isHighRarity = rarity === "SSR" || rarity === "UR";
+  const signatureSkill =
+    character.skills.find(
+      (skill) => skill.isUltimate || skill.type === "ultimate",
+    )?.name ??
+    character.skills[0]?.name ??
+    character.name;
+  const battleCry =
+    character.spiritProfile?.battleCry?.trim() === "此刻，词意成真。"
+      ? ""
+      : character.spiritProfile?.battleCry?.trim();
+  const slogan =
+    character.spiritProfile?.slogan?.trim() ||
+    battleCry ||
+    character.spiritProfile?.catchphrases?.[0]?.trim() ||
+    `${character.name}，以${signatureSkill}为誓。`;
 
   // 挂载后短暂延迟再翻牌，让背景先淡入
   useEffect(() => {
+    setRevealed(false);
+    setShowSlogan(false);
     const t = setTimeout(() => setFlipped(true), 250);
     return () => clearTimeout(t);
   }, [character.name]);
@@ -73,7 +91,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
         transition={{ duration: 0.4, ease: "easeOut" }}
       >
         <div
-          className="text-4xl font-black tracking-widest mb-1"
+          className="text-4xl font-black leading-none tracking-widest"
           style={{
             color: config.primaryColor,
             textShadow: `0 0 20px ${config.glowColor}, 0 0 40px ${config.glowColor}`,
@@ -82,7 +100,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
           {config.labelEn}
         </div>
         <div
-          className="text-sm tracking-[0.5em]"
+          className="mt-1 text-sm leading-none tracking-[0.5em]"
           style={{ color: config.secondaryColor }}
         >
           {config.label}
@@ -95,55 +113,103 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
         style={{ perspective: 1400 }}
       >
         <motion.div
-          className="relative"
+          className={`relative ${revealed ? "cursor-pointer" : ""}`}
           style={{
             transformStyle: "preserve-3d",
             willChange: "transform",
           }}
           initial={{ rotateY: 180 }}
-          animate={{ rotateY: flipped ? 0 : 180 }}
+          animate={{ rotateY: flipped && !showSlogan ? 0 : 180 }}
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           onAnimationComplete={() => {
-            if (flipped) setRevealed(true);
+            if (flipped && !showSlogan) setRevealed(true);
+          }}
+          onClick={(event) => {
+            if (!revealed) return;
+            event.stopPropagation();
+            setShowSlogan((visible) => !visible);
           }}
         >
           {/* 正面：角色卡（决定容器尺寸） */}
           <div style={{ backfaceVisibility: "hidden" }}>
-            <HeroCard character={character} size="lg" showStats={true} />
+            <HeroCard
+              character={character}
+              size="lg"
+              showStats={true}
+              showQuote={false}
+            />
           </div>
 
-          {/* 背面：卡背 */}
+          {/* 初始为卡背，揭示完成后点击翻至专属 Slogan */}
           <div
-            className="absolute inset-0 rounded-2xl overflow-hidden flex flex-col items-center justify-center gap-3"
+            className="absolute inset-0 overflow-hidden rounded-2xl"
             style={{
               backfaceVisibility: "hidden",
               transform: "rotateY(180deg)",
-              background: `linear-gradient(150deg, #1F2833, #0B0C10)`,
-              border: `2px solid ${config.primaryColor}`,
-              boxShadow: `0 0 40px ${config.glowColor}, inset 0 0 40px rgba(${config.rgb}, 0.2)`,
+              background: revealed
+                ? "linear-gradient(145deg, #151725 0%, #0a0b12 100%)"
+                : "linear-gradient(150deg, #1F2833, #0B0C10)",
+              border: revealed
+                ? `1px solid ${config.primaryColor}66`
+                : `2px solid ${config.primaryColor}`,
+              boxShadow: revealed
+                ? `inset 0 0 24px rgba(${config.rgb}, 0.12)`
+                : `0 0 40px ${config.glowColor}, inset 0 0 40px rgba(${config.rgb}, 0.2)`,
             }}
           >
-            <div
-              className="absolute inset-3 rounded-xl border border-dashed"
-              style={{ borderColor: `rgba(${config.rgb}, 0.4)` }}
-            />
-            <Sparkles
-              size={56}
-              className="animate-pulse"
-              style={{ color: config.primaryColor }}
-            />
-            <div
-              className="text-xl font-black tracking-[0.35em]"
-              style={{ color: config.primaryColor }}
-            >
-              词灵
-            </div>
-            <div
-              className="text-[11px] tracking-widest"
-              style={{ color: config.secondaryColor }}
-            >
-              SPIRIT CARD
-            </div>
+            {revealed ? (
+              <>
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-60"
+                  style={{
+                    background: `
+                      radial-gradient(circle at 18% 18%, rgba(${config.rgb}, 0.2), transparent 30%),
+                      linear-gradient(135deg, transparent 49.8%, rgba(${config.rgb}, 0.12) 50%, transparent 50.2%)
+                    `,
+                  }}
+                />
+                <div className="relative flex h-full items-center px-7 py-8">
+                  <p
+                    className="w-full text-center font-display text-[22px] font-semibold leading-[1.75] text-white"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 5,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      textShadow: `0 0 20px rgba(${config.rgb}, 0.35)`,
+                    }}
+                  >
+                    <span style={{ color: config.primaryColor }}>“</span>
+                    {slogan}
+                    <span style={{ color: config.primaryColor }}>”</span>
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-3">
+                <div
+                  className="absolute inset-3 rounded-xl border border-dashed"
+                  style={{ borderColor: `rgba(${config.rgb}, 0.4)` }}
+                />
+                <Sparkles
+                  size={56}
+                  className="animate-pulse"
+                  style={{ color: config.primaryColor }}
+                />
+                <div
+                  className="text-xl font-black tracking-[0.35em]"
+                  style={{ color: config.primaryColor }}
+                >
+                  词灵
+                </div>
+                <div
+                  className="text-[11px] tracking-widest"
+                  style={{ color: config.secondaryColor }}
+                >
+                  SPIRIT CARD
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -244,7 +310,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
         >
-          点击任意处收入麾下
+          点击卡片查看 Slogan · 点击外侧收入麾下
         </motion.div>
       )}
     </motion.div>

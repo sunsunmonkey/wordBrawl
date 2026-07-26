@@ -4,18 +4,12 @@ import {
   Check,
   Copy,
   DoorOpen,
-  Eye,
-  Globe2,
-  Heart,
   Loader2,
   LogOut,
-  MessageCircle,
-  Quote,
   Send,
   Shield,
   Sparkles,
   Swords,
-  Trophy,
   Users,
   X,
 } from "lucide-react";
@@ -188,36 +182,6 @@ export const SocialRoomScreen: React.FC = () => {
     [currentRoom],
   );
 
-  const isQuickBattle = currentRoom?.quickBattle ?? false;
-
-  // 快速对战房间：双方都在且有出战词灵时，房主自动发起约战
-  const autoStartRef = useRef(false);
-  useEffect(() => {
-    if (!isQuickBattle || !currentRoom) return;
-    if (autoStartRef.current) return;
-    if (currentRoom.activeBattle || currentRoom.pendingChallenge) return;
-    if (currentRoom.players.length < 2) return;
-    const host = currentRoom.players[0];
-    const guest = currentRoom.players[1];
-    if (!host?.activeSpirit || !guest?.activeSpirit) return;
-    if (playerId !== host.playerId) return; // 仅房主发起
-    autoStartRef.current = true;
-    createChallenge(guest);
-  }, [isQuickBattle, currentRoom, playerId, createChallenge]);
-
-  // 快速对战房间：guest 自动接受约战
-  const pendingChallengeForBattle = currentRoom?.pendingChallenge ?? null;
-  useEffect(() => {
-    if (!isQuickBattle) return;
-    const pending = pendingChallengeForBattle;
-    if (!pending || pending.status !== "pending") return;
-    if (pending.toPlayerId !== playerId) return;
-    const t = setTimeout(() => {
-      resolveChallenge(pending.id, "accepted");
-    }, 600);
-    return () => clearTimeout(t);
-  }, [isQuickBattle, pendingChallengeForBattle, playerId, resolveChallenge]);
-
   if (!currentRoom) {
     return (
       <div className="min-h-screen grid-bg flex items-center justify-center">
@@ -386,22 +350,13 @@ export const SocialRoomScreen: React.FC = () => {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span
-                className={`text-base md:text-lg font-black tracking-wider ${
-                  isQuickBattle ? "text-[#FF003C]" : "text-[#A78BFA]"
-                }`}
+                className="text-base md:text-lg font-black tracking-wider text-[#A78BFA]"
                 style={{
-                  textShadow: isQuickBattle
-                    ? "0 0 12px rgba(255,0,60,0.55)"
-                    : "0 0 12px rgba(167,139,250,0.55)",
+                  textShadow: "0 0 12px rgba(167,139,250,0.55)",
                 }}
               >
                 房间 {currentRoom.roomCode}
               </span>
-              {isQuickBattle && (
-                <span className="text-[9px] font-mono tracking-widest text-[#FF003C]/80 border border-[#FF003C]/40 px-1.5 py-0.5 rounded">
-                  快速对战
-                </span>
-              )}
               <button
                 type="button"
                 onClick={handleCopyRoom}
@@ -415,9 +370,6 @@ export const SocialRoomScreen: React.FC = () => {
             <div className="text-[10px] font-mono tracking-widest text-white/40 mt-0.5">
               {currentRoom.players.length} 位契约者 ·{" "}
               {mentionableSpirits.length} 位词灵
-              {isQuickBattle && currentRoom.players.length < 2 && (
-                <span className="text-[#FFD700]"> · 等待对手加入...</span>
-              )}
             </div>
           </div>
         </div>
@@ -476,11 +428,7 @@ export const SocialRoomScreen: React.FC = () => {
           <div className="shrink-0 px-4 py-3 border-t border-white/5 text-[10px] text-white/30 leading-relaxed">
             <div className="flex items-center gap-1.5">
               <Sparkles size={11} className="text-[#FFD700]" />
-              <span>
-                {isQuickBattle
-                  ? "快速对战 · 对手加入后自动开战，打完可继续聊天"
-                  : "带词灵才能约战 · 点自己的词灵切换出战"}
-              </span>
+              <span>带词灵才能约战 · 点自己的词灵切换出战</span>
             </div>
           </div>
         </aside>
@@ -1152,8 +1100,7 @@ void DoorOpen;
 
 /**
  * 词灵详情弹层：房间内任一玩家点击词灵卡时弹出。
- * 左侧复用 SpiritCard（lg）展示立绘 / 稀有度 / 战力 / 属性，
- * 右侧展示 persona（原型 / 性格 / 说话方式 / 口头禅 / 世界观 / 战斗台词）。
+ * 正面展示关键战斗信息，背面展示专属 Slogan。
  */
 const SpiritDetailModal: React.FC<{
   data: {
@@ -1169,6 +1116,21 @@ const SpiritDetailModal: React.FC<{
   const rarity = spirit.combatSnapshot.rarity ?? "R";
   const rarityCfg = RARITY_CONFIGS[rarity];
   const persona = spirit.persona;
+  const signatureSkill =
+    spirit.combatSnapshot.skills.find(
+      (skill) => skill.isUltimate || skill.type === "ultimate",
+    )?.name ??
+    spirit.combatSnapshot.skills[0]?.name ??
+    spirit.name;
+  const battleCry =
+    persona.battleCry?.trim() === "此刻，词意成真。"
+      ? ""
+      : persona.battleCry?.trim();
+  const slogan =
+    persona.slogan?.trim() ||
+    battleCry ||
+    persona.catchphrases?.[0]?.trim() ||
+    `${spirit.name}，以${signatureSkill}为誓。`;
 
   // 3D 翻面：点击卡片切换正反面
   const [flipped, setFlipped] = useState(false);
@@ -1230,15 +1192,9 @@ const SpiritDetailModal: React.FC<{
               </span>
             )}
           </span>
-          {isActive && (
-            <span className="ml-auto flex items-center gap-1 rounded bg-[#FFD700] px-2 py-0.5 text-[9px] font-black tracking-widest text-[#0B0C10]">
-              <Swords size={10} />
-              当前出战
-            </span>
-          )}
         </div>
 
-        {/* 3D 翻面卡：正面立绘 / 背面 persona 详情，点击翻面 */}
+        {/* 3D 翻面卡：正面关键战斗信息 / 背面专属 Slogan */}
         <div className="mx-auto flex w-full max-w-[288px] flex-col items-center">
           <div
             className="relative w-72"
@@ -1251,16 +1207,18 @@ const SpiritDetailModal: React.FC<{
               animate={{ rotateY: flipped ? 180 : 0 }}
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             >
-              {/* 正面：大英雄卡 */}
+              {/* 正面：完整保留关键战斗信息，口头禅收至背面 */}
               <div style={{ backfaceVisibility: "hidden" }}>
                 <HeroCard
                   character={spirit.combatSnapshot}
                   size="lg"
                   showStats
+                  showQuote={false}
+                  ultraHoverEffect
                 />
               </div>
 
-              {/* 背面：persona 详情 */}
+              {/* 背面：专属 Slogan */}
               <div
                 className="absolute inset-0 rounded-2xl border overflow-hidden"
                 style={{
@@ -1272,128 +1230,30 @@ const SpiritDetailModal: React.FC<{
                   boxShadow: `inset 0 0 24px rgba(${rarityCfg.rgb}, 0.12)`,
                 }}
               >
-                <div className="flex h-full flex-col gap-2.5 overflow-y-auto scrollbar-thin p-3">
-                  {/* 名字 + archetype */}
-                  <div>
-                    <div
-                      className="font-display font-black leading-tight text-lg"
-                      style={{
-                        color: "#fff",
-                        textShadow: `0 0 16px rgba(${rarityCfg.rgb}, 0.55)`,
-                      }}
-                    >
-                      {spirit.name}
-                    </div>
-                    <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[10px]">
-                      <PersonaChip
-                        icon={<Sparkles size={10} />}
-                        label="原型"
-                        value={persona.archetype}
-                        color={rarityCfg.primaryColor}
-                      />
-                      <PersonaChip
-                        icon={<Heart size={10} />}
-                        label="性格"
-                        value={persona.temperament}
-                        color="#F472B6"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 说话方式 */}
-                  <PersonaRow
-                    icon={<MessageCircle size={11} />}
-                    label="说话方式"
-                    color={rarityCfg.primaryColor}
+                <div
+                  className="absolute inset-0 pointer-events-none opacity-60"
+                  style={{
+                    background: `
+                      radial-gradient(circle at 18% 18%, rgba(${rarityCfg.rgb}, 0.2), transparent 30%),
+                      linear-gradient(135deg, transparent 49.8%, rgba(${rarityCfg.rgb}, 0.12) 50%, transparent 50.2%)
+                    `,
+                  }}
+                />
+                <div className="relative flex h-full items-center px-7 py-8">
+                  <p
+                    className="w-full text-center font-display text-[22px] font-semibold leading-[1.75] text-white"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 5,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      textShadow: `0 0 20px rgba(${rarityCfg.rgb}, 0.35)`,
+                    }}
                   >
-                    {persona.speechStyle}
-                  </PersonaRow>
-
-                  {/* 世界观锚点 */}
-                  {persona.worldAnchors.length > 0 && (
-                    <PersonaRow
-                      icon={<Globe2 size={11} />}
-                      label="世界观"
-                      color={rarityCfg.primaryColor}
-                    >
-                      <div className="flex flex-wrap gap-1.5">
-                        {persona.worldAnchors.map((w, i) => (
-                          <span
-                            key={i}
-                            className="rounded border border-white/12 bg-black/40 px-2 py-0.5 text-[10px] text-white/75"
-                          >
-                            {w}
-                          </span>
-                        ))}
-                      </div>
-                    </PersonaRow>
-                  )}
-
-                  {/* 口头禅 */}
-                  {persona.catchphrases.length > 0 && (
-                    <PersonaRow
-                      icon={<Quote size={11} />}
-                      label="口头禅"
-                      color={rarityCfg.primaryColor}
-                    >
-                      <div className="flex flex-col gap-1">
-                        {persona.catchphrases.map((c, i) => (
-                          <div
-                            key={i}
-                            className="rounded-l border-l-2 bg-black/30 px-2 py-1 text-[11px] italic text-white/80"
-                            style={{ borderColor: rarityCfg.primaryColor }}
-                          >
-                            “{c}”
-                          </div>
-                        ))}
-                      </div>
-                    </PersonaRow>
-                  )}
-
-                  {/* 战斗台词 */}
-                  {(persona.battleCry ||
-                    persona.victoryLine ||
-                    persona.defeatLine) && (
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {persona.battleCry && (
-                        <BattleLine
-                          icon={<Swords size={10} />}
-                          label="出战宣言"
-                          text={persona.battleCry}
-                          color="#FF003C"
-                        />
-                      )}
-                      {persona.victoryLine && (
-                        <BattleLine
-                          icon={<Trophy size={10} />}
-                          label="胜利台词"
-                          text={persona.victoryLine}
-                          color="#FFD700"
-                        />
-                      )}
-                      {persona.defeatLine && (
-                        <BattleLine
-                          icon={<Shield size={10} />}
-                          label="失败台词"
-                          text={persona.defeatLine}
-                          color="#9CA3AF"
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* 简介 */}
-                  {spirit.sourceDescription && (
-                    <PersonaRow
-                      icon={<Eye size={11} />}
-                      label="来历"
-                      color={rarityCfg.primaryColor}
-                    >
-                      <p className="text-[11px] leading-relaxed text-white/70">
-                        {spirit.sourceDescription}
-                      </p>
-                    </PersonaRow>
-                  )}
+                    <span style={{ color: rarityCfg.primaryColor }}>“</span>
+                    {slogan}
+                    <span style={{ color: rarityCfg.primaryColor }}>”</span>
+                  </p>
                 </div>
               </div>
             </motion.div>
@@ -1423,62 +1283,3 @@ const SpiritDetailModal: React.FC<{
     </motion.div>
   );
 };
-
-const PersonaChip: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  color: string;
-}> = ({ icon, label, value, color }) => (
-  <span
-    className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5"
-    style={{
-      borderColor: `${color}55`,
-      background: `${color}12`,
-      color: `${color}`,
-    }}
-  >
-    {icon}
-    <span className="opacity-70">{label}</span>
-    <span className="font-bold text-white/85">{value}</span>
-  </span>
-);
-
-const PersonaRow: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  color: string;
-  children: React.ReactNode;
-}> = ({ icon, label, color, children }) => (
-  <div className="rounded-lg border border-white/8 bg-black/25 p-2.5">
-    <div
-      className="mb-1.5 flex items-center gap-1.5 text-[9px] font-mono tracking-[0.3em]"
-      style={{ color: `${color}cc` }}
-    >
-      {icon}
-      <span>{label}</span>
-    </div>
-    <div className="text-[11px] text-white/85 leading-relaxed">{children}</div>
-  </div>
-);
-
-const BattleLine: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  text: string;
-  color: string;
-}> = ({ icon, label, text, color }) => (
-  <div
-    className="rounded border-l-2 bg-black/30 px-2.5 py-1.5"
-    style={{ borderColor: color }}
-  >
-    <div
-      className="flex items-center gap-1 text-[9px] font-mono tracking-widest"
-      style={{ color }}
-    >
-      {icon}
-      <span>{label}</span>
-    </div>
-    <div className="mt-0.5 text-[11px] italic text-white/80">“{text}”</div>
-  </div>
-);

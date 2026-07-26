@@ -57,6 +57,24 @@ const moodColor = (bond: number) => {
   return "#C5C6C7";
 };
 
+interface SpiritChatUiState {
+  input: string;
+  error: string;
+  isSending: boolean;
+  streamingReply: string;
+  replyStreamDone: boolean;
+  isFinalizingMeta: boolean;
+}
+
+const EMPTY_CHAT_UI_STATE: SpiritChatUiState = {
+  input: "",
+  error: "",
+  isSending: false,
+  streamingReply: "",
+  replyStreamDone: false,
+  isFinalizingMeta: false,
+};
+
 export const SpiritChatScreen: React.FC = () => {
   const {
     apiKey,
@@ -87,25 +105,34 @@ export const SpiritChatScreen: React.FC = () => {
   const isSelectedRecruiting = selected
     ? isRosterCharacterRecruitLocked(selected)
     : false;
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [streamingReply, setStreamingReply] = useState<string>("");
-  const [replyStreamDone, setReplyStreamDone] = useState(false);
-  const [isFinalizingMeta, setIsFinalizingMeta] = useState(false);
+  const [chatUiByRosterId, setChatUiByRosterId] = useState<
+    Record<string, SpiritChatUiState>
+  >({});
   const [isInfoExpanded, setIsInfoExpanded] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
-  const pendingChunkRef = useRef<string | null>(null);
-  const rafHandleRef = useRef<number | null>(null);
-  const spiritMessageIdRef = useRef<string | null>(null);
+  const pendingChunkByRosterIdRef = useRef<Record<string, string>>({});
+  const rafHandleByRosterIdRef = useRef<Record<string, number>>({});
+  const spiritMessageIdByRosterIdRef = useRef<Record<string, string>>({});
+  const activeRequestRosterIdsRef = useRef(new Set<string>());
+
+  const updateChatUi = (
+    rosterId: string,
+    patch: Partial<SpiritChatUiState>,
+  ) => {
+    setChatUiByRosterId((state) => ({
+      ...state,
+      [rosterId]: {
+        ...(state[rosterId] ?? EMPTY_CHAT_UI_STATE),
+        ...patch,
+      },
+    }));
+  };
 
   useEffect(() => {
+    const handles = rafHandleByRosterIdRef.current;
     return () => {
-      if (rafHandleRef.current !== null) {
-        cancelAnimationFrame(rafHandleRef.current);
-        rafHandleRef.current = null;
-      }
+      Object.values(handles).forEach((handle) => cancelAnimationFrame(handle));
     };
   }, []);
 
@@ -120,6 +147,17 @@ export const SpiritChatScreen: React.FC = () => {
   const chat = selected
     ? (chats[selected.rosterId] ?? getOrCreateChat(selected.rosterId))
     : null;
+  const chatUi = selected
+    ? (chatUiByRosterId[selected.rosterId] ?? EMPTY_CHAT_UI_STATE)
+    : EMPTY_CHAT_UI_STATE;
+  const {
+    input,
+    error,
+    isSending,
+    streamingReply,
+    replyStreamDone,
+    isFinalizingMeta,
+  } = chatUi;
 
   const cfg = useMemo(
     () => ({ apiKey, baseUrl, model, apiMode }),
@@ -131,7 +169,7 @@ export const SpiritChatScreen: React.FC = () => {
     if (!el) return;
     if (!stickToBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [chat?.messages.length, isSending, streamingReply]);
+  }, [chat?.messages.length, isSending, selected?.rosterId, streamingReply]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -140,17 +178,26 @@ export const SpiritChatScreen: React.FC = () => {
     stickToBottomRef.current = distanceFromBottom < 64;
   };
 
-  const flushStreamingChunk = () => {
-    rafHandleRef.current = null;
-    const next = pendingChunkRef.current;
-    pendingChunkRef.current = null;
-    if (next !== null) setStreamingReply(next);
+  const clearPendingStreamingChunk = (rosterId: string) => {
+    const handle = rafHandleByRosterIdRef.current[rosterId];
+    if (handle !== undefined) {
+      cancelAnimationFrame(handle);
+      delete rafHandleByRosterIdRef.current[rosterId];
+    }
+    delete pendingChunkByRosterIdRef.current[rosterId];
   };
 
-  const scheduleStreamingChunk = (partial: string) => {
-    pendingChunkRef.current = partial;
-    if (rafHandleRef.current !== null) return;
-    rafHandleRef.current = requestAnimationFrame(flushStreamingChunk);
+  const scheduleStreamingChunk = (rosterId: string, partial: string) => {
+    pendingChunkByRosterIdRef.current[rosterId] = partial;
+    if (rafHandleByRosterIdRef.current[rosterId] !== undefined) return;
+    rafHandleByRosterIdRef.current[rosterId] = requestAnimationFrame(() => {
+      delete rafHandleByRosterIdRef.current[rosterId];
+      const next = pendingChunkByRosterIdRef.current[rosterId];
+      delete pendingChunkByRosterIdRef.current[rosterId];
+      if (next !== undefined) {
+        updateChatUi(rosterId, { streamingReply: next });
+      }
+    });
   };
 
   if (!selected || !chat) {
@@ -182,39 +229,41 @@ export const SpiritChatScreen: React.FC = () => {
 
   const sendMessage = async (content: string) => {
     const text = content.trim();
-    if (!text || isSending) return;
+    const targetSpirit = selected;
+    const targetRosterId = targetSpirit.rosterId;
+    if (!text || activeRequestRosterIdsRef.current.has(targetRosterId)) return;
     if (!isReady) {
-      setError(
-        "词灵会客室需要先在首页选择免费体验或填写 custom API（Key / Base URL / Model）。",
-      );
+      updateChatUi(targetRosterId, {
+        error:
+          "词灵会客室需要先在首页选择免费体验或填写 custom API（Key / Base URL / Model）。",
+      });
       return;
     }
 
-    setError("");
-    setInput("");
-    setStreamingReply("");
-    setReplyStreamDone(false);
-    setIsFinalizingMeta(false);
-    pendingChunkRef.current = null;
-    spiritMessageIdRef.current = null;
-    if (rafHandleRef.current !== null) {
-      cancelAnimationFrame(rafHandleRef.current);
-      rafHandleRef.current = null;
-    }
+    activeRequestRosterIdsRef.current.add(targetRosterId);
+    updateChatUi(targetRosterId, {
+      error: "",
+      input: "",
+      isSending: true,
+      streamingReply: "",
+      replyStreamDone: false,
+      isFinalizingMeta: false,
+    });
+    clearPendingStreamingChunk(targetRosterId);
+    delete spiritMessageIdByRosterIdRef.current[targetRosterId];
     stickToBottomRef.current = true;
-    const userMessage = appendMessage(selected.rosterId, {
+    const userMessage = appendMessage(targetRosterId, {
       role: "player",
       content: text,
     });
     const currentChat = useSpiritChatStore
       .getState()
-      .getOrCreateChat(selected.rosterId);
+      .getOrCreateChat(targetRosterId);
 
-    setIsSending(true);
     try {
       const result = await requestSpiritChat(
         cfg,
-        selected,
+        targetSpirit,
         currentChat,
         userMessage.content,
         {
@@ -223,46 +272,42 @@ export const SpiritChatScreen: React.FC = () => {
         },
         {
           onReplyChunk: (partial) => {
-            scheduleStreamingChunk(partial);
+            scheduleStreamingChunk(targetRosterId, partial);
           },
           onReplyComplete: (finalReply) => {
-            if (rafHandleRef.current !== null) {
-              cancelAnimationFrame(rafHandleRef.current);
-              rafHandleRef.current = null;
-            }
-            pendingChunkRef.current = null;
+            clearPendingStreamingChunk(targetRosterId);
             // reply 一到收尾就把消息落进 store，同时清 streaming。
             // 由于最后一条 spirit 消息与 streaming 气泡内容一致、位置一致，
             // 用户不会看到闪。metadata 等整个 JSON 结束后再补写。
             const appended = applySpiritReply(
-              selected.rosterId,
+              targetRosterId,
               {
                 role: "spirit",
                 content: finalReply,
               },
               {},
             );
-            spiritMessageIdRef.current = appended.id;
-            setStreamingReply("");
-            setReplyStreamDone(false);
-            setIsFinalizingMeta(true);
+            spiritMessageIdByRosterIdRef.current[targetRosterId] = appended.id;
+            updateChatUi(targetRosterId, {
+              streamingReply: "",
+              replyStreamDone: false,
+              isFinalizingMeta: true,
+            });
           },
         },
       );
-      if (rafHandleRef.current !== null) {
-        cancelAnimationFrame(rafHandleRef.current);
-        rafHandleRef.current = null;
-      }
-      pendingChunkRef.current = null;
+      clearPendingStreamingChunk(targetRosterId);
 
       // metadata 补写；若因为 stream 未触发 onReplyComplete（例如非流式回退），
       // 再兜底 append 一次消息。
-      if (spiritMessageIdRef.current) {
-        updateSpiritMessage(selected.rosterId, spiritMessageIdRef.current, {
+      const spiritMessageId =
+        spiritMessageIdByRosterIdRef.current[targetRosterId];
+      if (spiritMessageId) {
+        updateSpiritMessage(targetRosterId, spiritMessageId, {
           content: result.reply,
           xpGranted: result.xpGranted,
         });
-        updateSpiritMeta(selected.rosterId, {
+        updateSpiritMeta(targetRosterId, {
           mood: result.mood,
           bond: result.bond,
           memorySummary: result.memorySummary,
@@ -273,7 +318,7 @@ export const SpiritChatScreen: React.FC = () => {
         });
       } else {
         applySpiritReply(
-          selected.rosterId,
+          targetRosterId,
           {
             role: "spirit",
             content: result.reply,
@@ -290,30 +335,31 @@ export const SpiritChatScreen: React.FC = () => {
           },
         );
       }
-      setStreamingReply("");
-      setReplyStreamDone(false);
-      setIsFinalizingMeta(false);
-      spiritMessageIdRef.current = null;
+      updateChatUi(targetRosterId, {
+        streamingReply: "",
+        replyStreamDone: false,
+        isFinalizingMeta: false,
+      });
+      delete spiritMessageIdByRosterIdRef.current[targetRosterId];
 
       if (result.xpGranted && result.xpGranted > 0) {
         updateCharacter(
-          selected.rosterId,
+          targetRosterId,
           (char) => applyTrainingXp(char, result.xpGranted!).character,
         );
       }
     } catch (err) {
-      if (rafHandleRef.current !== null) {
-        cancelAnimationFrame(rafHandleRef.current);
-        rafHandleRef.current = null;
-      }
-      pendingChunkRef.current = null;
-      setStreamingReply("");
-      setReplyStreamDone(false);
-      setIsFinalizingMeta(false);
-      spiritMessageIdRef.current = null;
-      setError(err instanceof Error ? err.message : "词灵暂时没有回应。");
+      clearPendingStreamingChunk(targetRosterId);
+      delete spiritMessageIdByRosterIdRef.current[targetRosterId];
+      updateChatUi(targetRosterId, {
+        streamingReply: "",
+        replyStreamDone: false,
+        isFinalizingMeta: false,
+        error: err instanceof Error ? err.message : "词灵暂时没有回应。",
+      });
     } finally {
-      setIsSending(false);
+      activeRequestRosterIdsRef.current.delete(targetRosterId);
+      updateChatUi(targetRosterId, { isSending: false });
     }
   };
 
@@ -594,7 +640,10 @@ export const SpiritChatScreen: React.FC = () => {
                   <button
                     key={char.rosterId}
                     type="button"
-                    onClick={() => setOpenRosterId(char.rosterId)}
+                    onClick={() => {
+                      stickToBottomRef.current = true;
+                      setOpenRosterId(char.rosterId);
+                    }}
                     className="flex shrink-0 items-center gap-2 rounded border px-3 py-1.5 text-[11px] font-bold tracking-widest transition-all"
                     style={{
                       borderColor: active
@@ -678,6 +727,10 @@ export const SpiritChatScreen: React.FC = () => {
                 onClick={() => {
                   if (window.confirm(`清空 ${selected.name} 的聊天记忆吗？`)) {
                     clearChat(selected.rosterId);
+                    updateChatUi(selected.rosterId, {
+                      input: "",
+                      error: "",
+                    });
                   }
                 }}
                 className="group flex items-center gap-1.5 rounded-lg border border-[#8a8d91]/30 bg-black/20 px-3 py-1.5 text-[10px] tracking-widest text-[#8a8d91] transition-all hover:border-[#FF003C]/60 hover:bg-[#FF003C]/10 hover:text-[#FF003C]"
@@ -864,7 +917,11 @@ export const SpiritChatScreen: React.FC = () => {
                   <div className="relative flex-1">
                     <textarea
                       value={input}
-                      onChange={(event) => setInput(event.target.value)}
+                      onChange={(event) =>
+                        updateChatUi(selected.rosterId, {
+                          input: event.target.value,
+                        })
+                      }
                       disabled={isSending}
                       rows={2}
                       placeholder={

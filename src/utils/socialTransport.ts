@@ -295,16 +295,12 @@ export const ROOM_EMPTY_TTL_MS = 5 * 60 * 1000;
 /**
  * 旧版房间数据迁移：
  *  - 移除已废弃的 mode 字段（房间不再区分聊天/对战）
- *  - 补 quickBattle 字段（旧房间默认 false）
  *  - 补 carriedSpirits 字段（从 activeSpirit 推导）
  */
 const migrateRoom = (room: SocialRoom): SocialRoom => {
   // 兼容旧数据：旧版带有 mode 字段，现已废弃，剔除后避免后续误用
   if ("mode" in room) {
     delete (room as SocialRoom & { mode?: unknown }).mode;
-  }
-  if (typeof room.quickBattle !== "boolean") {
-    room.quickBattle = false;
   }
   room.players = (room.players ?? []).map((p) => {
     if (!Array.isArray(p.carriedSpirits)) {
@@ -315,5 +311,30 @@ const migrateRoom = (room: SocialRoom): SocialRoom => {
     }
     return p;
   });
+  if (room.activeBattle) {
+    const battle = room.activeBattle;
+    battle.round =
+      typeof battle.round === "number"
+        ? battle.round
+        : Math.max(1, Math.ceil(battle.currentTurn / 2));
+    battle.acceptingActions =
+      typeof battle.acceptingActions === "boolean"
+        ? battle.acceptingActions
+        : battle.phase === "fighting";
+    battle.turnDeadlineAt =
+      typeof battle.turnDeadlineAt === "number"
+        ? battle.turnDeadlineAt
+        : battle.phase === "fighting"
+          ? Date.now() + 15_000
+          : 0;
+  }
+  room.battleUpdatedAt =
+    typeof room.battleUpdatedAt === "number"
+      ? room.battleUpdatedAt
+      : (room.activeBattle?.updatedAt ?? 0);
+  room.challengeUpdatedAt =
+    typeof room.challengeUpdatedAt === "number"
+      ? room.challengeUpdatedAt
+      : (room.pendingChallenge?.createdAt ?? 0);
   return room;
 };

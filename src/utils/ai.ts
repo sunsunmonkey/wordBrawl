@@ -130,6 +130,7 @@ const normalizeSpiritProfile = (value: unknown): SpiritProfile | undefined => {
     archetype: normalizeText(profile.archetype, "未明词灵", 32),
     temperament: normalizeText(profile.temperament, "冷静而好战", 36),
     speechStyle: normalizeText(profile.speechStyle, "短促、有画面感", 48),
+    slogan: normalizeText(profile.slogan, "", 48),
     catchphrases,
     battleCry: normalizeText(profile.battleCry, "此刻，词意成真。", 48),
     victoryLine: normalizeText(profile.victoryLine, "胜负已经写进词根。", 48),
@@ -296,6 +297,8 @@ export const generateCharacter = async (
 用户会输入一段角色描述，你需要根据这段描述，为角色生成游戏数值和【丰富多样的技能体系】。
 你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。
 重要：所有 JSON key 和字符串必须使用英文半角双引号 "，禁止使用中文弯引号 “ ” 或单引号。
+语言要求（强制）：所有会展示给玩家的文本必须使用简体中文，包括 name、全部 skills 的 name 和 description，以及 spiritProfile 的全部文本字段。禁止输出英文角色名、英文技能名或英文技能描述。
+唯一例外：JSON key、type / ultimateType 等枚举 ID，以及用于生成头像的 imagePrompt 必须保持英文。
 
 技能体系要求（必须包含 4-5 个技能）：
 1. 一个普通攻击（type="attack"，damageMultiplier 1.0）
@@ -323,6 +326,7 @@ export const generateCharacter = async (
 词灵人格卡要求（仅 custom API 生效）：
 - 额外生成 spiritProfile，类似角色卡，不参与数值计算，只用于让词灵在战斗、详情和成长叙事中更生动。
 - spiritProfile 要紧扣用户输入，不要泛泛而谈；每个字段都要短、鲜明、可直接显示。
+- slogan 是卡牌背面的专属一句话：8-24 个中文字符，必须只属于这个角色，不要复用泛用战斗口号。
 - catchphrases 是战斗短台词，适合穿插到出招日志里；worldAnchors 是角色世界观锚点；memorySeeds 是后续成长可复用的长期动机。
 
 JSON 结构如下：
@@ -344,6 +348,7 @@ JSON 结构如下：
     "archetype": "词灵原型，例如：失控的星际讼师 / 铁锈圣骑 / 电台幽魂",
     "temperament": "性格底色，例如：嘴硬、护短、爱装酷但怕孤独",
     "speechStyle": "说话方式，例如：短句断裂、法庭宣判腔、古风咒语、机械播报",
+    "slogan": "卡牌背面展示的专属一句话",
     "catchphrases": ["短台词1", "短台词2", "短台词3"],
     "battleCry": "关键出招或大招前的宣言",
     "victoryLine": "胜利时说的话",

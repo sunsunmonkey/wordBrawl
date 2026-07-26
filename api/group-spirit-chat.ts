@@ -38,6 +38,7 @@ const GROUP_SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，现�
 - 如果群里聊到了战斗话题，你可以表达战意，但不要主动发起战斗（战斗由玩家约战触发）。
 - 不要修改数值、不要承诺系统未实现的效果。
 - 不要重复别人刚说过的话，不要长篇大论。
+- recentMessages 是当前房间刚刚发生的连续对话；必须结合上文理解代词、话题和其他人的发言。triggerMessage 是本次 @ 你的最新消息。
 
 你必须返回合法 JSON，不能包含 markdown、注释或额外文字：
 {
@@ -138,7 +139,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       spiritsInRoom: roomContext.spiritsInRoom,
     },
     triggerMessage,
-    recentMessages: recentMessages.slice(-12),
+    recentMessages: recentMessages.slice(-20),
   };
 
   const chargedUsage = await consumeUsage(req);

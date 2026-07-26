@@ -10,7 +10,6 @@ import {
   LogIn,
   Plus,
   Sparkles,
-  Swords,
   Users,
 } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
@@ -126,7 +125,7 @@ export const SocialLobbyScreen: React.FC = () => {
     setPhase("SOCIAL_ROOM");
   };
 
-  const handleCreateRoom = (quickBattle = false) => {
+  const handleCreateRoom = () => {
     const trimmed = localNickname.trim();
     if (!trimmed) {
       setError("请先填写昵称");
@@ -137,7 +136,7 @@ export const SocialLobbyScreen: React.FC = () => {
       return;
     }
     setProfile({ nickname: trimmed, avatarColor });
-    createRoom(buildSpirits(), { quickBattle });
+    createRoom(buildSpirits());
     enterRoom();
   };
 
@@ -309,13 +308,13 @@ export const SocialLobbyScreen: React.FC = () => {
                 </div>
                 <p className="text-xs text-white/45 leading-relaxed mb-4">
                   开一个房间，最多带 {MAX_CARRIED_SPIRITS} 位词灵。群聊 @
-                  词灵会回复，房内随时向他人发起约战；也可快速对战，打完继续聊。
+                  词灵会回复，房内随时向他人发起约战。
                 </p>
                 <div className="flex flex-col gap-2.5">
                   {/* 创建按钮：主操作，实心霓虹；深链进入时降级为幽灵样式 */}
                   <button
                     type="button"
-                    onClick={() => handleCreateRoom(false)}
+                    onClick={() => handleCreateRoom()}
                     disabled={!localNickname.trim()}
                     className={
                       fromDeepLink
@@ -329,19 +328,6 @@ export const SocialLobbyScreen: React.FC = () => {
                       size={14}
                       className="transition-transform group-hover:translate-x-1"
                     />
-                  </button>
-                  {/* 快速对战入口：次操作，幽灵红描边 */}
-                  <button
-                    type="button"
-                    onClick={() => handleCreateRoom(true)}
-                    disabled={!localNickname.trim()}
-                    className="group relative w-full flex items-center justify-center gap-2 rounded-md border border-[#FF003C]/55 bg-[#FF003C]/5 px-4 py-2.5 text-xs font-black tracking-[0.2em] text-[#FF6B7D] transition-all hover:border-[#FF003C] hover:bg-[#FF003C]/15 hover:text-[#FF003C] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Swords size={14} />
-                    快速对战
-                    <span className="text-[9px] font-normal text-white/40 tracking-normal">
-                      · 对手加入即开战
-                    </span>
                   </button>
                 </div>
                 {selectedRosterList.length === 0 && (

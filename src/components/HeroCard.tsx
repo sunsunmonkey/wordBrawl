@@ -13,6 +13,9 @@ interface HeroCardProps {
   character: CharacterData;
   size?: "sm" | "md" | "lg";
   showStats?: boolean;
+  showQuote?: boolean;
+  /** 仅社交房间详情卡使用的 UR 悬浮态 */
+  ultraHoverEffect?: boolean;
   className?: string;
   selected?: boolean;
   onClick?: () => void;
@@ -111,6 +114,8 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   character,
   size = "md",
   showStats = true,
+  showQuote = true,
+  ultraHoverEffect = false,
   className = "",
   selected = false,
   onClick,
@@ -131,17 +136,22 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   );
   const displaySkill = ultimateSkill || normalSkill;
   const quote = character.spiritProfile?.catchphrases?.[0];
+  const [isHovered, setIsHovered] = React.useState(false);
+  const isUR = rarity === "UR";
+  const isSSR = rarity === "SSR";
+  const isDetailHighRarityHover = ultraHoverEffect && (isUR || isSSR);
+  const isSpecialURHover = isDetailHighRarityHover && isUR;
+  const isSpecialSSRHover = isDetailHighRarityHover && isSSR;
 
-  const tier =
-    rarity === "UR"
-      ? 4
-      : rarity === "SSR"
-        ? 3
-        : rarity === "SR"
-          ? 2
-          : rarity === "R"
-            ? 1
-            : 0;
+  const tier = isUR
+    ? 4
+    : isSSR
+      ? 3
+      : rarity === "SR"
+        ? 2
+        : rarity === "R"
+          ? 1
+          : 0;
   const borderAlpha = selected ? 0.95 : 0.55 + tier * 0.11;
   const glowSize = 10 + tier * 10;
   const glowIntensity = 0.2 + tier * 0.14;
@@ -151,6 +161,8 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   return (
     <motion.div
       onClick={onClick}
+      onHoverStart={() => isDetailHighRarityHover && setIsHovered(true)}
+      onHoverEnd={() => isDetailHighRarityHover && setIsHovered(false)}
       className={`group relative rounded-2xl ${sizeCfg.card} ${className} ${onClick ? "cursor-pointer" : ""}`}
       style={{
         background: "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
@@ -180,17 +192,37 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           : {}
       }
       whileHover={
-        onClick
+        isSpecialURHover
           ? {
-              y: -3,
+              y: -6,
+              scale: 1.018,
               boxShadow: `
+                0 0 ${glowSize + 16}px rgba(${config.rgb}, ${glowIntensity + 0.24}),
+                0 0 ${glowSize * 4}px rgba(255,0,60,0.38),
+                0 10px 28px rgba(0,0,0,0.48),
+                inset 0 0 ${glowSize * 2.6}px rgba(${config.rgb}, ${glowIntensity * 0.3})
+              `,
+            }
+          : isSpecialSSRHover
+            ? {
+                y: -4,
+                boxShadow: `
+                  0 0 ${glowSize + 6}px rgba(${config.rgb}, ${glowIntensity + 0.1}),
+                  0 8px 22px rgba(0,0,0,0.44),
+                  inset 0 0 ${glowSize * 1.7}px rgba(${config.rgb}, ${glowIntensity * 0.18})
+                `,
+              }
+            : onClick
+              ? {
+                  y: -3,
+                  boxShadow: `
                 0 0 ${glowSize + 8}px rgba(${config.rgb}, ${glowIntensity + 0.14}),
                 0 0 ${glowSize * 3}px rgba(${config.rgb}, ${glowIntensity * 0.6}),
                 0 6px 20px rgba(0,0,0,0.4),
                 inset 0 0 ${glowSize * 1.8}px rgba(${config.rgb}, ${glowIntensity * 0.2})
               `,
-            }
-          : {}
+                }
+              : {}
       }
       transition={{ duration: 0.35, ease: "easeOut" }}
     >
@@ -201,14 +233,16 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           background: `linear-gradient(135deg, ${config.primaryColor}18, transparent 40%, transparent 60%, ${config.secondaryColor}18)`,
         }}
       >
-        <div
-          className="w-full h-full rounded-xl border opacity-60"
-          style={{
-            borderColor: `${config.primaryColor}44`,
-            background:
-              "linear-gradient(145deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(0,0,0,0.15) 100%)",
-          }}
-        />
+        {!isDetailHighRarityHover && (
+          <div
+            className="w-full h-full rounded-xl border opacity-60"
+            style={{
+              borderColor: `${config.primaryColor}44`,
+              background:
+                "linear-gradient(145deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(0,0,0,0.15) 100%)",
+            }}
+          />
+        )}
       </div>
 
       <CornerOrnament color={cornerColor} corner="top-left" />
@@ -217,7 +251,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
       <CornerOrnament color={cornerColor} corner="bottom-left" />
 
       {/* 顶部高光 */}
-      {(rarity === "UR" || rarity === "SSR") && (
+      {(isUR || isSSR) && !isDetailHighRarityHover && (
         <div
           className="absolute top-2 left-1/2 -translate-x-1/2 w-2/3 h-[1px] z-10 opacity-70"
           style={{
@@ -226,12 +260,52 @@ export const HeroCard: React.FC<HeroCardProps> = ({
         />
       )}
 
-      {/* 扫光（仅 hover 触发，避免抽卡时无限循环重绘） */}
-      {(rarity === "UR" || rarity === "SSR") && (
+      {/* 默认高稀有度扫光；详情卡使用更克制的专属效果。 */}
+      {(isUR || isSSR) && !isDetailHighRarityHover && (
         <div
           className="absolute inset-0 pointer-events-none z-30 rounded-2xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-300"
           style={{
             background: `linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)`,
+          }}
+        />
+      )}
+      {isSpecialURHover && (
+        <>
+          <motion.div
+            aria-hidden
+            className="absolute inset-1 z-20 rounded-xl pointer-events-none"
+            initial={false}
+            animate={
+              isHovered
+                ? {
+                    opacity: 0.82,
+                    scale: 1,
+                  }
+                : { opacity: 0, scale: 0.99 }
+            }
+            transition={{
+              duration: 0.35,
+              ease: "easeOut",
+            }}
+            style={{
+              background: `radial-gradient(ellipse at 50% 30%, rgba(${config.rgb}, 0.18), transparent 58%)`,
+              boxShadow: "0 0 16px rgba(255,0,60,0.38)",
+            }}
+          />
+        </>
+      )}
+      {isSpecialSSRHover && (
+        <motion.div
+          aria-hidden
+          className="absolute inset-1 z-20 rounded-xl pointer-events-none"
+          initial={false}
+          animate={
+            isHovered ? { opacity: 0.7, scale: 1 } : { opacity: 0, scale: 0.99 }
+          }
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          style={{
+            background: `radial-gradient(ellipse at 50% 18%, rgba(${config.rgb}, 0.14), transparent 56%)`,
+            boxShadow: `0 0 12px rgba(${config.rgb}, 0.22)`,
           }}
         />
       )}
@@ -344,9 +418,13 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           </div>
 
           {/* 等级 + 星级 + 战力 */}
-          <div className="flex items-center justify-center gap-3 mb-1.5">
+          <div
+            className={`grid grid-cols-[auto_auto] items-center justify-center mb-1.5 ${
+              size === "lg" ? "gap-x-3" : "gap-x-2"
+            }`}
+          >
             <div
-              className={`${sizeCfg.levelBadge} rounded-full flex flex-col items-center justify-center font-black border flex-shrink-0`}
+              className={`${sizeCfg.levelBadge} rounded-full flex items-center justify-center gap-0.5 whitespace-nowrap font-black border flex-shrink-0`}
               style={{
                 borderColor: config.primaryColor,
                 background: `radial-gradient(circle at 30% 30%, ${config.primaryColor}22, #0a0b12 70%)`,
@@ -355,11 +433,11 @@ export const HeroCard: React.FC<HeroCardProps> = ({
               }}
             >
               <span className="scale-[0.75] leading-none opacity-70">Lv.</span>
-              <span className="leading-none -mt-0.5">{level}</span>
+              <span className="leading-none">{level}</span>
             </div>
 
-            <div className="flex flex-col items-center gap-0.5">
-              <div className="flex gap-0.5">
+            <div className="flex flex-col items-start gap-0.5">
+              <div className="flex h-[1em] items-center gap-0.5">
                 {Array.from({ length: config.starCount }).map((_, i) => (
                   <Star
                     key={i}
@@ -464,7 +542,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
                   {displaySkill.name}
                   {displaySkill.damageMultiplier > 0 && (
                     <span className="ml-1 opacity-70">
-                      Lv.
+                      x
                       {Math.min(
                         10,
                         Math.max(1, Math.floor(displaySkill.damageMultiplier)),
@@ -488,7 +566,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           )}
 
           {/* 角色语录 */}
-          {quote && sizeCfg.quote !== "hidden" && (
+          {quote && showQuote && sizeCfg.quote !== "hidden" && (
             <div
               className="mt-auto text-[8px] italic text-center px-4 py-1 rounded truncate"
               style={{
