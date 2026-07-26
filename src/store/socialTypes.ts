@@ -64,6 +64,8 @@ export interface SocialChatMessage {
   senderAvatar?: string;
   content: string;
   timestamp: number;
+  /** 仅用于界面展示，不注入词灵群聊上下文（如战报、约战状态） */
+  excludeFromAiContext?: boolean;
   /** 词灵消息附带的 rosterId */
   spiritRosterId?: string;
   /** @ 的目标 ID 列表（玩家 ID 或词灵 rosterId） */

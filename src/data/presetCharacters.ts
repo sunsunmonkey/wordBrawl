@@ -55,7 +55,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 88,
     defense: 46,
     speed: 78,
-    rarity: "SSR",
+    rarity: "N",
     imagePrompt:
       "Tang San from Soul Land, young warrior with blue silver grass aura, sea god trident, elegant white and blue robes, glowing cyan eyes, anime style",
     avatarSeed: 707,
@@ -106,7 +106,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 128,
     defense: 14,
     speed: 106,
-    rarity: "SSR",
+    rarity: "N",
     imagePrompt:
       "Mewtwo, psychic Pokemon, purple and white feline humanoid, glowing purple eyes, telekinetic aura, futuristic lab background, anime style",
     avatarSeed: 1414,
@@ -156,7 +156,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 100,
     defense: 40,
     speed: 112,
-    rarity: "UR",
+    rarity: "N",
     imagePrompt:
       "Sun Wukong the Monkey King, golden fur, fiery eyes, holding Ruyi Jingu Bang staff, red and gold armor, clouds under feet, anime style",
     avatarSeed: 808,
@@ -207,7 +207,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 78,
     defense: 64,
     speed: 70,
-    rarity: "SSR",
+    rarity: "N",
     imagePrompt:
       "Ultraman, silver and red armored giant hero, glowing color timer, heroic pose, cosmic background, anime style",
     avatarSeed: 909,
@@ -259,7 +259,7 @@ const presetDefs: PresetCharacterDef[] = [
     attack: 104,
     defense: 18,
     speed: 132,
-    rarity: "SR",
+    rarity: "N",
     imagePrompt:
       "Kakashi Hatake, silver spiky hair, mask covering lower face, sharingan eye glowing red, lightning chakra around hand, blue flak jacket, anime style",
     avatarSeed: 1313,

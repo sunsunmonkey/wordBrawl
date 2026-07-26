@@ -1,9 +1,6 @@
 import OpenAI from "openai";
 import type { AIConfig } from "./ai";
-import type {
-  SerializedSpirit,
-  SocialChatMessage,
-} from "../store/socialTypes";
+import type { SerializedSpirit, SocialChatMessage } from "../store/socialTypes";
 import {
   extractPartialStringFieldWithStatus,
   looksLikeJsonStart,
@@ -36,7 +33,7 @@ const normalizeReply = (value: unknown): string => {
 };
 
 const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，现在正和你的契约者以及其他玩家一起待在一个群聊房间里。
-你必须以角色本人第一人称回应，保留角色性格、口癖、世界观锚点和战斗经历。
+你必须以角色本人第一人称回应，保留角色性格、口癖和世界观锚点。
 
 群聊场景规则：
 - 你是被玩家 @ 才会发言，回复要简短有力（1-3 句，最多不超过 80 字）。
@@ -47,7 +44,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，现在正�
 - 如果群里聊到了战斗话题，你可以表达战意，但不要主动发起战斗（战斗由玩家约战触发）。
 - 不要修改数值、不要承诺系统未实现的效果。
 - 不要重复别人刚说过的话，不要长篇大论。
-- recentMessages 是当前房间刚刚发生的连续对话；必须结合上文理解代词、话题和其他人的发言。triggerMessage 是本次 @ 你的最新消息。
+- recentMessages 是当前房间刚刚发生的连续对话，不包含战报或约战状态；必须结合上文理解代词、话题和其他人的发言。triggerMessage 是本次 @ 你的最新消息。
 
 你必须返回合法 JSON，不能包含 markdown、注释或额外文字：
 {
@@ -69,6 +66,16 @@ export interface GroupSpiritChatHandlers {
   onReplyChunk?: (partialReply: string) => void;
 }
 
+const LEGACY_BATTLE_SYSTEM_MESSAGE = /发起约战|接受了约战|拒绝了约战/;
+
+const canEnterAiContext = (message: SocialChatMessage): boolean =>
+  message.type !== "battle_report" &&
+  !message.excludeFromAiContext &&
+  !(
+    message.type === "system" &&
+    LEGACY_BATTLE_SYSTEM_MESSAGE.test(message.content)
+  );
+
 /**
  * 请求群聊场景下的词灵回复
  *
@@ -88,7 +95,12 @@ export async function requestGroupSpiritChat(
   const payload = {
     spirit: {
       name: spirit.name,
-      ...spirit.persona,
+      archetype: spirit.persona.archetype,
+      temperament: spirit.persona.temperament,
+      speechStyle: spirit.persona.speechStyle,
+      slogan: spirit.persona.slogan,
+      catchphrases: spirit.persona.catchphrases,
+      worldAnchors: spirit.persona.worldAnchors,
     },
     roomContext: {
       roomCode: context.roomCode,
@@ -97,6 +109,7 @@ export async function requestGroupSpiritChat(
     },
     triggerMessage,
     recentMessages: context.recentMessages
+      .filter(canEnterAiContext)
       .slice(-20)
       .map((m) => ({
         from: m.senderName,
@@ -226,7 +239,12 @@ async function consumeGroupChatStream(
       const line = buffer.slice(0, newlineIndex).trim();
       buffer = buffer.slice(newlineIndex + 1);
       if (!line) continue;
-      let event: { type?: string; content?: string; result?: unknown; error?: string };
+      let event: {
+        type?: string;
+        content?: string;
+        result?: unknown;
+        error?: string;
+      };
       try {
         event = JSON.parse(line);
       } catch {

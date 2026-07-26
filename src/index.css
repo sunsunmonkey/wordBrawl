@@ -59,6 +59,91 @@
 }
 
 @layer utilities {
+  /*
+   * 欢迎页是单屏入口。桌面视口较矮时优先收紧纵向节奏，避免因内容区
+   * 和底栏各自的最小高度叠加而产生页面级滚动。
+   */
+  @media (min-width: 1024px) and (max-height: 880px) {
+    .welcome-screen__main {
+      gap: 2rem;
+      padding-top: 4.5rem;
+      padding-bottom: 2rem;
+    }
+
+    .welcome-screen__eyebrow {
+      margin-bottom: 1rem;
+    }
+
+    .welcome-screen__description {
+      margin-top: 1.25rem;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+    }
+
+    .welcome-screen__features {
+      margin-top: 1.5rem;
+      row-gap: 1rem;
+    }
+
+    .welcome-screen__panel {
+      padding: 1.25rem;
+    }
+
+    .welcome-screen__panel-header {
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+    }
+
+    .welcome-screen__mode {
+      margin-bottom: 1rem;
+    }
+
+    .welcome-screen__mode > div:first-child {
+      margin-bottom: 0.5rem;
+    }
+
+    .welcome-screen__mode-toggle {
+      gap: 0.25rem;
+      padding: 0.625rem 0.75rem;
+    }
+
+    .welcome-screen__field {
+      margin-bottom: 0.625rem;
+    }
+
+    .welcome-screen__field > div {
+      margin-bottom: 0.125rem;
+    }
+
+    .welcome-screen__field input {
+      padding-top: 0.375rem;
+      padding-bottom: 0.375rem;
+    }
+
+    .welcome-screen__panel p {
+      margin-bottom: 0.75rem;
+    }
+
+    .welcome-screen__cta {
+      margin-top: 0.25rem;
+      padding: 0.875rem 1.25rem;
+    }
+
+    .welcome-screen__secondary {
+      margin-top: 0.5rem;
+      padding: 0.625rem 1.25rem;
+    }
+
+    .welcome-screen__metadata {
+      margin-top: 0.5rem;
+    }
+
+    .welcome-screen__footer {
+      padding-top: 0.625rem;
+      padding-bottom: 0.625rem;
+    }
+  }
+
   /* Windows 下的光晕补偿：减弱 blur 避免发糊 */
   html[data-os="windows"] .text-glow-cyan {
     text-shadow:

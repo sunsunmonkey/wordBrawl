@@ -101,6 +101,11 @@ export const SocialBattleScreen: React.FC = () => {
         : null
     : null;
 
+  // 对手离开后，房间状态会清空 activeBattle；不保留在失效的战斗界面。
+  useEffect(() => {
+    if (!battle) setPhase("SOCIAL_ROOM");
+  }, [battle, setPhase]);
+
   // ===== 日志驱动的演出进度（两端各自播放）=====
   // 用 log.id 记录已播放的日志（对滑动窗口截断稳健）；caughtUp 表示演出已追平权威状态。
   const playedIdsRef = useRef<Set<string>>(new Set());
@@ -209,6 +214,11 @@ export const SocialBattleScreen: React.FC = () => {
       if (event.kind !== "battle-action") return;
       const current = battleRef.current;
       if (!current || event.battleId !== current.battleId) return;
+      const activeRoom = useSocialStore.getState().currentRoom;
+      const guestStillPresent = activeRoom?.players.some(
+        (player) => player.playerId === current.guestPlayerId,
+      );
+      if (!guestStillPresent) return;
       if (!event.actionId || seenActionIdsRef.current.has(event.actionId))
         return;
       seenActionIdsRef.current.add(event.actionId);

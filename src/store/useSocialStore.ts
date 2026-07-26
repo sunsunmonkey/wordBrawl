@@ -56,12 +56,12 @@ interface SocialStore {
   sendBattleReport: (report: SocialBattleReport, battleId: string) => void;
 
   /** 发起约战 */
-  createChallenge: (toPlayer: SocialPlayer) => void;
+  createChallenge: (toPlayer: SocialPlayer) => Promise<void>;
   /** 接受/拒绝约战 */
   resolveChallenge: (
     challengeId: string,
     status: "accepted" | "declined",
-  ) => void;
+  ) => Promise<void>;
 
   /** 更新对战状态（host 推送给 guest） */
   updateBattleState: (battle: SocialBattleState) => void;
@@ -86,7 +86,10 @@ const SYSTEM_COLOR = "#8a8d91";
 const clampCarried = (spirits: SerializedSpirit[]): SerializedSpirit[] =>
   spirits.slice(0, MAX_CARRIED_SPIRITS);
 
-const buildSystemMessage = (content: string): SocialChatMessage => ({
+const buildSystemMessage = (
+  content: string,
+  excludeFromAiContext = false,
+): SocialChatMessage => ({
   id: generateMessageId(),
   type: "system",
   senderId: "system",
@@ -94,6 +97,7 @@ const buildSystemMessage = (content: string): SocialChatMessage => ({
   senderColor: SYSTEM_COLOR,
   content,
   timestamp: Date.now(),
+  excludeFromAiContext,
 });
 
 const pruneMessages = (messages: SocialChatMessage[]): SocialChatMessage[] =>
@@ -128,6 +132,50 @@ const mergeNewerPlayers = (
 
 const nextVersion = (current: number): number =>
   Math.max(Date.now(), current + 1);
+
+const roomHasPlayer = (room: SocialRoom, playerId: string): boolean =>
+  room.players.some((player) => player.playerId === playerId);
+
+const hasBattleParticipants = (
+  room: SocialRoom,
+  battle: SocialBattleState,
+): boolean =>
+  roomHasPlayer(room, battle.hostPlayerId) &&
+  roomHasPlayer(room, battle.guestPlayerId);
+
+const hasChallengeParticipants = (
+  room: SocialRoom,
+  challenge: ChallengeInvite,
+): boolean =>
+  roomHasPlayer(room, challenge.fromPlayerId) &&
+  roomHasPlayer(room, challenge.toPlayerId);
+
+/** 房间成员变化后，绝不保留引用已离场玩家的约战或对战。 */
+const invalidateDepartedCompetition = (room: SocialRoom): SocialRoom => {
+  let next = room;
+  if (room.activeBattle && !hasBattleParticipants(room, room.activeBattle)) {
+    next = {
+      ...next,
+      activeBattle: null,
+      battleUpdatedAt: nextVersion(
+        Math.max(room.battleUpdatedAt ?? 0, room.activeBattle.updatedAt),
+      ),
+    };
+  }
+  if (
+    room.pendingChallenge &&
+    !hasChallengeParticipants(room, room.pendingChallenge)
+  ) {
+    next = {
+      ...next,
+      pendingChallenge: null,
+      challengeUpdatedAt: nextVersion(
+        Math.max(next.challengeUpdatedAt ?? 0, room.pendingChallenge.createdAt),
+      ),
+    };
+  }
+  return next;
+};
 
 const mergeBattleSlot = (
   current: SocialRoom,
@@ -268,7 +316,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       if (remaining.length === 0) {
         socialTransport.deleteRoom(room.roomCode);
       } else {
-        const updated: SocialRoom = {
+        const updated = invalidateDepartedCompetition({
           ...room,
           players: remaining,
           messages: pruneMessages([
@@ -276,7 +324,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
             buildSystemMessage(`${nickname} 离开了房间`),
           ]),
           updatedAt: now,
-        };
+        });
         socialTransport.persistRoom(updated);
         socialTransport.broadcast({ kind: "room-state", room: updated });
         socialTransport.broadcast({
@@ -436,6 +484,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         senderColor: "#FFD700",
         content: `${report.winnerNickname} 的 ${report.winnerSpiritName} 击败了 ${report.loserNickname} 的 ${report.loserSpiritName}！共 ${report.totalTurns} 回合。`,
         timestamp: now,
+        excludeFromAiContext: true,
       };
       const updated: SocialRoom = {
         ...room,
@@ -451,20 +500,40 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       set({ currentRoom: updated, activeBattle: null });
     },
 
-    createChallenge: (toPlayer) => {
-      const room = get().currentRoom;
-      if (!room) return;
+    createChallenge: async (toPlayer) => {
+      const currentRoom = get().currentRoom;
+      if (!currentRoom) return;
       const { playerId, nickname } = usePlayerStore.getState();
+      const freshRoom = await socialTransport.fetchRoom(currentRoom.roomCode);
+      if (!freshRoom) {
+        set({ error: "房间已关闭，无法发起约战" });
+        return;
+      }
+      const room = invalidateDepartedCompetition(freshRoom);
       const me = room.players.find((p) => p.playerId === playerId);
-      if (!me || !me.activeSpirit || !toPlayer.activeSpirit) return;
+      const target = room.players.find(
+        (player) => player.playerId === toPlayer.playerId,
+      );
+      if (
+        room.activeBattle ||
+        room.pendingChallenge ||
+        !me ||
+        !me.activeSpirit ||
+        !target ||
+        !target.activeSpirit ||
+        playerId === target.playerId
+      ) {
+        set({ error: "对手已离开或房间存在未结束的约战" });
+        return;
+      }
       const challenge: ChallengeInvite = {
         id: `ch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         fromPlayerId: playerId,
         fromPlayerName: nickname,
         fromSpiritName: me.activeSpirit.name,
-        toPlayerId: toPlayer.playerId,
-        toPlayerName: toPlayer.nickname,
-        toSpiritName: toPlayer.activeSpirit.name,
+        toPlayerId: target.playerId,
+        toPlayerName: target.nickname,
+        toSpiritName: target.activeSpirit.name,
         createdAt: Date.now(),
         status: "pending",
       };
@@ -476,7 +545,8 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         messages: pruneMessages([
           ...room.messages,
           buildSystemMessage(
-            `${nickname} 向 ${toPlayer.nickname} 发起约战：${me.activeSpirit.name} vs ${toPlayer.activeSpirit.name}`,
+            `${nickname} 向 ${target.nickname} 发起约战：${me.activeSpirit.name} vs ${target.activeSpirit.name}`,
+            true,
           ),
         ]),
         updatedAt: Date.now(),
@@ -491,12 +561,34 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       set({ currentRoom: updated });
     },
 
-    resolveChallenge: (challengeId, status) => {
-      const room = get().currentRoom;
-      if (!room || !room.pendingChallenge) return;
-      if (room.pendingChallenge.id !== challengeId) return;
+    resolveChallenge: async (challengeId, status) => {
+      const currentRoom = get().currentRoom;
+      if (!currentRoom || !currentRoom.pendingChallenge) return;
+      if (currentRoom.pendingChallenge.id !== challengeId) return;
+      const { playerId, nickname } = usePlayerStore.getState();
+      if (playerId !== currentRoom.pendingChallenge.toPlayerId) {
+        set({ error: "只有被邀请的契约者可以响应约战" });
+        return;
+      }
+      const freshRoom = await socialTransport.fetchRoom(currentRoom.roomCode);
+      if (!freshRoom) {
+        set({ currentRoom: null, activeBattle: null, error: "房间已关闭" });
+        return;
+      }
+      const room = invalidateDepartedCompetition(freshRoom);
+      if (
+        !room.pendingChallenge ||
+        room.pendingChallenge.id !== challengeId ||
+        !hasChallengeParticipants(room, room.pendingChallenge)
+      ) {
+        set({
+          currentRoom: room,
+          activeBattle: room.activeBattle,
+          error: "对手已离开，约战已取消",
+        });
+        return;
+      }
       const challenge = { ...room.pendingChallenge, status };
-      const { nickname } = usePlayerStore.getState();
       const challengeUpdatedAt = nextVersion(room.challengeUpdatedAt ?? 0);
 
       if (status === "accepted") {
@@ -544,6 +636,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
             ...room.messages,
             buildSystemMessage(
               `${challenge.toPlayerName} 接受了约战！${challenge.fromSpiritName} vs ${challenge.toSpiritName}`,
+              true,
             ),
           ]),
           updatedAt: Date.now(),
@@ -569,7 +662,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
           challengeUpdatedAt,
           messages: pruneMessages([
             ...room.messages,
-            buildSystemMessage(`${nickname} 拒绝了约战`),
+            buildSystemMessage(`${nickname} 拒绝了约战`, true),
           ]),
           updatedAt: Date.now(),
         };
@@ -588,6 +681,13 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
     updateBattleState: (battle) => {
       const room = get().currentRoom;
       if (!room) return;
+      const { playerId } = usePlayerStore.getState();
+      if (
+        playerId !== battle.hostPlayerId ||
+        !hasBattleParticipants(room, battle)
+      ) {
+        return;
+      }
       const battleUpdatedAt = Math.max(
         battle.updatedAt,
         nextVersion(room.battleUpdatedAt ?? 0),
@@ -614,6 +714,12 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       const battle = room?.activeBattle;
       if (!room || !battle) return;
       const { playerId } = usePlayerStore.getState();
+      if (
+        !hasBattleParticipants(room, battle) ||
+        (playerId !== battle.hostPlayerId && playerId !== battle.guestPlayerId)
+      ) {
+        return;
+      }
       socialTransport.broadcast({
         kind: "battle-action",
         roomCode: room.roomCode,
@@ -628,6 +734,13 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
     finishBattle: (battle) => {
       const room = get().currentRoom;
       if (!room) return;
+      const { playerId } = usePlayerStore.getState();
+      if (
+        playerId !== battle.hostPlayerId ||
+        !hasBattleParticipants(room, battle)
+      ) {
+        return;
+      }
       const finished: SocialBattleState = {
         ...battle,
         phase: "finished",
@@ -667,13 +780,13 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
             const mergedMessages = pruneMessages(
               [...byId.values()].sort((a, b) => a.timestamp - b.timestamp),
             );
-            const merged: SocialRoom = {
+            const merged = invalidateDepartedCompetition({
               ...incoming,
               players: mergeNewerPlayers(current.players, incoming.players),
               messages: mergedMessages,
               ...mergeBattleSlot(current, incoming),
               ...mergeChallengeSlot(current, incoming),
-            };
+            });
             const localActiveBattle = get().activeBattle;
             set({
               currentRoom: merged,
@@ -712,8 +825,9 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         case "challenge-create": {
           if (current && current.roomCode === event.roomCode) {
             if (
-              !current.pendingChallenge ||
-              current.pendingChallenge.id !== event.challenge.id
+              hasChallengeParticipants(current, event.challenge) &&
+              (!current.pendingChallenge ||
+                current.pendingChallenge.id !== event.challenge.id)
             ) {
               set({
                 currentRoom: { ...current, pendingChallenge: event.challenge },
@@ -736,6 +850,14 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         }
         case "battle-state": {
           if (current && current.roomCode === event.roomCode) {
+            if (!hasBattleParticipants(current, event.battle)) {
+              const updated = invalidateDepartedCompetition({
+                ...current,
+                activeBattle: event.battle,
+              });
+              set({ currentRoom: updated, activeBattle: updated.activeBattle });
+              break;
+            }
             const currentVersion =
               current.battleUpdatedAt ?? current.activeBattle?.updatedAt ?? 0;
             if (event.battle.updatedAt < currentVersion) break;
@@ -771,7 +893,9 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
     hydrateRoom: async (roomCode) => {
       const room = await socialTransport.fetchRoom(roomCode);
       if (room) {
-        const hydrated = pruneOfflinePlayers(room);
+        const hydrated = invalidateDepartedCompetition(
+          pruneOfflinePlayers(room),
+        );
         set({
           currentRoom: hydrated,
           activeBattle: hydrated.activeBattle,

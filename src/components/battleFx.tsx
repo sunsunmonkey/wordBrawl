@@ -921,25 +921,62 @@ const TypeDecoration: React.FC<{
       return (
         <>
           <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: charging ? [0.16, 0.3, 0.16] : [0.1, 0.2, 0.1],
+              scale: charging ? [0.96, 1.04, 0.96] : [1, 1.02, 1],
+            }}
+            transition={{
+              duration: charging ? 1.5 : 3.5,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
             className={common}
             style={{
-              background: `repeating-conic-gradient(from 0deg, transparent 0deg, ${theme}11 10deg, transparent 20deg, ${secondary}11 30deg, transparent 40deg)`,
+              background: `radial-gradient(ellipse at center, ${theme}33 0%, ${secondary}18 30%, transparent 68%)`,
             }}
           />
-          {[...Array(12)].map((_, i) => (
+          <motion.div
+            animate={{
+              scale: charging ? [0.86, 1.08, 0.86] : [0.94, 1.02, 0.94],
+              opacity: charging ? [0.35, 0.7, 0.35] : [0.2, 0.38, 0.2],
+            }}
+            transition={{
+              duration: charging ? 1.2 : 3,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+            className="absolute top-1/2 left-1/2 h-56 w-56 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              border: `1px solid ${theme}55`,
+              boxShadow: `inset 0 0 36px ${secondary}22, 0 0 48px ${theme}18`,
+            }}
+          />
+          {[
+            ["18%", "26%"],
+            ["76%", "20%"],
+            ["84%", "72%"],
+            ["24%", "78%"],
+          ].map(([left, top], i) => (
             <motion.div
               key={i}
               animate={{
-                scale: [0, 1, 0],
-                opacity: [0, 1, 0],
-                x: [0, Math.cos((i * 30 * Math.PI) / 180) * 300],
-                y: [0, Math.sin((i * 30 * Math.PI) / 180) * 300],
+                opacity: [0.15, 0.55, 0.15],
+                scale: [0.8, 1.25, 0.8],
               }}
-              transition={{ duration: 2, repeat: Infinity, delay: i * 0.1 }}
-              className="absolute top-1/2 left-1/2 w-2 h-2 rounded-full"
-              style={{ background: theme, boxShadow: `0 0 10px ${theme}` }}
+              transition={{
+                duration: 2.6,
+                repeat: Infinity,
+                delay: i * 0.35,
+                ease: "easeInOut",
+              }}
+              className="absolute h-1.5 w-1.5 rounded-full"
+              style={{
+                left,
+                top,
+                background: theme,
+                boxShadow: `0 0 8px ${theme}`,
+              }}
             />
           ))}
         </>
@@ -1061,6 +1098,7 @@ export const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({
   const isCharging = overlay.charging;
   const isWarning = overlay.warning;
   const isRelease = !isWarning && !isCharging;
+  const isCosmic = style.typeId === "cosmic";
 
   return (
     <motion.div
@@ -1082,38 +1120,41 @@ export const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({
         transition={{ duration: isCharging ? 0.4 : isWarning ? 0.5 : 2.1 }}
         className="absolute inset-0"
         style={{
-          background: `radial-gradient(circle at center, ${sideColor}66, ${style.theme}66, #000)`,
+          background: isCosmic
+            ? `radial-gradient(ellipse at center, ${style.theme}2B 0%, #0B0612 42%, #030409 100%)`
+            : `radial-gradient(circle at center, ${sideColor}66, ${style.theme}66, #000)`,
         }}
       />
 
       {/* 放射状光线 */}
-      <motion.div
-        initial={{ scale: isCharging ? 0.8 : 0, rotate: 0 }}
-        animate={{
-          scale: isCharging ? 1.5 : isWarning ? 1.2 : 3,
-          rotate: style.spin.clockwise
-            ? isCharging
-              ? 180
-              : isWarning
-                ? 90
-                : 360
-            : isCharging
-              ? -180
-              : isWarning
-                ? -90
-                : -360,
-        }}
-        transition={{
-          duration: isCharging ? 0.4 : isWarning ? 0.5 : style.spin.duration,
-          ease: "easeOut",
-        }}
-        className="absolute w-[800px] h-[800px]"
-        style={{
-          background: `conic-gradient(from 0deg, transparent, ${sideColor}, transparent, ${style.theme}, transparent)`,
-          opacity: isCharging ? 0.6 : isWarning ? 0.3 : 0.4,
-          borderRadius: "50%",
-        }}
-      />
+      {!isCosmic && (
+        <motion.div
+          initial={{ scale: isCharging ? 0.8 : 0, rotate: 0 }}
+          animate={{
+            scale: isCharging ? 1.5 : isWarning ? 1.2 : 3,
+            rotate: style.spin.clockwise
+              ? isCharging
+                ? 180
+                : isWarning
+                  ? 90
+                  : 360
+              : isCharging
+                ? -180
+                : isWarning
+                  ? -90
+                  : -360,
+          }}
+          transition={{
+            duration: isCharging ? 0.4 : isWarning ? 0.5 : style.spin.duration,
+            ease: "easeOut",
+          }}
+          className="absolute h-[800px] w-[800px] rounded-full"
+          style={{
+            background: `conic-gradient(from 0deg, transparent, ${sideColor}, transparent, ${style.theme}, transparent)`,
+            opacity: isCharging ? 0.6 : isWarning ? 0.3 : 0.4,
+          }}
+        />
+      )}
 
       {/* 类型专属装饰层 */}
       <TypeDecoration
@@ -1185,10 +1226,14 @@ export const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({
           >
             <motion.div
               {...style.chargeOrbAnimation}
-              className="w-32 h-32 rounded-full blur-xl"
+              className={`rounded-full ${isCosmic ? "h-24 w-24 blur-md" : "h-32 w-32 blur-xl"}`}
               style={{
-                background: `radial-gradient(circle, ${style.theme}, ${sideColor})`,
-                boxShadow: `0 0 80px ${style.theme}, 0 0 160px ${sideColor}`,
+                background: isCosmic
+                  ? `radial-gradient(circle, #08030D 0%, #08030D 24%, ${style.theme} 31%, ${style.secondary} 100%)`
+                  : `radial-gradient(circle, ${style.theme}, ${sideColor})`,
+                boxShadow: isCosmic
+                  ? `0 0 36px ${style.theme}, 0 0 88px ${style.secondary}66`
+                  : `0 0 80px ${style.theme}, 0 0 160px ${sideColor}`,
               }}
             />
             <div
@@ -1302,9 +1347,8 @@ export const UltimateOverlayView: React.FC<{ overlay: UltimateOverlay }> = ({
   );
 };
 
-
-/** 大招图片预加载，避免释放时卡顿 */
 export const preloadUltimateImage = (url?: string): Promise<void> => {
+  if (!url) return Promise.resolve();
   if (!url) return Promise.resolve();
   return new Promise((resolve) => {
     const img = new Image();
@@ -1322,9 +1366,8 @@ export const preloadUltimateImage = (url?: string): Promise<void> => {
  * 受击闪光与震屏。约定：左=player1(host)，右=player2(guest)。
  */
 export function useBattleFx() {
-  const [ultimateOverlay, setUltimateOverlay] = useState<UltimateOverlay | null>(
-    null,
-  );
+  const [ultimateOverlay, setUltimateOverlay] =
+    useState<UltimateOverlay | null>(null);
   const [shakeScreen, setShakeScreen] = useState(false);
   const [hitSide, setHitSide] = useState<"left" | "right" | null>(null);
   const [attackerSide, setAttackerSide] = useState<"left" | "right" | null>(
@@ -1455,4 +1498,3 @@ export function useBattleFx() {
     resetFx,
   };
 }
-

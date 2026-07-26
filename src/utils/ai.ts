@@ -1,5 +1,12 @@
 import OpenAI from "openai";
-import { CharacterData, Skill, SpiritProfile, RARITY_CONFIGS, calculatePowerScore, determineRarityByPower, rollRarity, Rarity } from "../store/useGameStore";
+import {
+  CharacterData,
+  RARITY_CONFIGS,
+  Rarity,
+  rollRarity,
+  Skill,
+  SpiritProfile,
+} from "../store/useGameStore";
 import { ULTIMATE_TYPE_IDS, getUltimateTypeById } from "../data/ultimateTypes";
 import {
   isPollinationsUrl,
@@ -15,6 +22,22 @@ export interface AIConfig {
   model: string;
   apiMode?: AIProviderMode;
 }
+
+const MAX_JSON_GENERATION_ATTEMPTS = 3;
+
+const RARITY_GENERATION_GUIDES: Record<Rarity, string> = {
+  N: "普通档。角色应当可用但克制：只保留一个清晰优势，必须有明显短板；不必满足通用高阶数值要求，禁止多项高数值或极限爆发。",
+  R: "稀有档。角色应有一个突出的核心能力和鲜明玩法，但仍要保留可被针对的短板。",
+  SR: "超稀有档。角色应有一到两个强项，并让技能体系产生明确协同；仍必须通过短板维持克制关系。",
+  SSR: "史诗档。角色应具备高强度核心玩法、优秀技能联动和有记忆点的大招，但不能成为无短板的全能角色。",
+  UR: "传说档。角色可以拥有极具统治力的定位、顶级视觉演出和强协同技能组，但必须保留一个可利用的战术弱点。",
+};
+
+const buildRarityInstruction = (rarity: Rarity): string =>
+  `本次稀有度已由系统预先抽定为 ${rarity}（${RARITY_CONFIGS[rarity].label}）。此档位不可修改，且优先级高于下方通用数值建议。${RARITY_GENERATION_GUIDES[rarity]} 数值与技能设计必须符合该档位。`;
+
+const isRarity = (value: unknown): value is Rarity =>
+  typeof value === "string" && value in RARITY_CONFIGS;
 
 const buildClient = (cfg: AIConfig) => {
   return new OpenAI({
@@ -64,8 +87,7 @@ const parseJsonLoose = (raw: string): unknown => {
     }
   }
 
-  const detail =
-    lastError instanceof Error ? `：${lastError.message}` : "";
+  const detail = lastError instanceof Error ? `：${lastError.message}` : "";
   throw new Error(`AI 返回的内容不是合法 JSON${detail}`);
 };
 
@@ -113,7 +135,11 @@ const normalizeTextList = (
 ): string[] => {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item) => String(item || "").trim().slice(0, maxLength))
+    .map((item) =>
+      String(item || "")
+        .trim()
+        .slice(0, maxLength),
+    )
     .filter(Boolean)
     .slice(0, maxItems);
 };
@@ -134,17 +160,24 @@ const normalizeSpiritProfile = (value: unknown): SpiritProfile | undefined => {
     catchphrases,
     battleCry: normalizeText(profile.battleCry, "此刻，词意成真。", 48),
     victoryLine: normalizeText(profile.victoryLine, "胜负已经写进词根。", 48),
-    defeatLine: normalizeText(profile.defeatLine, "这次败北，会成为下一次咒文。", 48),
+    defeatLine: normalizeText(
+      profile.defeatLine,
+      "这次败北，会成为下一次咒文。",
+      48,
+    ),
     worldAnchors,
     memorySeeds,
   };
 };
 
-const applyRarityMultiplier = (char: CharacterData, rarity: Rarity): CharacterData => {
+const applyRarityMultiplier = (
+  char: CharacterData,
+  rarity: Rarity,
+): CharacterData => {
   const mult = RARITY_CONFIGS[rarity].powerMultiplier;
-  const scaleStat = (base: number, min: number, max: number) => 
+  const scaleStat = (base: number, min: number, max: number) =>
     Math.min(max, Math.max(min, Math.round(base * mult)));
-  
+
   return {
     ...char,
     hp: scaleStat(char.hp, 100, 1300),
@@ -152,22 +185,35 @@ const applyRarityMultiplier = (char: CharacterData, rarity: Rarity): CharacterDa
     attack: scaleStat(char.attack, 15, 210),
     defense: scaleStat(char.defense, 0, 140),
     speed: scaleStat(char.speed, 1, 200),
-    skills: char.skills.map(skill => ({
+    skills: char.skills.map((skill) => ({
       ...skill,
-      damageMultiplier: skill.type === "heal" || skill.type === "buff" || skill.type === "debuff"
-        ? skill.damageMultiplier
-        : Math.min(
-            skill.isUltimate ? 12 : 4.5,
-            Math.max(skill.isUltimate ? 4.4 : 1.0, skill.damageMultiplier * (0.85 + mult * 0.18))
-          ),
-      healPercent: skill.healPercent ? Math.min(85, Math.round(skill.healPercent * mult)) : undefined,
-      buffPercent: skill.buffPercent ? Math.min(150, Math.round(skill.buffPercent * mult)) : undefined,
+      damageMultiplier:
+        skill.type === "heal" ||
+        skill.type === "buff" ||
+        skill.type === "debuff"
+          ? skill.damageMultiplier
+          : Math.min(
+              skill.isUltimate ? 12 : 4.5,
+              Math.max(
+                skill.isUltimate ? 4.4 : 1.0,
+                skill.damageMultiplier * (0.85 + mult * 0.18),
+              ),
+            ),
+      healPercent: skill.healPercent
+        ? Math.min(85, Math.round(skill.healPercent * mult))
+        : undefined,
+      buffPercent: skill.buffPercent
+        ? Math.min(150, Math.round(skill.buffPercent * mult))
+        : undefined,
     })),
     rarity,
   };
 };
 
-const normalizeCharacterData = (value: unknown): CharacterData => {
+const normalizeCharacterData = (
+  value: unknown,
+  rarity: Rarity,
+): CharacterData => {
   const data = asRecord(value);
   const rawSkills = Array.isArray(data.skills) ? data.skills : [];
   const skills: Skill[] = rawSkills.map((rawSkill): Skill => {
@@ -240,20 +286,8 @@ const normalizeCharacterData = (value: unknown): CharacterData => {
     ...(spiritProfile ? { spiritProfile } : {}),
   };
 
-  // 抽取稀有度（结合roll概率和基础战力）
-  const basePower = calculatePowerScore(baseChar);
-  const rolledRarity = rollRarity();
-  // 基础战力越高，越容易roll到高稀有度；反之亦然
-  const powerBasedRarity = determineRarityByPower(basePower);
-  const rarityOrder: Rarity[] = ["N", "R", "SR", "SSR", "UR"];
-  const rolledIdx = rarityOrder.indexOf(rolledRarity);
-  const powerIdx = rarityOrder.indexOf(powerBasedRarity);
-  // 取两者中间偏高值，让好底子更容易出彩，但惊喜感也保留
-  const finalIdx = Math.min(rarityOrder.length - 1, Math.max(rolledIdx, Math.floor((rolledIdx + powerIdx) / 2)));
-  const finalRarity = rarityOrder[finalIdx];
-
-  // 应用稀有度倍率
-  return applyRarityMultiplier(baseChar, finalRarity);
+  // 稀有度在请求 AI 前已确定，只用于指导生成和结算，不再被生成结果反向改写。
+  return applyRarityMultiplier(baseChar, rarity);
 };
 
 const generateCharacterWithFreeTrial = async (
@@ -275,8 +309,11 @@ const generateCharacterWithFreeTrial = async (
   if (!payload.character) {
     throw new Error("免费体验接口返回内容异常");
   }
+  if (!isRarity(payload.rarity)) {
+    throw new Error("免费体验接口未返回有效稀有度");
+  }
 
-  return normalizeCharacterData(payload.character);
+  return normalizeCharacterData(payload.character, payload.rarity);
 };
 
 export const generateCharacter = async (
@@ -292,6 +329,7 @@ export const generateCharacter = async (
   if (!cfg.model) throw new Error("请先填写 Model");
 
   const client = buildClient(cfg);
+  const rarity = rollRarity();
 
   const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 用户会输入一段角色描述，你需要根据这段描述，为角色生成游戏数值和【丰富多样的技能体系】。
@@ -359,23 +397,38 @@ JSON 结构如下：
   "imagePrompt": "用于生成头像的英文提示词，pixel art 或 cyberpunk 风格"
 }
 数值范围要求：hp 100-1100，attack 15-170，defense 0-110，speed 1-160。请根据角色设定拉开差距，不要所有角色都给中庸数值；玻璃大炮、重装坦克、极速刺客、低速 Boss 都可以很极端。强角色可以真的强，但必须用另一个低项换取平衡。
-技能名称、描述和 spiritProfile 要互相呼应，让角色像真正的词灵，而不是只有数值和技能名。`;
+技能名称、描述和 spiritProfile 要互相呼应，让角色像真正的词灵，而不是只有数值和技能名。
 
-  const response = await client.chat.completions.create({
-    model: cfg.model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: description },
-    ],
-    temperature: 0.95,
-  });
+${buildRarityInstruction(rarity)}`;
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("AI 返回内容为空");
+  let lastParseError: unknown;
 
-  const data = parseJsonLoose(content);
+  for (let attempt = 1; attempt <= MAX_JSON_GENERATION_ATTEMPTS; attempt += 1) {
+    const response = await client.chat.completions.create({
+      model: cfg.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: description },
+      ],
+      temperature: 0.95,
+    });
 
-  return normalizeCharacterData(data);
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error("AI 返回内容为空");
+
+    try {
+      return normalizeCharacterData(parseJsonLoose(content), rarity);
+    } catch (error) {
+      lastParseError = error;
+      if (attempt < MAX_JSON_GENERATION_ATTEMPTS) {
+        console.warn(
+          `AI 返回 JSON 解析失败，正在重试（${attempt}/${MAX_JSON_GENERATION_ATTEMPTS}）`,
+        );
+      }
+    }
+  }
+
+  throw lastParseError;
 };
 
 // ============ 图片生成：Pollinations + 串行队列 + 可靠性增强 ============

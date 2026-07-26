@@ -402,7 +402,8 @@ export const SocialRoomScreen: React.FC = () => {
                   Boolean(mySpirit) &&
                   Boolean(p.activeSpirit) &&
                   p.playerId !== playerId &&
-                  !pending
+                  !pending &&
+                  !currentRoom.activeBattle
                 }
                 onChallenge={() => createChallenge(p)}
                 onSetBattleSpirit={
@@ -457,12 +458,27 @@ export const SocialRoomScreen: React.FC = () => {
                   (s) => s.rosterId === streamingSpiritId,
                 );
                 if (!spirit) return null;
+                // 与 sendSpiritMessage 的落库颜色保持一致，避免流式结束时颜色跳变。
+                const hostPlayer =
+                  currentRoom.players.find(
+                    (p) => p.activeSpirit?.rosterId === spirit.rosterId,
+                  ) ?? currentRoom.players[0];
+                const accentColor = hostPlayer?.avatarColor ?? "#FFD700";
                 const partial = pendingSpiritReplies[streamingSpiritId];
                 if (!partial) {
-                  return <SpiritTypingBubble spirit={spirit} />;
+                  return (
+                    <SpiritTypingBubble
+                      spirit={spirit}
+                      accentColor={accentColor}
+                    />
+                  );
                 }
                 return (
-                  <StreamingSpiritBubble spirit={spirit} content={partial} />
+                  <StreamingSpiritBubble
+                    spirit={spirit}
+                    content={partial}
+                    accentColor={accentColor}
+                  />
                 );
               })()}
             {currentRoom.messages.length === 0 && !streamingSpiritId && (
@@ -820,6 +836,33 @@ const ChatMessageBubble: React.FC<{
   const alignRight = !isSpirit && isMe;
   const accentColor = message.senderColor;
 
+  if (isSpirit) {
+    return (
+      <SpiritMessageShell
+        name={message.senderName}
+        avatar={message.senderAvatar}
+        accentColor={accentColor}
+        timestamp={message.timestamp}
+      >
+        <div
+          className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-sm"
+          style={{
+            borderColor: `${accentColor}66`,
+            background: "rgba(11,12,16,0.6)",
+            color: "#E5E7EB",
+          }}
+        >
+          {renderContentWithMentions(
+            message.content,
+            message.mentions,
+            playerNames,
+            myNickname,
+          )}
+        </div>
+      </SpiritMessageShell>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -831,7 +874,7 @@ const ChatMessageBubble: React.FC<{
           className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
           style={{ borderColor: `${accentColor}66` }}
         >
-          {isSpirit && message.senderAvatar ? (
+          {message.senderAvatar ? (
             <img
               src={message.senderAvatar}
               alt={message.senderName}
@@ -849,11 +892,6 @@ const ChatMessageBubble: React.FC<{
       )}
       <div className={`max-w-[75%] ${alignRight ? "text-right" : "text-left"}`}>
         <div className="flex items-center gap-1.5 mb-1">
-          {isSpirit && (
-            <span className="text-[8px] font-mono tracking-widest text-[#FFD700]/70 border border-[#FFD700]/30 px-1 rounded">
-              SPIRIT
-            </span>
-          )}
           <span
             className="text-[10px] font-bold tracking-wide"
             style={{ color: accentColor }}
@@ -872,9 +910,7 @@ const ChatMessageBubble: React.FC<{
               : `${accentColor}66`,
             background: alignRight
               ? "rgba(167,139,250,0.12)"
-              : isSpirit
-                ? "rgba(11,12,16,0.6)"
-                : "rgba(11,12,16,0.5)",
+              : "rgba(11,12,16,0.5)",
             color: "#E5E7EB",
           }}
         >
@@ -932,94 +968,122 @@ const renderContentWithMentions = (
   return parts;
 };
 
-const SpiritTypingBubble: React.FC<{
-  spirit: SerializedSpirit;
-}> = ({ spirit }) => (
+const SpiritMessageShell: React.FC<{
+  name: string;
+  avatar?: string;
+  accentColor: string;
+  timestamp?: number;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ name, avatar, accentColor, timestamp, trailing, children }) => (
   <motion.div
     initial={{ opacity: 0, y: 6 }}
     animate={{ opacity: 1, y: 0 }}
     className="flex gap-2.5 justify-start"
   >
-    <div className="h-8 w-8 shrink-0 overflow-hidden rounded border border-[#FFD700]/50 bg-[#0B0C10]">
-      {spirit.imageUrl ? (
-        <img
-          src={spirit.imageUrl}
-          alt={spirit.name}
-          className="h-full w-full object-cover"
-        />
+    <div
+      className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
+      style={{ borderColor: `${accentColor}66` }}
+    >
+      {avatar ? (
+        <img src={avatar} alt={name} className="h-full w-full object-cover" />
       ) : (
-        <div className="h-full w-full flex items-center justify-center text-xs font-black text-[#FFD700]">
-          {spirit.name.slice(0, 1)}
+        <div
+          className="h-full w-full flex items-center justify-center text-xs font-black"
+          style={{ color: accentColor }}
+        >
+          {name.slice(0, 1)}
         </div>
       )}
     </div>
-    <div className="max-w-[75%]">
+    <div className="max-w-[75%] text-left">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-[8px] font-mono tracking-widest text-[#FFD700]/70 border border-[#FFD700]/30 px-1 rounded">
           SPIRIT
         </span>
-        <span className="text-[10px] font-bold text-[#FFD700]">
-          {spirit.name}
+        <span
+          className="text-[10px] font-bold tracking-wide"
+          style={{ color: accentColor }}
+        >
+          {name}
         </span>
+        {trailing}
+        {timestamp !== undefined && (
+          <span className="text-[9px] text-white/30">
+            {formatTime(timestamp)}
+          </span>
+        )}
       </div>
-      <div className="rounded-lg border border-[#FFD700]/50 bg-[#0B0C10]/70 px-3 py-2 text-sm leading-relaxed text-[#E5E7EB]">
-        <span className="inline-flex items-center gap-1">
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-[#FFD700] animate-bounce"
-            style={{ animationDelay: "0ms" }}
-          />
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-[#FFD700]/70 animate-bounce"
-            style={{ animationDelay: "120ms" }}
-          />
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-[#FFD700]/45 animate-bounce"
-            style={{ animationDelay: "240ms" }}
-          />
-        </span>
-      </div>
+      {children}
     </div>
   </motion.div>
+);
+
+const SpiritTypingBubble: React.FC<{
+  spirit: SerializedSpirit;
+  accentColor: string;
+}> = ({ spirit, accentColor }) => (
+  <SpiritMessageShell
+    name={spirit.name}
+    avatar={spirit.imageUrl}
+    accentColor={accentColor}
+  >
+    <div
+      className="rounded-lg border bg-[#0B0C10]/70 px-3 py-2 text-sm leading-relaxed text-[#E5E7EB] backdrop-blur-sm"
+      style={{ borderColor: `${accentColor}66` }}
+    >
+      <span className="inline-flex items-center gap-1">
+        <span
+          className="h-1.5 w-1.5 rounded-full animate-bounce"
+          style={{ backgroundColor: accentColor, animationDelay: "0ms" }}
+        />
+        <span
+          className="h-1.5 w-1.5 rounded-full animate-bounce"
+          style={{
+            backgroundColor: `${accentColor}B3`,
+            animationDelay: "120ms",
+          }}
+        />
+        <span
+          className="h-1.5 w-1.5 rounded-full animate-bounce"
+          style={{
+            backgroundColor: `${accentColor}73`,
+            animationDelay: "240ms",
+          }}
+        />
+      </span>
+    </div>
+  </SpiritMessageShell>
 );
 
 const StreamingSpiritBubble: React.FC<{
   spirit: SerializedSpirit;
   content: string;
-}> = ({ spirit, content }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 6 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="flex gap-2.5 justify-start"
+  accentColor: string;
+}> = ({ spirit, content, accentColor }) => (
+  <SpiritMessageShell
+    name={spirit.name}
+    avatar={spirit.imageUrl}
+    accentColor={accentColor}
+    trailing={
+      <Loader2
+        size={9}
+        className="animate-spin"
+        style={{ color: `${accentColor}99` }}
+      />
+    }
   >
-    <div className="h-8 w-8 shrink-0 overflow-hidden rounded border border-[#FFD700]/50 bg-[#0B0C10]">
-      {spirit.imageUrl ? (
-        <img
-          src={spirit.imageUrl}
-          alt={spirit.name}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <div className="h-full w-full flex items-center justify-center text-xs font-black text-[#FFD700]">
-          {spirit.name.slice(0, 1)}
-        </div>
-      )}
+    <div
+      className="rounded-lg border bg-[#0B0C10]/70 px-3 py-2 text-sm leading-relaxed text-[#E5E7EB] backdrop-blur-sm"
+      style={{ borderColor: `${accentColor}66` }}
+    >
+      {content}
+      <span
+        className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse"
+        style={{ backgroundColor: accentColor }}
+      />
     </div>
-    <div className="max-w-[75%]">
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-[8px] font-mono tracking-widest text-[#FFD700]/70 border border-[#FFD700]/30 px-1 rounded">
-          SPIRIT
-        </span>
-        <span className="text-[10px] font-bold text-[#FFD700]">
-          {spirit.name}
-        </span>
-        <Loader2 size={9} className="animate-spin text-[#FFD700]/60" />
-      </div>
-      <div className="rounded-lg border border-[#FFD700]/50 bg-[#0B0C10]/70 px-3 py-2 text-sm leading-relaxed text-[#E5E7EB]">
-        {content}
-        <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-[#FFD700]" />
-      </div>
-    </div>
-  </motion.div>
+  </SpiritMessageShell>
 );
 
 const ChallengeModal: React.FC<{

@@ -57,7 +57,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
+      className="fixed inset-0 z-50 overflow-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -83,37 +83,40 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
         transition={{ duration: 0.6, ease: "easeOut" }}
       />
 
-      {/* 稀有度标签 */}
-      <motion.div
-        className="absolute top-[14%] text-center pointer-events-none"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 12 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-      >
-        <div
-          className="text-4xl font-black leading-none tracking-widest"
-          style={{
-            color: config.primaryColor,
-            textShadow: `0 0 20px ${config.glowColor}, 0 0 40px ${config.glowColor}`,
-          }}
-        >
-          {config.labelEn}
-        </div>
-        <div
-          className="mt-1 text-sm leading-none tracking-[0.5em]"
-          style={{ color: config.secondaryColor }}
-        >
-          {config.label}
-        </div>
-      </motion.div>
+      {/* 内容区域：常规视口居中，矮视口可完整滚动。 */}
+      <div className="relative z-10 h-full overflow-y-auto px-4 py-6">
+        <div className="flex min-h-full w-full flex-col items-center justify-center">
+          {/* 稀有度标签必须与卡片位于同一布局流，避免和居中的卡片重叠。 */}
+          <motion.div
+            className="mb-3 text-center pointer-events-none"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 12 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+          >
+            <div
+              className="max-w-[calc(100vw-2rem)] text-3xl font-black leading-none tracking-[0.16em] sm:text-4xl sm:tracking-widest"
+              style={{
+                color: config.primaryColor,
+                textShadow: `0 0 20px ${config.glowColor}, 0 0 40px ${config.glowColor}`,
+              }}
+            >
+              {config.labelEn}
+            </div>
+            <div
+              className="mt-1 text-sm leading-none tracking-[0.5em]"
+              style={{ color: config.secondaryColor }}
+            >
+              {config.label}
+            </div>
+          </motion.div>
 
-      {/* 翻牌区 */}
-      <div
-        className="relative z-10 flex flex-col items-center"
-        style={{ perspective: 1400 }}
-      >
+          {/* 翻牌区 */}
+          <div
+            className="flex flex-col items-center"
+            style={{ perspective: 1400 }}
+          >
         <motion.div
-          className={`relative ${revealed ? "cursor-pointer" : ""}`}
+          className={`relative shrink-0 ${revealed ? "cursor-pointer" : ""}`}
           style={{
             transformStyle: "preserve-3d",
             willChange: "transform",
@@ -213,31 +216,31 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
           </div>
         </motion.div>
 
-        {/* 词灵原型 */}
-        {character.spiritProfile?.archetype && (
-          <motion.div
-            className="mt-4 text-center max-w-xs"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 8 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-          >
-            <div
-              className="text-xs italic"
-              style={{ color: config.secondaryColor }}
+          {/* 词灵原型 */}
+          {character.spiritProfile?.archetype && (
+            <motion.div
+              className="mt-4 max-w-xs text-center"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 8 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
             >
-              「{character.spiritProfile.archetype}」
-            </div>
-          </motion.div>
-        )}
+              <div
+                className="text-xs italic"
+                style={{ color: config.secondaryColor }}
+              >
+                「{character.spiritProfile.archetype}」
+              </div>
+            </motion.div>
+          )}
 
-        {/* 三个选择：放弃 / 重新生成 / 收入麾下 */}
-        <motion.div
-          className="mt-7 flex items-center gap-3"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 16 }}
-          transition={{ duration: 0.4, delay: 0.15 }}
-          style={{ pointerEvents: revealed ? "auto" : "none" }}
-        >
+          {/* 三个选择：放弃 / 重新生成 / 收入麾下 */}
+          <motion.div
+            className="mt-7 flex flex-wrap items-center justify-center gap-3"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 16 }}
+            transition={{ duration: 0.4, delay: 0.15 }}
+            style={{ pointerEvents: revealed ? "auto" : "none" }}
+          >
           {/* 放弃 */}
           <motion.button
             className="px-5 py-3 rounded-lg font-bold tracking-widest text-xs flex items-center gap-2"
@@ -299,20 +302,22 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
             <Sparkles size={16} />
             收入麾下
           </motion.button>
-        </motion.div>
-      </div>
+          </motion.div>
+          </div>
 
-      {/* 点击任意处继续提示 */}
-      {revealed && (
-        <motion.div
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 text-[10px] text-[#8a8d91] tracking-wider pointer-events-none"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-        >
-          点击卡片查看 Slogan · 点击外侧收入麾下
-        </motion.div>
-      )}
+          {/* 点击任意处继续提示 */}
+          {revealed && (
+            <motion.div
+              className="mt-6 text-center text-[10px] tracking-wider text-[#8a8d91] pointer-events-none"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+            >
+              点击卡片查看 Slogan · 点击外侧收入麾下
+            </motion.div>
+          )}
+        </div>
+      </div>
     </motion.div>
   );
 };

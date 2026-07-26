@@ -202,9 +202,9 @@ export const TowerScreen: React.FC = () => {
       </div>
 
       {/* 顶部 HUD */}
-      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+      <div className="relative z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setPhase("MODE_SELECT")} color="#FFD700" />
+          <div aria-hidden className="h-11 w-11 shrink-0" />
           <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
             <div className="w-6 h-[1px] bg-[#FFD700]" />
             <span>WORD-SPIRIT / TOWER</span>
@@ -234,9 +234,14 @@ export const TowerScreen: React.FC = () => {
           </button>
         </div>
       </div>
+      <BackButton
+        onClick={() => setPhase("MODE_SELECT")}
+        color="#FFD700"
+        className="fixed left-6 top-5 z-30"
+      />
 
       {/* 主内容 */}
-      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-20 pb-16 max-w-[1400px] mx-auto">
+      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-6 pb-16 max-w-[1400px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

@@ -157,7 +157,7 @@ export const WelcomeScreen: React.FC = () => {
   const configReady = apiMode === "free" || (apiKey && baseUrl && model);
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-[#05060a] text-white">
+    <div className="welcome-screen min-h-screen lg:h-dvh lg:min-h-0 relative overflow-hidden bg-[#05060a] text-white">
       {/* 背景层：静态巨型渐变 + 微妙网格 */}
       <div className="pointer-events-none absolute inset-0 z-0">
         {/* 冷暖对角光晕 */}
@@ -237,17 +237,17 @@ export const WelcomeScreen: React.FC = () => {
       </div>
 
       {/* 主内容：左 hero + 右面板 */}
-      <div className="relative z-10 min-h-screen flex flex-col">
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center px-6 md:px-12 lg:px-20 pt-24 pb-16">
+      <div className="welcome-screen__content relative z-10 min-h-screen lg:min-h-0 lg:h-full flex flex-col">
+        <div className="welcome-screen__main min-h-0 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center px-6 md:px-12 lg:px-20 pt-24 pb-16">
           {/* 左：Hero */}
           <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.9, ease: [0.2, 0.8, 0.2, 1] }}
             className="lg:col-span-7 relative"
           >
             {/* Eyebrow */}
-            <div className="flex items-center gap-3 mb-6">
+            <div className="welcome-screen__eyebrow flex items-center gap-3 mb-6">
               <div className="w-10 h-[1px] bg-[#66FCF1]" />
               <span className="text-[10px] tracking-[0.5em] text-[#66FCF1]/90 font-mono">
                 CHAPTER · 00
@@ -283,7 +283,7 @@ export const WelcomeScreen: React.FC = () => {
             </h1>
 
             {/* 描述 */}
-            <p className="mt-8 max-w-xl text-base md:text-lg text-white/65 leading-relaxed font-light">
+            <p className="welcome-screen__description mt-8 max-w-xl text-base md:text-lg text-white/65 leading-relaxed font-light">
               一句话，就能召唤一位属于你的
               <span className="text-[#66FCF1]">词灵</span>
               。与它促膝长谈，或让它们
@@ -294,7 +294,7 @@ export const WelcomeScreen: React.FC = () => {
             </p>
 
             {/* 四大特性 - 极简数字标签，可点击直接进入免费模式 */}
-            <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-5 max-w-2xl">
+            <div className="welcome-screen__features mt-10 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-5 max-w-2xl">
               <FeaturePill
                 index="01"
                 label="召唤词灵"
@@ -342,9 +342,9 @@ export const WelcomeScreen: React.FC = () => {
               <CornerCut position="bl" />
               <CornerCut position="br" />
 
-              <div className="relative bg-black/40 backdrop-blur-md border border-white/10 p-8">
+              <div className="welcome-screen__panel relative bg-black/40 backdrop-blur-md border border-white/10 p-8">
                 {/* 面板标题条 */}
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-white/10">
+                <div className="welcome-screen__panel-header flex items-center justify-between mb-6 pb-3 border-b border-white/10">
                   <div className="flex items-center gap-3">
                     <div className="w-1.5 h-1.5 bg-[#66FCF1]" />
                     <span className="text-[10px] font-mono tracking-[0.35em] text-white/60">
@@ -357,7 +357,7 @@ export const WelcomeScreen: React.FC = () => {
                 </div>
 
                 {/* 模式选择 */}
-                <div className="mb-6">
+                <div className="welcome-screen__mode mb-6">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[11px] tracking-[0.3em] text-white/50 font-mono">
                       AI · MODE
@@ -445,7 +445,7 @@ export const WelcomeScreen: React.FC = () => {
                   whileHover={{ x: 4 }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                  className="group relative w-full mt-2 flex items-center justify-between px-6 py-5 bg-[#66FCF1] text-black font-black tracking-[0.3em] font-display overflow-hidden"
+                  className="welcome-screen__cta group relative w-full mt-2 flex items-center justify-between px-6 py-5 bg-[#66FCF1] text-black font-black tracking-[0.3em] font-display overflow-hidden"
                   style={{
                     boxShadow:
                       "0 0 30px rgba(102,252,241,0.4), 0 0 60px rgba(102,252,241,0.15)",
@@ -469,7 +469,7 @@ export const WelcomeScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPhase("ROSTER_VIEW")}
-                  className="group mt-3 w-full flex items-center justify-between px-6 py-3.5 border border-white/15 text-white/60 hover:text-white hover:border-white/30 text-xs font-mono tracking-[0.3em] transition-all"
+                  className="welcome-screen__secondary group mt-3 w-full flex items-center justify-between px-6 py-3.5 border border-white/15 text-white/60 hover:text-white hover:border-white/30 text-xs font-mono tracking-[0.3em] transition-all"
                 >
                   <span className="flex items-center gap-3">
                     <UsersRound size={14} />
@@ -483,7 +483,7 @@ export const WelcomeScreen: React.FC = () => {
             </div>
 
             {/* 面板下方元数据 */}
-            <div className="mt-4 flex items-center justify-between text-[9px] font-mono tracking-widest text-white/25">
+            <div className="welcome-screen__metadata mt-4 flex items-center justify-between text-[9px] font-mono tracking-widest text-white/25">
               <span>◤ ACCESS · 001</span>
               <span
                 className={
@@ -498,7 +498,7 @@ export const WelcomeScreen: React.FC = () => {
         </div>
 
         {/* 底部：极简进度式指示 */}
-        <div className="relative z-10 border-t border-white/5 px-6 md:px-12 lg:px-20 py-4 flex items-center justify-between text-[10px] font-mono tracking-[0.3em] text-white/30">
+        <div className="welcome-screen__footer relative z-10 border-t border-white/5 px-6 md:px-12 lg:px-20 py-4 flex items-center justify-between text-[10px] font-mono tracking-[0.3em] text-white/30">
           <div className="flex items-center gap-4">
             <span className={configReady ? "text-[#66FCF1]" : ""}>
               01 · CONFIG
@@ -609,7 +609,7 @@ const ModeToggle: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className="relative flex flex-col items-start gap-1.5 px-4 py-4 text-left transition-all"
+    className="welcome-screen__mode-toggle relative flex flex-col items-start gap-1.5 px-4 py-4 text-left transition-all"
     style={{
       background: active ? `${accent}15` : "transparent",
       color: active ? accent : "rgba(255,255,255,0.5)",
@@ -637,7 +637,7 @@ const FieldRow: React.FC<{
   label: string;
   children: React.ReactNode;
 }> = ({ icon, label, children }) => (
-  <div className="mb-4">
+  <div className="welcome-screen__field mb-4">
     <div className="flex items-center gap-2 text-[10px] text-white/40 tracking-[0.3em] mb-1 font-mono">
       <span className="text-[#66FCF1]">{icon}</span>
       {label}

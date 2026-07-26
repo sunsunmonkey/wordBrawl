@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UsersRound, Sword } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
@@ -31,6 +31,15 @@ export const RosterScreen: React.FC = () => {
   const selected = selectedId
     ? roster.find((r) => r.rosterId === selectedId)
     : null;
+  const displayRoster = useMemo(
+    () =>
+      [...roster].sort((a, b) => {
+        const aIsGenerating = a.recruitLock?.status === "generating";
+        const bIsGenerating = b.recruitLock?.status === "generating";
+        return Number(bIsGenerating) - Number(aIsGenerating);
+      }),
+    [roster],
+  );
 
   const handleRemoveCharacter = (rosterId: string, name: string) => {
     if (!window.confirm(`确定要将 ${name} 移出麾下吗？`)) return;
@@ -51,7 +60,7 @@ export const RosterScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-6 md:px-10 pt-20 pb-10 relative overflow-hidden grid-bg">
+    <div className="min-h-screen flex flex-col items-center px-6 md:px-10 pt-5 pb-10 relative overflow-hidden grid-bg">
       <ParticleField count={25} colors={[themeColor, "#FFD700"]} />
 
       <motion.div
@@ -62,12 +71,8 @@ export const RosterScreen: React.FC = () => {
       />
 
       {/* 顶部 HUD */}
-      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+      <div className="relative z-20 mb-5 flex w-full max-w-5xl items-center justify-between py-5">
         <div className="flex items-center gap-3">
-          <BackButton
-            onClick={() => setPhase("MODE_SELECT")}
-            color={themeColor}
-          />
           <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
             <div
               className="w-6 h-[1px]"
@@ -81,6 +86,11 @@ export const RosterScreen: React.FC = () => {
           ROSTER ARCHIVE
         </div>
       </div>
+      <BackButton
+        onClick={() => setPhase("MODE_SELECT")}
+        color={themeColor}
+        className="fixed left-6 top-5 z-30"
+      />
 
       <div className="z-10 w-full max-w-5xl">
         <div
@@ -117,7 +127,7 @@ export const RosterScreen: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {roster.map((char) => {
+              {displayRoster.map((char) => {
                 const evolutionLocked = isRosterCharacterEvolutionLocked(char);
                 const recruitLocked = isRosterCharacterRecruitLocked(char);
                 const badges: SpiritCardBadge[] = [];

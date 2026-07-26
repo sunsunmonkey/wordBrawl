@@ -70,6 +70,20 @@ const parseResult = (raw: string): { reply: string } => {
   }
 };
 
+const LEGACY_BATTLE_SYSTEM_MESSAGE = /发起约战|接受了约战|拒绝了约战/;
+
+const canEnterAiContext = (message: unknown): boolean => {
+  const record = asRecord(message);
+  return (
+    record.type !== "battle_report" &&
+    record.excludeFromAiContext !== true &&
+    !(
+      record.type === "system" &&
+      LEGACY_BATTLE_SYSTEM_MESSAGE.test(String(record.content || ""))
+    )
+  );
+};
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(req, res);
 
@@ -127,10 +141,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       archetype: spirit.archetype,
       temperament: spirit.temperament,
       speechStyle: spirit.speechStyle,
+      slogan: spirit.slogan,
       catchphrases: spirit.catchphrases,
-      battleCry: spirit.battleCry,
-      victoryLine: spirit.victoryLine,
-      defeatLine: spirit.defeatLine,
       worldAnchors: spirit.worldAnchors,
     },
     roomContext: {
@@ -139,7 +151,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       spiritsInRoom: roomContext.spiritsInRoom,
     },
     triggerMessage,
-    recentMessages: recentMessages.slice(-20),
+    recentMessages: recentMessages.filter(canEnterAiContext).slice(-20),
   };
 
   const chargedUsage = await consumeUsage(req);
@@ -182,11 +194,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (wantsStream && upstreamResponse.body) {
-      await streamGroupChatUpstream(
-        upstreamResponse,
-        res,
-        chargedUsage,
-      );
+      await streamGroupChatUpstream(upstreamResponse, res, chargedUsage);
       return;
     }
 

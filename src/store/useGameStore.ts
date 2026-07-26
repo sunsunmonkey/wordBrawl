@@ -31,7 +31,7 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
     borderGradient: "linear-gradient(135deg, #9CA3AF, #6B7280)",
     starCount: 1,
     powerMultiplier: 0.85,
-    dropRate: 0.4,
+    dropRate: 0.3,
   },
   R: {
     id: "R",
@@ -44,7 +44,7 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
     borderGradient: "linear-gradient(135deg, #60A5FA, #3B82F6, #2563EB)",
     starCount: 2,
     powerMultiplier: 1.0,
-    dropRate: 0.35,
+    dropRate: 0.32,
   },
   SR: {
     id: "SR",
@@ -58,7 +58,7 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
       "linear-gradient(135deg, #E879F9, #C084FC, #A855F7, #9333EA)",
     starCount: 3,
     powerMultiplier: 1.15,
-    dropRate: 0.17,
+    dropRate: 0.22,
   },
   SSR: {
     id: "SSR",
@@ -72,7 +72,7 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
       "linear-gradient(135deg, #FDE047, #FBBF24, #F59E0B, #D97706)",
     starCount: 4,
     powerMultiplier: 1.35,
-    dropRate: 0.065,
+    dropRate: 0.11,
   },
   UR: {
     id: "UR",
@@ -86,7 +86,7 @@ export const RARITY_CONFIGS: Record<Rarity, RarityConfig> = {
       "linear-gradient(135deg, #66FCF1, #C084FC, #FFD700, #FF6B9D, #FF003C)",
     starCount: 5,
     powerMultiplier: 1.6,
-    dropRate: 0.015,
+    dropRate: 0.05,
   },
 };
 

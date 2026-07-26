@@ -24,6 +24,41 @@ const ULTIMATE_TYPE_IDS = [
   "holy",
 ] as const;
 
+const RARITY_CONFIGS = {
+  N: { label: "普通", dropRate: 0.3 },
+  R: { label: "稀有", dropRate: 0.32 },
+  SR: { label: "超稀有", dropRate: 0.22 },
+  SSR: { label: "史诗", dropRate: 0.11 },
+  UR: { label: "传说", dropRate: 0.05 },
+} as const;
+
+type Rarity = keyof typeof RARITY_CONFIGS;
+
+const MAX_JSON_GENERATION_ATTEMPTS = 3;
+
+const RARITY_GENERATION_GUIDES: Record<Rarity, string> = {
+  N: "普通档。角色应当可用但克制：只保留一个清晰优势，必须有明显短板；不必满足通用高阶数值要求，禁止多项高数值或极限爆发。",
+  R: "稀有档。角色应有一个突出的核心能力和鲜明玩法，但仍要保留可被针对的短板。",
+  SR: "超稀有档。角色应有一到两个强项，并让技能体系产生明确协同；仍必须通过短板维持克制关系。",
+  SSR: "史诗档。角色应具备高强度核心玩法、优秀技能联动和有记忆点的大招，但不能成为无短板的全能角色。",
+  UR: "传说档。角色可以拥有极具统治力的定位、顶级视觉演出和强协同技能组，但必须保留一个可利用的战术弱点。",
+};
+
+const rollRarity = (): Rarity => {
+  const rand = Math.random();
+  let cumulative = 0;
+  const rarities: Rarity[] = ["UR", "SSR", "SR", "R", "N"];
+
+  for (const rarity of rarities) {
+    cumulative += RARITY_CONFIGS[rarity].dropRate;
+    if (rand <= cumulative) return rarity;
+  }
+  return "N";
+};
+
+const buildRarityInstruction = (rarity: Rarity): string =>
+  `本次稀有度已由系统预先抽定为 ${rarity}（${RARITY_CONFIGS[rarity].label}）。此档位不可修改，且优先级高于下方通用数值建议。${RARITY_GENERATION_GUIDES[rarity]} 数值与技能设计必须符合该档位。`;
+
 const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 用户会输入一段角色描述，你需要根据这段描述，为角色生成游戏数值和【丰富多样的技能体系】。
 你的返回必须是合法的、可被 JSON.parse 解析的纯 JSON 对象，绝对不要包含 markdown 代码块、注释或额外文字说明。
@@ -255,63 +290,87 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const chargedUsage = await consumeUsage(req);
+  const rarity = rollRarity();
 
   try {
-    const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: description },
-        ],
-        temperature: 0.95,
-      }),
+    let lastParseError: unknown;
+
+    for (
+      let attempt = 1;
+      attempt <= MAX_JSON_GENERATION_ATTEMPTS;
+      attempt += 1
+    ) {
+      const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: `${systemPrompt}\n\n${buildRarityInstruction(rarity)}`,
+            },
+            { role: "user", content: description },
+          ],
+          temperature: 0.95,
+        }),
+      });
+
+      const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
+      if (!upstreamResponse.ok) {
+        console.error(
+          "AI upstream error",
+          upstreamResponse.status,
+          upstreamPayload?.error || upstreamPayload,
+        );
+        sendJson(res, 502, {
+          error:
+            upstreamPayload?.error?.message ||
+            "大模型接口调用失败，请检查服务端模型配置",
+          usage: chargedUsage,
+        });
+        return;
+      }
+
+      const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
+      if (!rawContent) {
+        sendJson(res, 502, {
+          error: "大模型返回内容为空",
+          usage: chargedUsage,
+        });
+        return;
+      }
+
+      try {
+        const parsed = parseJsonLoose(rawContent);
+
+        sendJson(res, 200, {
+          ok: true,
+          character: normalizeCharacter(parsed),
+          rarity,
+          usage: chargedUsage,
+        });
+        return;
+      } catch (parseError) {
+        lastParseError = parseError;
+        if (attempt < MAX_JSON_GENERATION_ATTEMPTS) {
+          console.warn(
+            `AI 返回 JSON 解析失败，正在重试（${attempt}/${MAX_JSON_GENERATION_ATTEMPTS}）`,
+          );
+        }
+      }
+    }
+
+    sendJson(res, 502, {
+      error:
+        lastParseError instanceof Error
+          ? lastParseError.message
+          : "大模型返回的内容不是合法 JSON",
+      usage: chargedUsage,
     });
-
-    const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
-    if (!upstreamResponse.ok) {
-      console.error(
-        "AI upstream error",
-        upstreamResponse.status,
-        upstreamPayload?.error || upstreamPayload,
-      );
-      sendJson(res, 502, {
-        error:
-          upstreamPayload?.error?.message ||
-          "大模型接口调用失败，请检查服务端模型配置",
-        usage: chargedUsage,
-      });
-      return;
-    }
-
-    const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
-    if (!rawContent) {
-      sendJson(res, 502, { error: "大模型返回内容为空", usage: chargedUsage });
-      return;
-    }
-
-    try {
-      const parsed = parseJsonLoose(rawContent);
-
-      sendJson(res, 200, {
-        ok: true,
-        character: normalizeCharacter(parsed),
-        usage: chargedUsage,
-      });
-    } catch (parseError) {
-      sendJson(res, 502, {
-        error:
-          parseError instanceof Error
-            ? parseError.message
-            : "大模型返回的内容不是合法 JSON",
-        usage: chargedUsage,
-      });
-    }
   } catch (error) {
     console.error("generate-character failed", error);
     sendJson(res, 500, {

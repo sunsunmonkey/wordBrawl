@@ -169,6 +169,78 @@ const getObjectTimestamp = (value: unknown): number => {
   return Number.isFinite(createdAt) ? createdAt : 0;
 };
 
+const hasParticipants = (
+  value: unknown,
+  playerIds: Set<string>,
+  firstKey: string,
+  secondKey: string,
+): boolean => {
+  const record = asRecord(value);
+  const firstId = record[firstKey];
+  const secondId = record[secondKey];
+  return (
+    typeof firstId === "string" &&
+    typeof secondId === "string" &&
+    playerIds.has(firstId) &&
+    playerIds.has(secondId)
+  );
+};
+
+/**
+ * 对战与约战只能在双方仍处于同一房间时存在。
+ * 这一步必须在服务端完成，避免离场与客户端滞后 put 请求竞争时复活旧对局。
+ */
+const invalidateDepartedCompetition = (room: LooseRoom): LooseRoom => {
+  const playerIds = new Set(
+    (room.players ?? [])
+      .map((player) => player.playerId)
+      .filter((playerId): playerId is string => typeof playerId === "string"),
+  );
+  let next = room;
+
+  if (
+    room.activeBattle &&
+    !hasParticipants(
+      room.activeBattle,
+      playerIds,
+      "hostPlayerId",
+      "guestPlayerId",
+    )
+  ) {
+    next = {
+      ...next,
+      activeBattle: null,
+      battleUpdatedAt: Math.max(
+        Date.now(),
+        Number(room.battleUpdatedAt) || 0,
+        getObjectTimestamp(room.activeBattle) + 1,
+      ),
+    };
+  }
+
+  if (
+    room.pendingChallenge &&
+    !hasParticipants(
+      room.pendingChallenge,
+      playerIds,
+      "fromPlayerId",
+      "toPlayerId",
+    )
+  ) {
+    next = {
+      ...next,
+      pendingChallenge: null,
+      challengeUpdatedAt: Math.max(
+        Date.now(),
+        Number(room.challengeUpdatedAt) || 0,
+        getObjectTimestamp(room.pendingChallenge) + 1,
+      ),
+    };
+  }
+
+  return next;
+};
+
 /** 合并 put 上来的房间到既有存储（服务端权威合并） */
 const mergeRoom = (
   existing: LooseRoom,
@@ -188,7 +260,7 @@ const mergeRoom = (
   const incomingBattleNewer = incomingBattleVersion >= existingBattleVersion;
   const incomingChallengeNewer =
     incomingChallengeVersion >= existingChallengeVersion;
-  return {
+  return invalidateDepartedCompetition({
     ...existing,
     ...incoming,
     roomCode: existing.roomCode ?? incoming.roomCode,
@@ -212,7 +284,7 @@ const mergeRoom = (
       incomingChallengeVersion,
     ),
     updatedAt: Math.max(existing.updatedAt ?? 0, incoming.updatedAt ?? 0),
-  };
+  });
 };
 
 const okEvents = (stored: StoredRoom, sinceEvent: number): StoredEvent[] =>
@@ -283,11 +355,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const tombstones = pruneTombstones(existing?.left ?? {});
       const mergedRoom = existing
         ? mergeRoom(existing.room, incoming, tombstones)
-        : {
+        : invalidateDepartedCompetition({
             ...incoming,
             messages: mergeMessages([], incoming.messages ?? []),
             players: mergePlayers([], incoming.players ?? [], tombstones),
-          };
+          });
       const stored: StoredRoom = {
         room: mergedRoom,
         rev: (existing?.rev ?? 0) + 1,
@@ -348,6 +420,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         players: remaining,
         updatedAt: Date.now(),
       };
+      stored.room = invalidateDepartedCompetition(stored.room);
       stored.rev += 1;
       await saveStored(roomCodeRaw, stored);
       sendJson(res, 200, { ok: true, room: stored.room, rev: stored.rev });

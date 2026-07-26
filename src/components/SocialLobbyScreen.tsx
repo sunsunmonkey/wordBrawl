@@ -181,17 +181,22 @@ export const SocialLobbyScreen: React.FC = () => {
       </div>
 
       {/* 顶部 */}
-      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+      <div className="relative z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setPhase("MODE_SELECT")} color="#A78BFA" />
+          <div aria-hidden className="h-11 w-11 shrink-0" />
           <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
             <div className="w-6 h-[1px] bg-[#A78BFA]" />
             <span>SOCIAL · LOBBY</span>
           </div>
         </div>
       </div>
+      <BackButton
+        onClick={() => setPhase("MODE_SELECT")}
+        color="#A78BFA"
+        className="fixed left-6 top-5 z-30"
+      />
 
-      <div className="relative z-10 px-6 md:px-10 lg:px-16 pt-20 pb-12 max-w-[1280px] mx-auto">
+      <div className="relative z-10 px-6 md:px-10 lg:px-16 pt-6 pb-12 max-w-[1280px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

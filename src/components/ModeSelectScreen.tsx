@@ -188,18 +188,20 @@ export const ModeSelectScreen: React.FC = () => {
   const setOpenSpiritRosterId = useSpiritChatStore((s) => s.setOpenRosterId);
   const resetTowerPending = useTowerStore((s) => s.resetPending);
   const rosterCount = roster.length;
-  const lead = roster[0] ?? null;
+  const firstNonGeneratingRoster =
+    roster.find((char) => char.recruitLock?.status !== "generating") ?? null;
   const rosterPreview = roster.slice(0, 24);
   const hiddenRosterCount = Math.max(0, rosterCount - rosterPreview.length);
   const [selectedRosterId, setSelectedRosterId] = useState<string | null>(
-    lead?.rosterId ?? null,
+    firstNonGeneratingRoster?.rosterId ?? null,
   );
   const [regeneratingRosterId, setRegeneratingRosterId] = useState<
     string | null
   >(null);
   const [regenerateError, setRegenerateError] = useState("");
   const selectedRoster =
-    roster.find((char) => char.rosterId === selectedRosterId) ?? lead;
+    roster.find((char) => char.rosterId === selectedRosterId) ??
+    firstNonGeneratingRoster;
   const selectedFallbackForm = getLatestFallbackEvolutionForm(selectedRoster);
   const debugNextStage = getNextDebugEvolutionStage(selectedRoster);
   const selectedEvolutionLocked =
@@ -218,6 +220,13 @@ export const ModeSelectScreen: React.FC = () => {
     model,
     apiMode,
   };
+
+  useEffect(() => {
+    const selected = roster.find((char) => char.rosterId === selectedRosterId);
+    if (!selected || selected.recruitLock?.status === "generating") {
+      setSelectedRosterId(firstNonGeneratingRoster?.rosterId ?? null);
+    }
+  }, [firstNonGeneratingRoster, roster, selectedRosterId]);
 
   // 召唤词灵：内嵌输入框
   const [summonInput, setSummonInput] = useState("");
@@ -543,9 +552,9 @@ export const ModeSelectScreen: React.FC = () => {
       </div>
 
       {/* 顶部 HUD */}
-      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+      <div className="relative z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <div className="flex items-center gap-3">
-          <BackButton onClick={() => setPhase("WELCOME")} color="#66FCF1" />
+          <div aria-hidden className="h-11 w-11 shrink-0" />
           <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
             <div className="w-6 h-[1px] bg-[#66FCF1]" />
             <span>WORD-SPIRIT / 002</span>
@@ -566,6 +575,11 @@ export const ModeSelectScreen: React.FC = () => {
           />
         </div>
       </div>
+      <BackButton
+        onClick={() => setPhase("WELCOME")}
+        color="#66FCF1"
+        className="fixed left-6 top-5 z-30"
+      />
 
       {/* 主内容 */}
       <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-16 pb-16 max-w-[1400px] mx-auto">
@@ -974,7 +988,7 @@ export const ModeSelectScreen: React.FC = () => {
                 </div>
               </div>
 
-              {lead ? (
+              {roster.length > 0 ? (
                 <div className="flex flex-1 flex-col gap-4">
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
                     {rosterPreview.map((char) => {

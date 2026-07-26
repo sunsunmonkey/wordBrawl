@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CharacterData, Skill } from "./useGameStore";
+import { RARITY_CONFIGS, type CharacterData, type Skill } from "./useGameStore";
 import { presetCharacters } from "../data/presetCharacters";
 
 /** 进化阶段：0 初始 / 1-6 为每 5 级一次的形态状态 */
@@ -329,6 +329,47 @@ const supplementDefaultRoster = (
   return [...roster, ...missingStarters.slice(0, room)];
 };
 
+const normalizeStarterRarity = (char: RosterCharacter): RosterCharacter => {
+  const isDefaultStarter =
+    char.rosterId.startsWith("starter-") &&
+    DEFAULT_ROSTER_NAMES.includes(char.name);
+  const previousRarity = char.rarity;
+
+  if (!isDefaultStarter || previousRarity === "N") return char;
+
+  const previousMultiplier = previousRarity
+    ? RARITY_CONFIGS[previousRarity].powerMultiplier
+    : 1;
+  const normalMultiplier = RARITY_CONFIGS.N.powerMultiplier;
+  const statRatio = normalMultiplier / previousMultiplier;
+  const skillRatio =
+    (0.85 + normalMultiplier * 0.18) / (0.85 + previousMultiplier * 0.18);
+
+  return {
+    ...char,
+    hp: Math.round(char.hp * statRatio),
+    maxHp: Math.round(char.maxHp * statRatio),
+    attack: Math.round(char.attack * statRatio),
+    defense: Math.round(char.defense * statRatio),
+    speed: Math.round(char.speed * statRatio),
+    skills: char.skills.map((skill) =>
+      skill.type === "heal" || skill.type === "buff" || skill.type === "debuff"
+        ? skill
+        : { ...skill, damageMultiplier: skill.damageMultiplier * skillRatio },
+    ),
+    rarity: "N",
+  };
+};
+
+const restoreRoster = (roster: unknown[]): RosterCharacter[] =>
+  supplementDefaultRoster(
+    roster
+      .map((entry) =>
+        ensureGrowthFields(entry as Partial<RosterCharacter> & CharacterData),
+      )
+      .map(normalizeStarterRarity),
+  );
+
 export interface PendingRevealEntry {
   rosterId: string;
   character: RosterCharacter;
@@ -579,10 +620,10 @@ export const useRosterStore = create<RosterStore>()(
     }),
     {
       name: "word-brawl-roster",
-      version: 5,
+      version: 6,
       // 不持久化 reveal 队列，刷新页面后不重播动画
       partialize: (state) => ({ roster: state.roster }),
-      migrate: (persistedState: unknown, version: number) => {
+      migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== "object") {
           return { roster: createDefaultRoster(), pendingRevealQueue: [] } as {
             roster: RosterCharacter[];
@@ -602,28 +643,8 @@ export const useRosterStore = create<RosterStore>()(
             pendingRevealQueue: PendingRevealEntry[];
           };
         }
-        if (version < 5) {
-          const roster = state.roster.map((entry) =>
-            ensureGrowthFields(
-              entry as Partial<RosterCharacter> & CharacterData,
-            ),
-          );
-          return {
-            roster: supplementDefaultRoster(roster),
-            pendingRevealQueue: [],
-          } as {
-            roster: RosterCharacter[];
-            pendingRevealQueue: PendingRevealEntry[];
-          };
-        }
         return {
-          roster: supplementDefaultRoster(
-            state.roster.map((entry) =>
-              ensureGrowthFields(
-                entry as Partial<RosterCharacter> & CharacterData,
-              ),
-            ),
-          ),
+          roster: restoreRoster(state.roster),
           pendingRevealQueue: [],
         } as {
           roster: RosterCharacter[];

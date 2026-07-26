@@ -76,7 +76,7 @@ export const SpiritStoryScreen: React.FC = () => {
   const recruitingRoster = roster.filter((char) =>
     isRosterCharacterRecruitLocked(char),
   );
-  const displayRoster = [...availableRoster, ...recruitingRoster];
+  const displayRoster = [...recruitingRoster, ...availableRoster];
 
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
