@@ -11,8 +11,17 @@
 
   body {
     @apply bg-[#0B0C10] text-[#C5C6C7] antialiased selection:bg-[#66FCF1] selection:text-[#0B0C10];
+    /* 字体栈优先级：英文显示字体 → 中文统一基准(Noto Sans SC) → macOS 原生(PingFang SC) → Windows 原生 UI 字体 → 兜底 */
     font-family:
-      "Rajdhani", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      "Rajdhani", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI",
+      "Microsoft YaHei", system-ui, sans-serif;
+    /* 渲染优化：字距 kerning + 连字 ligatures + 平滑路径 */
+    text-rendering: optimizeLegibility;
+    font-feature-settings:
+      "kern" 1,
+      "liga" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     background-color: #05060a;
     background-image:
       radial-gradient(
@@ -33,9 +42,40 @@
       linear-gradient(180deg, #0b0c10 0%, #05060a 100%);
     background-attachment: fixed;
   }
+
+  /* === 平台特定补偿 ===
+     macOS CoreText 与 Windows DirectWrite 渲染引擎差异：
+     - Windows 上中文字符间距偏挤、字重偏轻
+     - Windows 上 text-shadow 的 blur 看起来偏糊、光晕偏散
+     以下规则仅在 Windows 上生效，弥补上述差异使两平台视觉接近
+  */
+  html[data-os="windows"] body {
+    letter-spacing: 0.01em;
+  }
+
+  html[data-os="windows"] .font-display {
+    font-weight: 700;
+  }
 }
 
 @layer utilities {
+  /* Windows 下的光晕补偿：减弱 blur 避免发糊 */
+  html[data-os="windows"] .text-glow-cyan {
+    text-shadow:
+      0 0 4px #66fcf1,
+      0 0 12px rgba(102, 252, 241, 0.45);
+  }
+
+  html[data-os="windows"] .text-glow-pink {
+    text-shadow:
+      0 0 4px #ff003c,
+      0 0 12px rgba(255, 0, 60, 0.45);
+  }
+
+  html[data-os="windows"] .title-shimmer {
+    filter: drop-shadow(0 0 10px rgba(102, 252, 241, 0.4));
+  }
+
   .glitch-hover:hover {
     animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both
       infinite;

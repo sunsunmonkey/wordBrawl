@@ -9,8 +9,9 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ['Orbitron', 'Rajdhani', 'sans-serif'],
+        display: ['Orbitron', 'Rajdhani', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        sans: ['Rajdhani', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
       },
     },
   },
