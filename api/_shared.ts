@@ -355,6 +355,38 @@ export const extractPartialStringField = (
   return unescapeJsonString(match[1]);
 };
 
+export const extractPartialStringFieldWithStatus = (
+  raw: string,
+  fieldName: string,
+): { value: string; isComplete: boolean } => {
+  const re = new RegExp(`"${escapeFieldName(fieldName)}"\\s*:\\s*"`);
+  const match = raw.match(re);
+  if (!match || match.index === undefined) {
+    return { value: "", isComplete: false };
+  }
+
+  const start = match.index + match[0].length;
+  let index = start;
+  while (index < raw.length) {
+    if (raw[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (raw[index] === '"') {
+      return {
+        value: unescapeJsonString(raw.slice(start, index)),
+        isComplete: true,
+      };
+    }
+    index++;
+  }
+
+  return {
+    value: unescapeJsonString(raw.slice(start)),
+    isComplete: false,
+  };
+};
+
 /**
  * 从尚未结束的 JSON 文本中尽力抽取某个数组字段里已经写出的对象。
  */
@@ -425,6 +457,50 @@ export const extractPartialArrayObjects = <T>(
 export const looksLikeJsonStart = (raw: string): boolean => {
   const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "");
   return trimmed.startsWith("{");
+};
+
+export const looksLikeStructuredAiOutput = (raw: string): boolean => {
+  const trimmed = raw.trim();
+  const unfenced = trimmed.replace(/^```(?:json)?\s*/i, "");
+  return (
+    /^```(?:json)?/i.test(trimmed) ||
+    /^[{[]/.test(unfenced) ||
+    /[{[]\s*(?:"|$)/.test(unfenced) ||
+    /"(?:reply|turns|participantStates|storySummary|mood|bond)"\s*:/i.test(
+      unfenced,
+    ) ||
+    /\bjson\b\s*[:：]/i.test(trimmed)
+  );
+};
+
+export const getSafeAiField = (
+  raw: string,
+  fieldName: string,
+  fallback: string,
+  maxLength: number,
+): string => {
+  const fieldValue = extractPartialStringField(raw, fieldName).trim();
+  if (fieldValue && !looksLikeStructuredAiOutput(fieldValue)) {
+    return fieldValue.slice(0, maxLength);
+  }
+
+  const text = raw
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*/i, "")
+    .slice(0, maxLength);
+  return looksLikeStructuredAiOutput(text) ? fallback : text || fallback;
+};
+
+export const getSafeAiStreamField = (
+  raw: string,
+  fieldName: string,
+  maxLength: number,
+): string => {
+  const fieldValue = extractPartialStringField(raw, fieldName).trim();
+  if (fieldValue && !looksLikeStructuredAiOutput(fieldValue)) {
+    return fieldValue.slice(0, maxLength);
+  }
+  return looksLikeStructuredAiOutput(raw) ? "" : raw.trim().slice(0, maxLength);
 };
 
 export const getAiCredentials = () => {

@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpen,
@@ -28,22 +34,18 @@ import {
   type SpiritChatMessage,
 } from "../store/useSpiritChatStore";
 import { useTowerStore } from "../store/useTowerStore";
-import { requestSpiritChat } from "../utils/spiritChat";
+import {
+  requestSpiritChat,
+  requestSpiritChatMemory,
+  requestSpiritChatSuggestions,
+  shouldRefreshChatMemory,
+} from "../utils/spiritChat";
 import { LOADING_STEPS } from "./loadingSteps";
 import {
   applyTrainingXp,
   evolutionLabel,
   levelAscensionLabel,
 } from "../utils/towerProgress";
-
-const QUICK_PROMPTS = [
-  "我今天有点累，陪我聊会儿。",
-  "随便问你一个问题：你平时会做梦吗？",
-  "如果不战斗，你最想去哪里？",
-  "给我讲讲你现在在想什么。",
-  "刚才那场战斗，你最在意哪一刻？",
-  "你希望下一次怎么变强？",
-];
 
 const formatTime = (ts: number) => {
   const d = new Date(ts);
@@ -57,11 +59,46 @@ const moodColor = (bond: number) => {
   return "#C5C6C7";
 };
 
+const getInitialSuggestedReplies = (
+  name: string,
+  temperament?: string,
+  worldAnchor?: string,
+  slogan?: string,
+): string[] => {
+  const candidates = [
+    `我想先听你讲讲自己，${name}。`,
+    `第一次见面，你想让我怎么称呼你？`,
+    `你现在最想带我去看哪里？`,
+    `我想知道，你平时不战斗时都在做什么？`,
+    `如果只能讲一段往事，你会选哪一段？`,
+    `你身上最不想被人误解的地方是什么？`,
+    `和我结契之后，你最期待发生什么？`,
+    `我有点好奇，你会怎么评价现在的我？`,
+    temperament ? `以你${temperament}的性子，最在意什么？` : "",
+    worldAnchor ? `我想听你讲讲${worldAnchor}。` : "",
+    slogan ? `你说“${slogan}”时，心里在想什么？` : "",
+  ].filter(Boolean);
+
+  const uniqueCandidates = [...new Set(candidates)];
+  for (let index = uniqueCandidates.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [uniqueCandidates[index], uniqueCandidates[randomIndex]] = [
+      uniqueCandidates[randomIndex],
+      uniqueCandidates[index],
+    ];
+  }
+  return uniqueCandidates.slice(0, 3);
+};
+
+const SUGGESTION_IDLE_DELAY_MS = 1800;
+const MEMORY_IDLE_DELAY_MS = 5000;
+
 interface SpiritChatUiState {
   input: string;
   error: string;
   isSending: boolean;
   streamingReply: string;
+  streamingMessageId: string;
   replyStreamDone: boolean;
   isFinalizingMeta: boolean;
 }
@@ -71,6 +108,7 @@ const EMPTY_CHAT_UI_STATE: SpiritChatUiState = {
   error: "",
   isSending: false,
   streamingReply: "",
+  streamingMessageId: "",
   replyStreamDone: false,
   isFinalizingMeta: false,
 };
@@ -113,8 +151,18 @@ export const SpiritChatScreen: React.FC = () => {
   const stickToBottomRef = useRef(true);
   const pendingChunkByRosterIdRef = useRef<Record<string, string>>({});
   const rafHandleByRosterIdRef = useRef<Record<string, number>>({});
-  const spiritMessageIdByRosterIdRef = useRef<Record<string, string>>({});
   const activeRequestRosterIdsRef = useRef(new Set<string>());
+  const latestRequestIdByRosterIdRef = useRef<Record<string, string>>({});
+  const abortControllerByRosterIdRef = useRef<Record<string, AbortController>>(
+    {},
+  );
+  const memoryRequestRosterIdsRef = useRef(new Set<string>());
+  const suggestionRequestRosterIdsRef = useRef(new Set<string>());
+  const suggestedForMessageIdByRosterIdRef = useRef<Record<string, string>>({});
+  const draftInputByRosterIdRef = useRef<Record<string, string>>({});
+  const initialSuggestedRepliesByRosterIdRef = useRef<Record<string, string[]>>(
+    {},
+  );
 
   const updateChatUi = (
     rosterId: string,
@@ -155,6 +203,7 @@ export const SpiritChatScreen: React.FC = () => {
     error,
     isSending,
     streamingReply,
+    streamingMessageId,
     replyStreamDone,
     isFinalizingMeta,
   } = chatUi;
@@ -163,8 +212,153 @@ export const SpiritChatScreen: React.FC = () => {
     () => ({ apiKey, baseUrl, model, apiMode }),
     [apiKey, baseUrl, model, apiMode],
   );
+  const latestChatMessageId = chat?.messages.at(-1)?.id;
+  const canGenerateSuggestions =
+    apiMode === "free" || Boolean(apiKey && baseUrl && model);
 
   useEffect(() => {
+    if (
+      !selected ||
+      !chat ||
+      !latestChatMessageId ||
+      isSending ||
+      input.trim() ||
+      !canGenerateSuggestions
+    ) {
+      return;
+    }
+
+    const rosterId = selected.rosterId;
+    if (
+      suggestionRequestRosterIdsRef.current.has(rosterId) ||
+      suggestedForMessageIdByRosterIdRef.current[rosterId] ===
+        latestChatMessageId
+    ) {
+      return;
+    }
+
+    const sourceMessageId = latestChatMessageId;
+    const timeoutId = window.setTimeout(() => {
+      if (
+        draftInputByRosterIdRef.current[rosterId]?.trim() ||
+        activeRequestRosterIdsRef.current.has(rosterId)
+      ) {
+        return;
+      }
+
+      const currentChat = useSpiritChatStore
+        .getState()
+        .getOrCreateChat(rosterId);
+      if (currentChat.messages.at(-1)?.id !== sourceMessageId) return;
+
+      suggestedForMessageIdByRosterIdRef.current[rosterId] = sourceMessageId;
+      suggestionRequestRosterIdsRef.current.add(rosterId);
+      void requestSpiritChatSuggestions(cfg, selected, currentChat)
+        .then((nextSuggestions) => {
+          const latestChat = useSpiritChatStore.getState().chats[rosterId];
+          if (
+            nextSuggestions.length === 0 ||
+            latestChat?.messages.at(-1)?.id !== sourceMessageId ||
+            draftInputByRosterIdRef.current[rosterId]?.trim()
+          ) {
+            return;
+          }
+          updateSpiritMeta(rosterId, { suggestedReplies: nextSuggestions });
+        })
+        .catch(() => {
+          // 建议仅是辅助，不对用户输入或主对话显示错误。
+        })
+        .finally(() => {
+          suggestionRequestRosterIdsRef.current.delete(rosterId);
+        });
+    }, SUGGESTION_IDLE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    apiKey,
+    apiMode,
+    baseUrl,
+    canGenerateSuggestions,
+    cfg,
+    chat,
+    input,
+    isSending,
+    latestChatMessageId,
+    model,
+    selected,
+    updateSpiritMeta,
+  ]);
+
+  useEffect(() => {
+    if (
+      !selected ||
+      !chat ||
+      !latestChatMessageId ||
+      isSending ||
+      input.trim() ||
+      !canGenerateSuggestions ||
+      !shouldRefreshChatMemory(chat)
+    ) {
+      return;
+    }
+
+    const rosterId = selected.rosterId;
+    if (memoryRequestRosterIdsRef.current.has(rosterId)) return;
+
+    const checkpointMessageId = latestChatMessageId;
+    const timeoutId = window.setTimeout(() => {
+      if (
+        draftInputByRosterIdRef.current[rosterId]?.trim() ||
+        activeRequestRosterIdsRef.current.has(rosterId)
+      ) {
+        return;
+      }
+
+      const snapshot = useSpiritChatStore.getState().getOrCreateChat(rosterId);
+      if (
+        snapshot.messages.at(-1)?.id !== checkpointMessageId ||
+        !shouldRefreshChatMemory(snapshot)
+      ) {
+        return;
+      }
+
+      memoryRequestRosterIdsRef.current.add(rosterId);
+      void requestSpiritChatMemory(cfg, selected, snapshot)
+        .then((memory) => {
+          const current = useSpiritChatStore.getState().chats[rosterId];
+          if (
+            !current?.messages.some(
+              (message) => message.id === checkpointMessageId,
+            )
+          ) {
+            return;
+          }
+          updateSpiritMeta(rosterId, {
+            ...memory,
+            memorySummaryMessageId: checkpointMessageId,
+          });
+        })
+        .catch(() => {
+          // 记忆归档不应影响即时聊天；下次空闲时会再次尝试。
+        })
+        .finally(() => {
+          memoryRequestRosterIdsRef.current.delete(rosterId);
+        });
+    }, MEMORY_IDLE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    canGenerateSuggestions,
+    cfg,
+    chat,
+    input,
+    isSending,
+    latestChatMessageId,
+    selected,
+    updateSpiritMeta,
+  ]);
+
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (!stickToBottomRef.current) return;
@@ -187,14 +381,59 @@ export const SpiritChatScreen: React.FC = () => {
     delete pendingChunkByRosterIdRef.current[rosterId];
   };
 
-  const scheduleStreamingChunk = (rosterId: string, partial: string) => {
+  const cancelSpiritRequest = (rosterId: string) => {
+    abortControllerByRosterIdRef.current[rosterId]?.abort();
+    delete abortControllerByRosterIdRef.current[rosterId];
+    delete latestRequestIdByRosterIdRef.current[rosterId];
+    activeRequestRosterIdsRef.current.delete(rosterId);
+    clearPendingStreamingChunk(rosterId);
+    updateChatUi(rosterId, {
+      isSending: false,
+      streamingReply: "",
+      streamingMessageId: "",
+      replyStreamDone: false,
+      isFinalizingMeta: false,
+    });
+  };
+
+  useEffect(() => {
+    const activeRosterId = selected?.rosterId;
+    const abortControllers = abortControllerByRosterIdRef.current;
+    const latestRequestIds = latestRequestIdByRosterIdRef.current;
+    const activeRequests = activeRequestRosterIdsRef.current;
+    const animationHandles = rafHandleByRosterIdRef.current;
+    const pendingChunks = pendingChunkByRosterIdRef.current;
+    return () => {
+      if (!activeRosterId) return;
+      abortControllers[activeRosterId]?.abort();
+      delete abortControllers[activeRosterId];
+      delete latestRequestIds[activeRosterId];
+      activeRequests.delete(activeRosterId);
+      const handle = animationHandles[activeRosterId];
+      if (handle !== undefined) {
+        cancelAnimationFrame(handle);
+        delete animationHandles[activeRosterId];
+      }
+      delete pendingChunks[activeRosterId];
+    };
+  }, [selected?.rosterId]);
+
+  const scheduleStreamingChunk = (
+    rosterId: string,
+    requestId: string,
+    partial: string,
+  ) => {
+    if (latestRequestIdByRosterIdRef.current[rosterId] !== requestId) return;
     pendingChunkByRosterIdRef.current[rosterId] = partial;
     if (rafHandleByRosterIdRef.current[rosterId] !== undefined) return;
     rafHandleByRosterIdRef.current[rosterId] = requestAnimationFrame(() => {
       delete rafHandleByRosterIdRef.current[rosterId];
       const next = pendingChunkByRosterIdRef.current[rosterId];
       delete pendingChunkByRosterIdRef.current[rosterId];
-      if (next !== undefined) {
+      if (
+        next !== undefined &&
+        latestRequestIdByRosterIdRef.current[rosterId] === requestId
+      ) {
         updateChatUi(rosterId, { streamingReply: next });
       }
     });
@@ -226,6 +465,20 @@ export const SpiritChatScreen: React.FC = () => {
     lastRosterId === selected.rosterId && Boolean(lastSummary);
   const spirit = selected.spiritProfile;
   const bondRatio = Math.min(100, Math.max(0, chat.bond));
+  const isInitialChat = chat.messages.length === 0;
+  const initialSuggestedReplies =
+    initialSuggestedRepliesByRosterIdRef.current[selected.rosterId] ??
+    (initialSuggestedRepliesByRosterIdRef.current[selected.rosterId] =
+      getInitialSuggestedReplies(
+        selected.name,
+        spirit?.temperament,
+        spirit?.worldAnchors[0],
+        spirit?.slogan,
+      ));
+  const suggestedReplies =
+    chat.suggestedReplies.length > 0
+      ? chat.suggestedReplies
+      : initialSuggestedReplies;
 
   const sendMessage = async (content: string) => {
     const text = content.trim();
@@ -241,16 +494,30 @@ export const SpiritChatScreen: React.FC = () => {
     }
 
     activeRequestRosterIdsRef.current.add(targetRosterId);
+    const abortController = new AbortController();
+    abortControllerByRosterIdRef.current[targetRosterId]?.abort();
+    abortControllerByRosterIdRef.current[targetRosterId] = abortController;
+    const streamingMessageId = `spirit-stream-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 9)}`;
+    latestRequestIdByRosterIdRef.current[targetRosterId] = streamingMessageId;
+    const isLatestRequest = () =>
+      latestRequestIdByRosterIdRef.current[targetRosterId] ===
+        streamingMessageId &&
+      abortControllerByRosterIdRef.current[targetRosterId] === abortController;
+    let spiritMessageId = streamingMessageId;
+    let replyCommitted = false;
     updateChatUi(targetRosterId, {
       error: "",
       input: "",
       isSending: true,
       streamingReply: "",
+      streamingMessageId,
       replyStreamDone: false,
       isFinalizingMeta: false,
     });
+    draftInputByRosterIdRef.current[targetRosterId] = "";
     clearPendingStreamingChunk(targetRosterId);
-    delete spiritMessageIdByRosterIdRef.current[targetRosterId];
     stickToBottomRef.current = true;
     const userMessage = appendMessage(targetRosterId, {
       role: "player",
@@ -269,57 +536,64 @@ export const SpiritChatScreen: React.FC = () => {
         {
           scene: isRecentBattle ? "postBattle" : "idle",
           recentBattle: isRecentBattle ? lastSummary : null,
+          signal: abortController.signal,
         },
         {
           onReplyChunk: (partial) => {
-            scheduleStreamingChunk(targetRosterId, partial);
+            scheduleStreamingChunk(targetRosterId, streamingMessageId, partial);
           },
           onReplyComplete: (finalReply) => {
+            if (replyCommitted || !isLatestRequest()) return;
+            replyCommitted = true;
             clearPendingStreamingChunk(targetRosterId);
-            // reply 一到收尾就把消息落进 store，同时清 streaming。
-            // 由于最后一条 spirit 消息与 streaming 气泡内容一致、位置一致，
-            // 用户不会看到闪。metadata 等整个 JSON 结束后再补写。
             const appended = applySpiritReply(
               targetRosterId,
               {
+                id: streamingMessageId,
                 role: "spirit",
                 content: finalReply,
               },
               {},
             );
-            spiritMessageIdByRosterIdRef.current[targetRosterId] = appended.id;
+            spiritMessageId = appended.id;
             updateChatUi(targetRosterId, {
               streamingReply: "",
+              streamingMessageId: "",
               replyStreamDone: false,
               isFinalizingMeta: true,
             });
           },
         },
       );
+      if (!isLatestRequest()) return;
       clearPendingStreamingChunk(targetRosterId);
 
-      // metadata 补写；若因为 stream 未触发 onReplyComplete（例如非流式回退），
-      // 再兜底 append 一次消息。
-      const spiritMessageId =
-        spiritMessageIdByRosterIdRef.current[targetRosterId];
-      if (spiritMessageId) {
+      const hasStoredSpiritMessage = Boolean(
+        spiritMessageId &&
+        useSpiritChatStore
+          .getState()
+          .chats[
+            targetRosterId
+          ]?.messages.some((message) => message.id === spiritMessageId),
+      );
+      if (spiritMessageId && hasStoredSpiritMessage) {
         updateSpiritMessage(targetRosterId, spiritMessageId, {
           content: result.reply,
           xpGranted: result.xpGranted,
         });
-        updateSpiritMeta(targetRosterId, {
-          mood: result.mood,
-          bond: result.bond,
-          memorySummary: result.memorySummary,
-          playerFacts: result.playerFacts,
-          promises: result.promises,
-          lastSuggestedAction: result.lastSuggestedAction,
-          triggerEvent: result.triggerEvent,
-        });
+        if (isLatestRequest()) {
+          updateSpiritMeta(targetRosterId, {
+            mood: result.mood,
+            bond: result.bond,
+            lastSuggestedAction: result.lastSuggestedAction,
+            triggerEvent: result.triggerEvent,
+          });
+        }
       } else {
         applySpiritReply(
           targetRosterId,
           {
+            id: streamingMessageId,
             role: "spirit",
             content: result.reply,
             xpGranted: result.xpGranted,
@@ -327,9 +601,6 @@ export const SpiritChatScreen: React.FC = () => {
           {
             mood: result.mood,
             bond: result.bond,
-            memorySummary: result.memorySummary,
-            playerFacts: result.playerFacts,
-            promises: result.promises,
             lastSuggestedAction: result.lastSuggestedAction,
             triggerEvent: result.triggerEvent,
           },
@@ -337,10 +608,11 @@ export const SpiritChatScreen: React.FC = () => {
       }
       updateChatUi(targetRosterId, {
         streamingReply: "",
+        streamingMessageId: "",
+        isSending: false,
         replyStreamDone: false,
         isFinalizingMeta: false,
       });
-      delete spiritMessageIdByRosterIdRef.current[targetRosterId];
 
       if (result.xpGranted && result.xpGranted > 0) {
         updateCharacter(
@@ -349,17 +621,26 @@ export const SpiritChatScreen: React.FC = () => {
         );
       }
     } catch (err) {
+      if (abortController.signal.aborted) return;
+      if (!isLatestRequest()) return;
       clearPendingStreamingChunk(targetRosterId);
-      delete spiritMessageIdByRosterIdRef.current[targetRosterId];
       updateChatUi(targetRosterId, {
         streamingReply: "",
+        streamingMessageId: "",
+        isSending: false,
         replyStreamDone: false,
         isFinalizingMeta: false,
-        error: err instanceof Error ? err.message : "词灵暂时没有回应。",
+        error: replyCommitted
+          ? ""
+          : err instanceof Error
+            ? err.message
+            : "词灵暂时没有回应。",
       });
     } finally {
-      activeRequestRosterIdsRef.current.delete(targetRosterId);
-      updateChatUi(targetRosterId, { isSending: false });
+      if (isLatestRequest()) {
+        activeRequestRosterIdsRef.current.delete(targetRosterId);
+        delete abortControllerByRosterIdRef.current[targetRosterId];
+      }
     }
   };
 
@@ -641,6 +922,9 @@ export const SpiritChatScreen: React.FC = () => {
                     key={char.rosterId}
                     type="button"
                     onClick={() => {
+                      if (char.rosterId !== selected.rosterId) {
+                        cancelSpiritRequest(selected.rosterId);
+                      }
                       stickToBottomRef.current = true;
                       setOpenRosterId(char.rosterId);
                     }}
@@ -727,6 +1011,9 @@ export const SpiritChatScreen: React.FC = () => {
                 onClick={() => {
                   if (window.confirm(`清空 ${selected.name} 的聊天记忆吗？`)) {
                     clearChat(selected.rosterId);
+                    delete initialSuggestedRepliesByRosterIdRef.current[
+                      selected.rosterId
+                    ];
                     updateChatUi(selected.rosterId, {
                       input: "",
                       error: "",
@@ -744,6 +1031,7 @@ export const SpiritChatScreen: React.FC = () => {
             </div>
 
             <div
+              key={selected.rosterId}
               ref={scrollRef}
               onScroll={handleScroll}
               className="relative z-10 flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#45A29E]/30"
@@ -770,91 +1058,87 @@ export const SpiritChatScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-5">
-                  <AnimatePresence initial={false}>
-                    {chat.messages.map((message, idx) => {
-                      // 若正在流式，最后一条 spirit 消息由 streaming 气泡代为呈现，
-                      // 避免"流完瞬间"两个气泡同时存在导致的淡入淡出闪烁。
-                      const isLast = idx === chat.messages.length - 1;
-                      if (
-                        isLast &&
-                        streamingReply &&
-                        message.role === "spirit"
-                      ) {
-                        return null;
-                      }
-                      return (
-                        <ChatBubble
-                          key={message.id}
-                          message={message}
-                          themeColor={themeColor}
-                          avatar={selected.imageUrl}
-                          name={selected.name}
-                        />
-                      );
-                    })}
-
-                    {chat.triggerEvent && !isSending && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        className="my-4 flex flex-col items-center justify-center p-4 rounded-xl border-2 bg-[#1F2833]/60 backdrop-blur-md"
-                        style={{
-                          borderColor:
-                            chat.triggerEvent.type === "TOWER_CHALLENGE"
-                              ? "#FFD700"
-                              : "#FF003C",
-                          boxShadow: `0 0 24px ${chat.triggerEvent.type === "TOWER_CHALLENGE" ? "rgba(255,215,0,0.15)" : "rgba(255,0,60,0.15)"}`,
-                        }}
-                      >
-                        <div className="mb-2 text-xs font-black tracking-widest text-[#C5C6C7]">
-                          {chat.triggerEvent.type === "TOWER_CHALLENGE"
-                            ? "🔥 九层塔挑战邀请"
-                            : "⚔️ 切磋对战邀请"}
-                        </div>
-                        <div className="mb-4 text-[11px] text-[#8a8d91] italic">
-                          “{chat.triggerEvent.description}”
-                        </div>
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (
-                                chat.triggerEvent?.type === "TOWER_CHALLENGE"
-                              ) {
-                                setTowerRosterId(selected.rosterId);
-                                setTowerLayer(
-                                  chat.triggerEvent.layer ||
-                                    selected.tower.nextLayer ||
-                                    1,
-                                );
-                                setBattleMode("pve_tower");
-                                setPhase("TOWER_HUB");
-                              } else {
-                                setBattleMode("pvp");
-                                setPhase("PLAYER1_CREATE");
-                              }
-                            }}
-                            className="flex items-center gap-2 rounded px-6 py-2 text-xs font-black tracking-widest transition-all hover:scale-105"
-                            style={{
-                              backgroundColor:
-                                chat.triggerEvent.type === "TOWER_CHALLENGE"
-                                  ? "#FFD700"
-                                  : "#FF003C",
-                              color: "#0B0C10",
-                            }}
-                          >
-                            <Swords size={14} />
-                            接受挑战
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {isSending && streamingReply && (
+                  {chat.messages.map((message) => {
+                    const isStreamingMessage =
+                      message.id === streamingMessageId;
+                    return (
                       <ChatBubble
-                        key="streaming"
+                        key={`${selected.rosterId}:${message.id}`}
+                        message={message}
+                        themeColor={themeColor}
+                        avatar={selected.imageUrl}
+                        name={selected.name}
+                        streaming={
+                          isStreamingMessage && Boolean(streamingReply)
+                        }
+                      />
+                    );
+                  })}
+
+                  {chat.triggerEvent && !isSending && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      className="my-4 flex flex-col items-center justify-center p-4 rounded-xl border-2 bg-[#1F2833]/60 backdrop-blur-md"
+                      style={{
+                        borderColor:
+                          chat.triggerEvent.type === "TOWER_CHALLENGE"
+                            ? "#FFD700"
+                            : "#FF003C",
+                        boxShadow: `0 0 24px ${chat.triggerEvent.type === "TOWER_CHALLENGE" ? "rgba(255,215,0,0.15)" : "rgba(255,0,60,0.15)"}`,
+                      }}
+                    >
+                      <div className="mb-2 text-xs font-black tracking-widest text-[#C5C6C7]">
+                        {chat.triggerEvent.type === "TOWER_CHALLENGE"
+                          ? "🔥 九层塔挑战邀请"
+                          : "⚔️ 切磋对战邀请"}
+                      </div>
+                      <div className="mb-4 text-[11px] text-[#8a8d91] italic">
+                        “{chat.triggerEvent.description}”
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (chat.triggerEvent?.type === "TOWER_CHALLENGE") {
+                              setTowerRosterId(selected.rosterId);
+                              setTowerLayer(
+                                chat.triggerEvent.layer ||
+                                  selected.tower.nextLayer ||
+                                  1,
+                              );
+                              setBattleMode("pve_tower");
+                              setPhase("TOWER_HUB");
+                            } else {
+                              setBattleMode("pvp");
+                              setPhase("PLAYER1_CREATE");
+                            }
+                          }}
+                          className="flex items-center gap-2 rounded px-6 py-2 text-xs font-black tracking-widest transition-all hover:scale-105"
+                          style={{
+                            backgroundColor:
+                              chat.triggerEvent.type === "TOWER_CHALLENGE"
+                                ? "#FFD700"
+                                : "#FF003C",
+                            color: "#0B0C10",
+                          }}
+                        >
+                          <Swords size={14} />
+                          接受挑战
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {isSending &&
+                    streamingReply &&
+                    !chat.messages.some(
+                      (message) => message.id === streamingMessageId,
+                    ) && (
+                      <ChatBubble
+                        key={`${selected.rosterId}:${streamingMessageId}`}
                         message={{
-                          id: "streaming",
+                          id: streamingMessageId,
                           role: "spirit",
                           content: streamingReply,
                           createdAt: Date.now(),
@@ -866,23 +1150,20 @@ export const SpiritChatScreen: React.FC = () => {
                       />
                     )}
 
-                    {isSending && !streamingReply && !isFinalizingMeta && (
-                      <motion.div
-                        key="typing"
-                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="flex items-center gap-3 text-[11px] tracking-widest text-[#8a8d91]"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border border-[#8a8d91]/20">
-                          <Loader2 size={14} className="animate-spin" />
-                        </div>
-                        <span className="animate-pulse">
-                          {selected.name} 正在组织语言...
-                        </span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  {isSending && !streamingReply && !isFinalizingMeta && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className="flex items-center gap-3 text-[11px] tracking-widest text-[#8a8d91]"
+                    >
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border border-[#8a8d91]/20">
+                        <Loader2 size={14} className="animate-spin" />
+                      </div>
+                      <span className="animate-pulse">
+                        {selected.name} 正在组织语言...
+                      </span>
+                    </motion.div>
+                  )}
                 </div>
               )}
             </div>
@@ -899,29 +1180,38 @@ export const SpiritChatScreen: React.FC = () => {
                 </motion.div>
               )}
               <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                  {QUICK_PROMPTS.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => void sendMessage(prompt)}
-                      disabled={isSending}
-                      className="shrink-0 rounded-full border border-[#45A29E]/40 bg-[#1F2833]/60 px-4 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-all hover:border-[#66FCF1] hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] disabled:opacity-40 disabled:hover:border-[#45A29E]/40 disabled:hover:bg-[#1F2833]/60 disabled:hover:text-[#8a8d91]"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="flex shrink-0 items-center gap-1 text-[9px] font-black tracking-[0.16em] text-[#45A29E]">
+                    <Sparkles size={11} />
+                    {isInitialChat ? "从这里开始" : "猜你想说"}
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {suggestedReplies.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => void sendMessage(prompt)}
+                        disabled={isSending}
+                        className="shrink-0 rounded-full border border-[#45A29E]/40 bg-[#1F2833]/60 px-4 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-all hover:border-[#66FCF1] hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] disabled:opacity-40 disabled:hover:border-[#45A29E]/40 disabled:hover:bg-[#1F2833]/60 disabled:hover:text-[#8a8d91]"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="relative flex items-center gap-3">
                   <div className="relative flex-1">
                     <textarea
                       value={input}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const nextInput = event.target.value;
+                        draftInputByRosterIdRef.current[selected.rosterId] =
+                          nextInput;
                         updateChatUi(selected.rosterId, {
-                          input: event.target.value,
-                        })
-                      }
+                          input: nextInput,
+                        });
+                      }}
                       disabled={isSending}
                       rows={2}
                       placeholder={

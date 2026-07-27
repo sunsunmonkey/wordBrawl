@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { getSafeAiField } from "../utils/aiResponse";
 
 export type SpiritChatRole = "player" | "spirit";
 
@@ -21,10 +22,12 @@ export interface SpiritChatRecord {
   rosterId: string;
   messages: SpiritChatMessage[];
   memorySummary: string;
+  memorySummaryMessageId?: string;
   mood: string;
   bond: number;
   playerFacts: string[];
   promises: string[];
+  suggestedReplies: string[];
   lastSuggestedAction?: string;
   triggerEvent?: SpiritChatTriggerEvent | null;
   updatedAt: number;
@@ -48,10 +51,12 @@ interface SpiritChatStore {
       Pick<
         SpiritChatRecord,
         | "memorySummary"
+        | "memorySummaryMessageId"
         | "mood"
         | "bond"
         | "playerFacts"
         | "promises"
+        | "suggestedReplies"
         | "lastSuggestedAction"
         | "triggerEvent"
       >
@@ -68,10 +73,12 @@ interface SpiritChatStore {
       Pick<
         SpiritChatRecord,
         | "memorySummary"
+        | "memorySummaryMessageId"
         | "mood"
         | "bond"
         | "playerFacts"
         | "promises"
+        | "suggestedReplies"
         | "lastSuggestedAction"
         | "triggerEvent"
       >
@@ -83,6 +90,8 @@ interface SpiritChatStore {
 const MAX_MESSAGES = 40;
 const MAX_FACTS = 12;
 const MAX_PROMISES = 12;
+const MAX_SUGGESTED_REPLIES = 4;
+const MAX_SUGGESTED_REPLY_LENGTH = 56;
 
 const makeMessageId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -91,10 +100,12 @@ const createDefaultChat = (rosterId: string): SpiritChatRecord => ({
   rosterId,
   messages: [],
   memorySummary: "",
+  memorySummaryMessageId: undefined,
   mood: "初识",
   bond: 0,
   playerFacts: [],
   promises: [],
+  suggestedReplies: [],
   updatedAt: Date.now(),
 });
 
@@ -106,6 +117,34 @@ const normalizeStringList = (value: unknown, max: number): string[] => {
     .slice(0, max);
 };
 
+const normalizeSuggestedReplies = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((item) =>
+          String(item || "")
+            .trim()
+            .slice(0, MAX_SUGGESTED_REPLY_LENGTH),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, MAX_SUGGESTED_REPLIES);
+};
+
+const normalizeMessageContent = (
+  role: SpiritChatRole,
+  value: unknown,
+): string =>
+  role === "spirit"
+    ? getSafeAiField(
+        String(value || ""),
+        "reply",
+        "我听见了。只是这句话还需要一点时间在我心里成形。",
+        800,
+      )
+    : String(value || "").trim();
+
 const normalizeRecord = (
   rosterId: string,
   value: Partial<SpiritChatRecord> | undefined,
@@ -115,10 +154,17 @@ const normalizeRecord = (
     rosterId,
     messages: Array.isArray(value.messages)
       ? value.messages
+          .map((message) => ({
+            ...message,
+            content: normalizeMessageContent(message.role, message.content),
+          }))
           .filter((message) => message?.role && message?.content)
           .slice(-MAX_MESSAGES)
       : [],
     memorySummary: String(value.memorySummary || "").slice(0, 600),
+    memorySummaryMessageId: value.memorySummaryMessageId
+      ? String(value.memorySummaryMessageId)
+      : undefined,
     mood: String(value.mood || "初识").slice(0, 24),
     bond:
       typeof value.bond === "number"
@@ -126,6 +172,7 @@ const normalizeRecord = (
         : 0,
     playerFacts: normalizeStringList(value.playerFacts, MAX_FACTS),
     promises: normalizeStringList(value.promises, MAX_PROMISES),
+    suggestedReplies: normalizeSuggestedReplies(value.suggestedReplies),
     lastSuggestedAction: value.lastSuggestedAction
       ? String(value.lastSuggestedAction).slice(0, 80)
       : undefined,
@@ -141,7 +188,7 @@ const toMessage = (
 ): SpiritChatMessage => ({
   id: message.id ?? makeMessageId(),
   role: message.role,
-  content: message.content.trim(),
+  content: normalizeMessageContent(message.role, message.content),
   createdAt: message.createdAt ?? Date.now(),
   xpGranted: message.xpGranted,
 });
@@ -192,6 +239,10 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                   updates.memorySummary !== undefined
                     ? String(updates.memorySummary).slice(0, 600)
                     : current.memorySummary,
+                memorySummaryMessageId:
+                  updates.memorySummaryMessageId !== undefined
+                    ? String(updates.memorySummaryMessageId)
+                    : current.memorySummaryMessageId,
                 mood:
                   updates.mood !== undefined
                     ? String(updates.mood).slice(0, 24)
@@ -208,6 +259,10 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                   updates.promises !== undefined
                     ? normalizeStringList(updates.promises, MAX_PROMISES)
                     : current.promises,
+                suggestedReplies:
+                  updates.suggestedReplies !== undefined
+                    ? normalizeSuggestedReplies(updates.suggestedReplies)
+                    : current.suggestedReplies,
                 lastSuggestedAction:
                   updates.lastSuggestedAction !== undefined
                     ? updates.lastSuggestedAction
@@ -236,7 +291,7 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                   ...m,
                   content:
                     patch.content !== undefined
-                      ? patch.content.trim()
+                      ? normalizeMessageContent(m.role, patch.content)
                       : m.content,
                   xpGranted:
                     patch.xpGranted !== undefined
@@ -267,6 +322,10 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                   updates.memorySummary !== undefined
                     ? String(updates.memorySummary).slice(0, 600)
                     : normalized.memorySummary,
+                memorySummaryMessageId:
+                  updates.memorySummaryMessageId !== undefined
+                    ? String(updates.memorySummaryMessageId)
+                    : normalized.memorySummaryMessageId,
                 mood:
                   updates.mood !== undefined
                     ? String(updates.mood).slice(0, 24)
@@ -283,6 +342,10 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
                   updates.promises !== undefined
                     ? normalizeStringList(updates.promises, MAX_PROMISES)
                     : normalized.promises,
+                suggestedReplies:
+                  updates.suggestedReplies !== undefined
+                    ? normalizeSuggestedReplies(updates.suggestedReplies)
+                    : normalized.suggestedReplies,
                 lastSuggestedAction:
                   updates.lastSuggestedAction !== undefined
                     ? updates.lastSuggestedAction
@@ -306,7 +369,7 @@ export const useSpiritChatStore = create<SpiritChatStore>()(
     }),
     {
       name: "word-brawl-spirit-chat",
-      version: 1,
+      version: 4,
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== "object") {
           return { chats: {}, openRosterId: null };

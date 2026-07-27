@@ -6,14 +6,12 @@ import type {
   SpiritChatMessage,
   SpiritChatRecord,
 } from "../store/useSpiritChatStore";
-import {
-  extractPartialStringFieldWithStatus,
-  looksLikeJsonStart,
-} from "./jsonStream";
+import { getSafeAiField, getSafeAiStreamField } from "./aiResponse";
 
 export interface SpiritChatContext {
   recentBattle?: BattleSummary | null;
   scene?: "idle" | "postBattle" | "training";
+  signal?: AbortSignal;
 }
 
 export interface SpiritChatResult {
@@ -30,6 +28,12 @@ export interface SpiritChatResult {
     layer?: number;
   } | null;
   xpGranted?: number;
+}
+
+export interface SpiritChatMemory {
+  memorySummary: string;
+  playerFacts: string[];
+  promises: string[];
 }
 
 const stripJsonFences = (raw: string): string => {
@@ -80,6 +84,21 @@ const normalizeList = (
   return list.length > 0 ? list : fallback;
 };
 
+const normalizeSuggestedReplies = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((item) =>
+          String(item || "")
+            .trim()
+            .slice(0, 56),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 4);
+};
+
 const parseJsonLoose = (raw: string): unknown => {
   const cleaned = stripJsonFences(raw);
   try {
@@ -89,14 +108,6 @@ const parseJsonLoose = (raw: string): unknown => {
     if (!match) throw new Error("AI 返回的内容不是合法 JSON");
     return JSON.parse(match[0]);
   }
-};
-
-const mergeFallbackMemory = (
-  current: SpiritChatRecord,
-  userMessage: string,
-): string => {
-  const line = `玩家刚才说：${userMessage}`.slice(0, 120);
-  return [current.memorySummary, line].filter(Boolean).join("；").slice(0, 600);
 };
 
 const sanitizeCharacter = (char: RosterCharacter) => ({
@@ -152,19 +163,48 @@ const sanitizeChat = (chat: SpiritChatRecord) => ({
   lastSuggestedAction: chat.lastSuggestedAction,
 });
 
-const sanitizeMessages = (messages: SpiritChatMessage[]) =>
-  messages.slice(-16).map((message) => ({
+const MAX_RECENT_MESSAGES = 16;
+export const MEMORY_UPDATE_INTERVAL = 8;
+
+export const shouldRefreshChatMemory = (
+  chat: SpiritChatRecord,
+  pendingMessages = 0,
+): boolean => {
+  const checkpointIndex = chat.memorySummaryMessageId
+    ? chat.messages.findIndex(
+        (message) => message.id === chat.memorySummaryMessageId,
+      )
+    : -1;
+  const messagesSinceLastUpdate =
+    checkpointIndex >= 0
+      ? chat.messages.length - checkpointIndex - 1
+      : chat.messages.length;
+  return messagesSinceLastUpdate + pendingMessages >= MEMORY_UPDATE_INTERVAL;
+};
+
+const sanitizeMessages = (
+  messages: SpiritChatMessage[],
+  userMessage: string,
+) => {
+  const latestMessage = messages.at(-1);
+  const history =
+    latestMessage?.role === "player" && latestMessage.content === userMessage
+      ? messages.slice(0, -1)
+      : messages;
+  return history.slice(-MAX_RECENT_MESSAGES).map((message) => ({
     role: message.role,
     content: message.content,
   }));
+};
 
 const normalizeResult = (
   value: unknown,
   current: SpiritChatRecord,
 ): SpiritChatResult => {
   const data = asRecord(value);
-  const reply = normalizeText(
-    data.reply,
+  const reply = getSafeAiField(
+    String(data.reply || ""),
+    "reply",
     "我听见了。只是这句话还需要一点时间在我心里成形。",
     800,
   );
@@ -172,13 +212,9 @@ const normalizeResult = (
     reply,
     mood: normalizeText(data.mood, current.mood || "专注", 24),
     bond: clampInt(data.bond, 0, 100, current.bond),
-    memorySummary: normalizeText(
-      data.memorySummary,
-      current.memorySummary,
-      600,
-    ),
-    playerFacts: normalizeList(data.playerFacts, current.playerFacts, 12, 80),
-    promises: normalizeList(data.promises, current.promises, 12, 80),
+    memorySummary: current.memorySummary,
+    playerFacts: current.playerFacts,
+    promises: current.promises,
     lastSuggestedAction: data.lastSuggestedAction
       ? normalizeText(data.lastSuggestedAction, "", 80)
       : current.lastSuggestedAction,
@@ -196,6 +232,22 @@ const normalizeResult = (
   };
 };
 
+const normalizeMemory = (
+  value: unknown,
+  current: SpiritChatRecord,
+): SpiritChatMemory => {
+  const data = asRecord(value);
+  return {
+    memorySummary: normalizeText(
+      data.memorySummary,
+      current.memorySummary,
+      600,
+    ),
+    playerFacts: normalizeList(data.playerFacts, current.playerFacts, 12, 80),
+    promises: normalizeList(data.promises, current.promises, 12, 80),
+  };
+};
+
 const SYSTEM_PROMPT = `你是《词灵世界》里的一个“词灵”，不是通用助手。
 你正在和自己的契约者聊天。你必须以角色本人第一人称回应，保留角色性格、口癖、世界观锚点和战斗经历。
 
@@ -207,7 +259,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》里的一个“词灵”，不是
 - 不要自称 AI，不要跳出游戏世界，不要解释你在根据 prompt 回答。
 - 不要替玩家做现实世界承诺；如果玩家要求现实建议，可以用角色口吻温和回应。
 - 不要直接修改数值、发放奖励或承诺系统未实现的效果（经验值除外）。
-- 如果玩家只是闲聊，不需要强行总结成重大约定；只有稳定事实、情绪偏好、重要承诺才写入长期记忆。
+- 如果玩家只是闲聊，不需要强行总结成重大约定；只有稳定事实、情绪偏好、重要承诺才值得长期记住。
 
 核心机制（重要）：
 1. 战斗邀请：如果对话中玩家有意挑衅你，或者你们聊到了热血沸腾的话题，或者你极度渴望向玩家证明自己的实力，你可以主动发起一场战斗！
@@ -227,14 +279,33 @@ const SYSTEM_PROMPT = `你是《词灵世界》里的一个“词灵”，不是
   "reply": "你对玩家说的话。中文，1-8 句。要像角色本人，不要像客服。可以短，也可以在用户想畅聊时更展开。",
   "mood": "当前心情，2-8字",
   "bond": 0,
-  "memorySummary": "更新后的长期关系记忆，保留最重要事实和情感，不超过180字",
-  "playerFacts": ["关于玩家/契约者的稳定事实"],
-  "promises": ["玩家和词灵之间的重要约定"],
   "lastSuggestedAction": "词灵自然提出的下一步行动，可为空",
   "triggerEvent": null, // 仅在主动发起战斗时填写对应的对象
   "xpGranted": 0 // 本次对话赋予角色的经验值（0-50）
 }
 bond 是更新后的总羁绊值 0-100，可根据本轮互动微调，普通聊天 +0 到 +2，真诚安慰/战后复盘可 +1 到 +4。`;
+
+const MEMORY_SYSTEM_PROMPT = `根据词灵资料、现有关系记忆和最近对话，整理长期记忆。
+- 这是低频批处理，不要写入一次性寒暄、模型臆测或无关细节。
+- 只保留稳定事实、持续情绪偏好、重要承诺、未完成的共同目标和真正改变关系的事件。
+- 应结合已有记忆进行合并、去重和淘汰，不要只复述最后一句。
+
+只返回合法 JSON，不要 markdown、注释或额外文字：
+{
+  "memorySummary": "更新后的长期关系记忆，不超过180字",
+  "playerFacts": ["关于玩家/契约者的稳定事实"],
+  "promises": ["玩家和词灵之间的重要约定"]
+}`;
+
+const SUGGESTION_SYSTEM_PROMPT = `根据给定的词灵资料和最近对话，猜测契约者接下来最可能想说的话。
+- 只生成 3 条，都是契约者可直接发送的第一人称短句，8-28 字。
+- 每条具体承接最后一轮对话，分别覆盖追问、表达感受、分享经历或推进约定中的不同方向。
+- 不能复述契约者刚说过的话，不能写成词灵台词，不能使用泛泛寒暄或与上下文无关的话题。
+
+只返回合法 JSON，不要 markdown、注释或额外文字：
+{
+  "suggestedReplies": ["契约者下一句可直接发送的续聊短句"]
+}`;
 
 export interface SpiritChatStreamHandlers {
   onReplyChunk?: (partialReply: string) => void;
@@ -254,13 +325,13 @@ export async function requestSpiritChat(
     character: sanitizeCharacter(character),
     relationship: sanitizeChat(chat),
     recentBattle: context?.recentBattle || null,
-    recentMessages: sanitizeMessages(chat.messages),
+    recentMessages: sanitizeMessages(chat.messages, userMessage),
     userMessage,
   };
 
   const apiMode = cfg.apiMode || "custom";
   if (apiMode === "free") {
-    return requestSpiritChatFreeTrial(payload, chat, userMessage, handlers);
+    return requestSpiritChatFreeTrial(payload, chat, handlers, context?.signal);
   }
 
   if (!cfg.apiKey) throw new Error("请先填写 API Key");
@@ -273,15 +344,18 @@ export async function requestSpiritChat(
     dangerouslyAllowBrowser: true,
   });
 
-  const stream = await client.chat.completions.create({
-    model: cfg.model,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify(payload) },
-    ],
-    temperature: 0.88,
-    stream: true,
-  });
+  const stream = await client.chat.completions.create(
+    {
+      model: cfg.model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+      temperature: 0.88,
+      stream: true,
+    },
+    { signal: context?.signal },
+  );
 
   let rawContent = "";
   let lastEmitted = "";
@@ -295,25 +369,14 @@ export async function requestSpiritChat(
     rawContent += delta;
     if (!onReplyChunk && !onReplyComplete) continue;
 
-    if (looksLikeJsonStart(rawContent)) {
-      const { value, isComplete } = extractPartialStringFieldWithStatus(
-        rawContent,
-        "reply",
-      );
-      if (value && value !== lastEmitted) {
-        lastEmitted = value;
-        onReplyChunk?.(value);
-      }
-      if (isComplete && !replyCompleted) {
-        replyCompleted = true;
-        onReplyComplete?.(value);
-      }
-    } else {
-      const partial = rawContent.trim();
-      if (partial && partial !== lastEmitted) {
-        lastEmitted = partial;
-        onReplyChunk?.(partial);
-      }
+    const partial = getSafeAiStreamField(rawContent, "reply", 800);
+    if (partial && partial.value !== lastEmitted) {
+      lastEmitted = partial.value;
+      onReplyChunk?.(partial.value);
+    }
+    if (partial?.isComplete && !replyCompleted) {
+      replyCompleted = true;
+      onReplyComplete?.(partial.value);
     }
   }
 
@@ -323,10 +386,15 @@ export async function requestSpiritChat(
     return normalizeResult(parseJsonLoose(content), chat);
   } catch {
     return {
-      reply: content.trim().slice(0, 800),
+      reply: getSafeAiField(
+        content,
+        "reply",
+        "我听见了。只是这句话还需要一点时间在我心里成形。",
+        800,
+      ),
       mood: chat.mood || "倾听",
       bond: Math.min(100, chat.bond + 1),
-      memorySummary: mergeFallbackMemory(chat, userMessage),
+      memorySummary: chat.memorySummary,
       playerFacts: chat.playerFacts,
       promises: chat.promises,
       lastSuggestedAction: chat.lastSuggestedAction,
@@ -334,11 +402,117 @@ export async function requestSpiritChat(
   }
 }
 
+export async function requestSpiritChatSuggestions(
+  cfg: AIConfig,
+  character: RosterCharacter,
+  chat: SpiritChatRecord,
+): Promise<string[]> {
+  const payload = {
+    requestType: "suggestions",
+    character: sanitizeCharacter(character),
+    relationship: sanitizeChat(chat),
+    recentMessages: sanitizeMessages(chat.messages, ""),
+  };
+
+  if ((cfg.apiMode || "custom") === "free") {
+    const response = await fetch("/api/spirit-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok) {
+      throw new Error(String(data.error || "续聊建议暂时不可用"));
+    }
+    return normalizeSuggestedReplies(data.suggestedReplies);
+  }
+
+  if (!cfg.apiKey || !cfg.baseUrl || !cfg.model) {
+    throw new Error("请先填写 AI 配置");
+  }
+
+  const client = new OpenAI({
+    apiKey: cfg.apiKey,
+    baseURL: cfg.baseUrl,
+    dangerouslyAllowBrowser: true,
+  });
+  const response = await client.chat.completions.create({
+    model: cfg.model,
+    messages: [
+      { role: "system", content: SUGGESTION_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(payload) },
+    ],
+    temperature: 0.72,
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) return [];
+
+  try {
+    return normalizeSuggestedReplies(
+      asRecord(parseJsonLoose(content)).suggestedReplies,
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function requestSpiritChatMemory(
+  cfg: AIConfig,
+  character: RosterCharacter,
+  chat: SpiritChatRecord,
+): Promise<SpiritChatMemory> {
+  const payload = {
+    requestType: "memory",
+    character: sanitizeCharacter(character),
+    relationship: sanitizeChat(chat),
+    recentMessages: sanitizeMessages(chat.messages, ""),
+  };
+
+  if ((cfg.apiMode || "custom") === "free") {
+    const response = await fetch("/api/spirit-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok) {
+      throw new Error(String(data.error || "关系记忆暂时无法归档"));
+    }
+    return normalizeMemory(data.memory, chat);
+  }
+
+  if (!cfg.apiKey || !cfg.baseUrl || !cfg.model) {
+    throw new Error("请先填写 AI 配置");
+  }
+
+  const client = new OpenAI({
+    apiKey: cfg.apiKey,
+    baseURL: cfg.baseUrl,
+    dangerouslyAllowBrowser: true,
+  });
+  const response = await client.chat.completions.create({
+    model: cfg.model,
+    messages: [
+      { role: "system", content: MEMORY_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(payload) },
+    ],
+    temperature: 0.3,
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) return normalizeMemory({}, chat);
+
+  try {
+    return normalizeMemory(parseJsonLoose(content), chat);
+  } catch {
+    return normalizeMemory({}, chat);
+  }
+}
+
 async function requestSpiritChatFreeTrial(
   payload: Record<string, unknown>,
   chat: SpiritChatRecord,
-  userMessage: string,
   handlers?: SpiritChatStreamHandlers,
+  signal?: AbortSignal,
 ): Promise<SpiritChatResult> {
   let response: Response;
   try {
@@ -349,6 +523,7 @@ async function requestSpiritChatFreeTrial(
         Accept: "application/x-ndjson",
       },
       body: JSON.stringify(payload),
+      signal,
     });
   } catch {
     throw new Error("词灵会客室免费接口暂时不可用，请稍后再试。");
@@ -375,7 +550,7 @@ async function requestSpiritChatFreeTrial(
       reply: "我听见了。只是这句话还需要一点时间在我心里成形。",
       mood: chat.mood || "倾听",
       bond: Math.min(100, chat.bond + 1),
-      memorySummary: mergeFallbackMemory(chat, userMessage),
+      memorySummary: chat.memorySummary,
       playerFacts: chat.playerFacts,
       promises: chat.promises,
       lastSuggestedAction: chat.lastSuggestedAction,
@@ -450,10 +625,7 @@ async function consumeSpiritChatStream(
     reply: lastEmitted || "我听见了。只是这句话还需要一点时间在我心里成形。",
     mood: chat.mood || "倾听",
     bond: Math.min(100, chat.bond + 1),
-    memorySummary: mergeFallbackMemory(
-      chat,
-      lastEmitted.slice(0, 80) || "（流式中断）",
-    ),
+    memorySummary: chat.memorySummary,
     playerFacts: chat.playerFacts,
     promises: chat.promises,
     lastSuggestedAction: chat.lastSuggestedAction,

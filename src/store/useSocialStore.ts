@@ -49,6 +49,7 @@ interface SocialStore {
     spirit: SerializedSpirit,
     hostPlayer: SocialPlayer,
     content: string,
+    messageMeta?: Pick<SocialChatMessage, "id" | "timestamp">,
   ) => void;
   /** 发送系统消息 */
   sendSystemMessage: (content: string) => void;
@@ -57,7 +58,7 @@ interface SocialStore {
 
   /** 发起约战 */
   createChallenge: (toPlayer: SocialPlayer) => Promise<void>;
-  /** 接受/拒绝约战 */
+  /** 接受/拒绝约战；发起方可用 declined 取消约战 */
   resolveChallenge: (
     challengeId: string,
     status: "accepted" | "declined",
@@ -428,18 +429,18 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       set({ currentRoom: updated });
     },
 
-    sendSpiritMessage: (spirit, hostPlayer, content) => {
+    sendSpiritMessage: (spirit, hostPlayer, content, messageMeta) => {
       const room = get().currentRoom;
       if (!room) return;
       const message: SocialChatMessage = {
-        id: generateMessageId(),
+        id: messageMeta?.id ?? generateMessageId(),
         type: "spirit",
         senderId: spirit.rosterId,
         senderName: spirit.name,
         senderColor: hostPlayer.avatarColor,
         senderAvatar: spirit.imageUrl,
         content,
-        timestamp: Date.now(),
+        timestamp: messageMeta?.timestamp ?? Date.now(),
         spiritRosterId: spirit.rosterId,
       };
       const updated: SocialRoom = {
@@ -531,9 +532,11 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         fromPlayerId: playerId,
         fromPlayerName: nickname,
         fromSpiritName: me.activeSpirit.name,
+        fromSpirit: me.activeSpirit,
         toPlayerId: target.playerId,
         toPlayerName: target.nickname,
         toSpiritName: target.activeSpirit.name,
+        toSpirit: target.activeSpirit,
         createdAt: Date.now(),
         status: "pending",
       };
@@ -566,8 +569,14 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       if (!currentRoom || !currentRoom.pendingChallenge) return;
       if (currentRoom.pendingChallenge.id !== challengeId) return;
       const { playerId, nickname } = usePlayerStore.getState();
-      if (playerId !== currentRoom.pendingChallenge.toPlayerId) {
-        set({ error: "只有被邀请的契约者可以响应约战" });
+      const isInvitee = playerId === currentRoom.pendingChallenge.toPlayerId;
+      const isCreator = playerId === currentRoom.pendingChallenge.fromPlayerId;
+      if (status === "accepted" && !isInvitee) {
+        set({ error: "只有被邀请的契约者可以应战" });
+        return;
+      }
+      if (status === "declined" && !isInvitee && !isCreator) {
+        set({ error: "只有约战双方可以取消约战" });
         return;
       }
       const freshRoom = await socialTransport.fetchRoom(currentRoom.roomCode);
@@ -590,6 +599,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       }
       const challenge = { ...room.pendingChallenge, status };
       const challengeUpdatedAt = nextVersion(room.challengeUpdatedAt ?? 0);
+      const isCancelByCreator = playerId === challenge.fromPlayerId;
 
       if (status === "accepted") {
         // 创建对战状态
@@ -599,7 +609,9 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         const guest = room.players.find(
           (p) => p.playerId === challenge.toPlayerId,
         );
-        if (!host || !guest || !host.activeSpirit || !guest.activeSpirit) {
+        const hostSpirit = challenge.fromSpirit ?? host?.activeSpirit ?? null;
+        const guestSpirit = challenge.toSpirit ?? guest?.activeSpirit ?? null;
+        if (!host || !guest || !hostSpirit || !guestSpirit) {
           set({ error: "对战双方信息缺失" });
           return;
         }
@@ -609,16 +621,16 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
           guestPlayerId: guest.playerId,
           hostNickname: host.nickname,
           guestNickname: guest.nickname,
-          hostSpirit: host.activeSpirit,
-          guestSpirit: guest.activeSpirit,
+          hostSpirit,
+          guestSpirit,
           currentTurn: 1,
           round: 1,
           acceptingActions: false,
           turnDeadlineAt: 0,
-          hostHp: host.activeSpirit.combatSnapshot.maxHp,
-          guestHp: guest.activeSpirit.combatSnapshot.maxHp,
-          hostMaxHp: host.activeSpirit.combatSnapshot.maxHp,
-          guestMaxHp: guest.activeSpirit.combatSnapshot.maxHp,
+          hostHp: hostSpirit.combatSnapshot.maxHp,
+          guestHp: guestSpirit.combatSnapshot.maxHp,
+          hostMaxHp: hostSpirit.combatSnapshot.maxHp,
+          guestMaxHp: guestSpirit.combatSnapshot.maxHp,
           hostCharge: 0,
           guestCharge: 0,
           logs: [],
@@ -662,7 +674,12 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
           challengeUpdatedAt,
           messages: pruneMessages([
             ...room.messages,
-            buildSystemMessage(`${nickname} 拒绝了约战`, true),
+            buildSystemMessage(
+              isCancelByCreator
+                ? `${nickname} 取消了约战`
+                : `${nickname} 拒绝了约战`,
+              true,
+            ),
           ]),
           updatedAt: Date.now(),
         };

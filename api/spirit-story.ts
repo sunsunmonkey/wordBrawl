@@ -6,13 +6,13 @@ import {
   extractPartialArrayObjects,
   extractPartialStringField,
   getAiCredentials,
+  getSafeAiField,
   getUsageStatus,
-  looksLikeJsonStart,
+  parseJsonLoose,
   readBody,
   sendJson,
   sendNdjsonLine,
   setCorsHeaders,
-  stripJsonFences,
   type ApiRequest,
   type ApiResponse,
 } from "./_shared.js";
@@ -35,7 +35,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
 - 每个词灵保持自己的角色卡、战斗风格、口癖、世界锚点和长期记忆，不能互相串人格。
 - 默认每轮只让 1-3 个"此刻最该说话"的角色开口；安静、观察、离开也是合理选择。人数多时最多 4 人同轮。
 - 角色之间可以互相称呼、打断、质疑、动手、反击。台词要像真人群戏，不要客服口吻。
-- 故事中途允许角色加入或离开。只能从输入 availableParticipants 里选新角色加入；离开只能针对当前 participants。加入/离开必须有剧情理由。
+- 出场名单由玩家控制。只能让当前 participants 发言或行动，不得让其他角色加入，也不得让当前角色退出。
 - 不要自称 AI，不要跳出游戏世界，不要解释 prompt，不要直接修改游戏数值。
 
 剧本主题：
@@ -62,10 +62,6 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
       "roleBrief": "该角色在本剧本里的定位（可保留或微调，不超过40字）"
     }
   },
-  "rosterEvents": [
-    { "type": "join", "rosterId": "availableParticipants 里的 rosterId", "reason": "加入理由，可为空" },
-    { "type": "leave", "rosterId": "participants 里的 rosterId", "reason": "离场理由，可为空" }
-  ],
   "turns": [
     { "role": "narrator", "content": "旁白，0-2 段，可省略" },
     {
@@ -77,6 +73,17 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
   ]
 }
 tension 是故事张力 0-100。普通闲聊 10-30，明显冲突 40-70，危机/背叛/审讯 70-95。`;
+
+const SUGGESTION_SYSTEM_PROMPT = `根据多人故事的剧本、当前人物和最新剧情，生成 3 条玩家可直接发送的下一步推进指令。
+- 每条是 12-36 字的中文场景指令，具体、有画面感，能自然承接最新剧情。
+- 三条分别提供不同推进方向，例如追查线索、放大人物冲突、触发意外、给角色留出选择。
+- 必须遵守当前剧本调性与参与者名单；不要让名单外角色加入或离场。
+- 不要写角色台词，不要写“继续故事”“接下来发生什么”等空泛指令，不能重复玩家上一条输入。
+
+只返回合法 JSON，不要 markdown、注释或额外文字：
+{
+  "suggestedPrompts": ["玩家可直接发送的剧情推进指令"]
+}`;
 
 const normalizeText = (
   value: unknown,
@@ -105,6 +112,21 @@ const normalizeList = (
   return list.length > 0 ? list : fallback;
 };
 
+const normalizeSuggestedPrompts = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((item) =>
+          String(item || "")
+            .trim()
+            .slice(0, 72),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 3);
+};
+
 const normalizeTurns = (
   value: unknown,
   participantIds: Set<string>,
@@ -115,65 +137,30 @@ const normalizeTurns = (
     .map((item) => {
       const data = asRecord(item);
       const role = String(data.role || "");
-      const content = String(data.content || "")
-        .trim()
-        .slice(0, 1000);
+      const content = getSafeAiField(
+        String(data.content || ""),
+        "content",
+        "",
+        1000,
+      );
       if (!content) return null;
       if (role === "narrator") {
         return { role: "narrator" as const, content };
       }
       if (role !== "spirit") return null;
       const speakerRosterId = String(data.speakerRosterId || "").trim();
-      const safeRosterId = participantIds.has(speakerRosterId)
-        ? speakerRosterId
-        : undefined;
+      if (!participantIds.has(speakerRosterId)) return null;
       return {
         role: "spirit" as const,
         content,
-        ...(safeRosterId ? { speakerRosterId: safeRosterId } : {}),
-        speakerName: safeRosterId
-          ? participantNames.get(safeRosterId) ||
-            String(data.speakerName || "").slice(0, 32)
-          : String(data.speakerName || "").slice(0, 32),
+        speakerRosterId,
+        speakerName:
+          participantNames.get(speakerRosterId) ||
+          String(data.speakerName || "").slice(0, 32),
       };
     })
     .filter(Boolean)
     .slice(0, 8);
-};
-
-const normalizeRosterEvents = (
-  value: unknown,
-  activeIds: Set<string>,
-  availableIds: Set<string>,
-) => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const data = asRecord(item);
-      const type = String(data.type || "");
-      const rosterId = String(data.rosterId || "").trim();
-      if (
-        type === "join" &&
-        availableIds.has(rosterId) &&
-        !activeIds.has(rosterId)
-      ) {
-        return {
-          type: "join" as const,
-          rosterId,
-          reason: data.reason ? String(data.reason).slice(0, 100) : undefined,
-        };
-      }
-      if (type === "leave" && activeIds.has(rosterId)) {
-        return {
-          type: "leave" as const,
-          rosterId,
-          reason: data.reason ? String(data.reason).slice(0, 100) : undefined,
-        };
-      }
-      return null;
-    })
-    .filter(Boolean)
-    .slice(0, 2);
 };
 
 const STANCE_IDS = new Set([
@@ -228,23 +215,13 @@ const normalizeResult = (
   const participants = Array.isArray(fallbackRoom.participants)
     ? fallbackRoom.participants.map(asRecord)
     : [];
-  const availableParticipants = Array.isArray(
-    fallbackRoom.availableParticipants,
-  )
-    ? fallbackRoom.availableParticipants.map(asRecord)
-    : [];
   const participantIds = new Set(
     participants
       .map((participant) => String(participant.rosterId || "").trim())
       .filter(Boolean),
   );
-  const availableIds = new Set(
-    [...participants, ...availableParticipants]
-      .map((participant) => String(participant.rosterId || "").trim())
-      .filter(Boolean),
-  );
   const participantNames = new Map(
-    [...participants, ...availableParticipants].map((participant) => [
+    participants.map((participant) => [
       String(participant.rosterId || "").trim(),
       String(participant.name || "").trim(),
     ]),
@@ -252,21 +229,8 @@ const normalizeResult = (
   const room = asRecord(fallbackRoom.room);
   const currentStates = asRecord(room.participantStates);
   const rawStates = asRecord(data.participantStates);
-  const rosterEvents = normalizeRosterEvents(
-    data.rosterEvents,
-    participantIds,
-    availableIds,
-  );
-  const nextParticipantIds = new Set(participantIds);
-  rosterEvents.forEach((event) => {
-    const typed = event as { type: "join" | "leave"; rosterId: string };
-    if (typed.type === "join") nextParticipantIds.add(typed.rosterId);
-    if (typed.type === "leave" && nextParticipantIds.size > 2) {
-      nextParticipantIds.delete(typed.rosterId);
-    }
-  });
   const participantStates = Object.fromEntries(
-    Array.from(nextParticipantIds).map((rosterId) => [
+    Array.from(participantIds).map((rosterId) => [
       rosterId,
       normalizeParticipantState(
         rosterId,
@@ -288,7 +252,6 @@ const normalizeResult = (
       900,
     ),
     participantStates,
-    rosterEvents,
     turns:
       turns.length > 0
         ? turns
@@ -322,8 +285,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
+  const body = readBody(req);
+  const isSuggestionRequest = body.requestType === "suggestions";
   const usage = await getUsageStatus(req);
-  if (!usage.unlimited && usage.remaining === 0) {
+  if (!isSuggestionRequest && !usage.unlimited && usage.remaining === 0) {
     sendJson(res, 429, {
       error: `今天的免费体验次数已用完（每日 ${usage.limit} 次）`,
       usage,
@@ -331,24 +296,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const body = readBody(req);
   const participants = Array.isArray(body.participants)
     ? body.participants.map(asRecord).slice(0, 10)
     : [];
-  const activeIds = new Set(
+  const participantIds = new Set(
     participants
       .map((participant) => String(participant.rosterId || "").trim())
       .filter(Boolean),
   );
-  const availableParticipants = Array.isArray(body.availableParticipants)
-    ? body.availableParticipants
-        .map(asRecord)
-        .filter((participant) => {
-          const rosterId = String(participant.rosterId || "").trim();
-          return rosterId && participant.name && !activeIds.has(rosterId);
-        })
-        .slice(0, 12)
-    : [];
   const userMessage = String(body.userMessage || "").trim();
 
   if (participants.length < 2) {
@@ -363,11 +318,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     sendJson(res, 400, { error: "缺少角色数据" });
     return;
   }
-  if (!userMessage) {
+  if (!isSuggestionRequest && !userMessage) {
     sendJson(res, 400, { error: "请先输入要推进的故事" });
     return;
   }
-  if (userMessage.length > 2400) {
+  if (!isSuggestionRequest && userMessage.length > 2400) {
     sendJson(res, 400, { error: "消息太长了，请控制在 2400 字以内" });
     return;
   }
@@ -375,20 +330,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const payload = {
     scenario: asRecord(body.scenario),
     participants,
-    availableParticipants,
     room: asRecord(body.room),
     recentMessages: Array.isArray(body.recentMessages)
       ? body.recentMessages.slice(-20)
       : [],
-    userMessage,
+    ...(isSuggestionRequest ? {} : { userMessage }),
   };
 
-  const chargedUsage = await consumeUsage(req);
+  const chargedUsage = isSuggestionRequest ? usage : await consumeUsage(req);
 
   const acceptHeader = String(
     (req.headers && (req.headers as Record<string, unknown>).accept) || "",
   );
-  const wantsStream = acceptHeader.includes("application/x-ndjson");
+  const wantsStream =
+    !isSuggestionRequest && acceptHeader.includes("application/x-ndjson");
 
   try {
     const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
@@ -400,7 +355,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "system",
+            content: isSuggestionRequest
+              ? SUGGESTION_SYSTEM_PROMPT
+              : SYSTEM_PROMPT,
+          },
           { role: "user", content: JSON.stringify(payload) },
         ],
         temperature: 0.92,
@@ -427,7 +387,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         upstreamResponse,
         res,
         payload,
-        activeIds,
+        participantIds,
         chargedUsage,
       );
       return;
@@ -440,31 +400,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    const cleaned = stripJsonFences(rawContent);
-    let parsed;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = parseJsonLoose(String(rawContent));
     } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (!match) {
-        sendJson(res, 200, {
-          ok: true,
-          result: normalizeResult(
-            {
-              turns: [
-                {
-                  role: "narrator",
-                  content: String(rawContent).slice(0, 1000),
-                },
-              ],
-            },
-            payload,
-          ),
-          usage: chargedUsage,
-        });
+      if (isSuggestionRequest) {
+        sendJson(res, 200, { ok: true, suggestedPrompts: [] });
         return;
       }
-      parsed = JSON.parse(match[0]);
+      sendJson(res, 200, {
+        ok: true,
+        result: fallbackStoryResult(
+          String(rawContent),
+          payload,
+          participantIds,
+        ),
+        usage: chargedUsage,
+      });
+      return;
+    }
+
+    if (isSuggestionRequest) {
+      sendJson(res, 200, {
+        ok: true,
+        suggestedPrompts: normalizeSuggestedPrompts(
+          asRecord(parsed).suggestedPrompts,
+        ),
+      });
+      return;
     }
 
     sendJson(res, 200, {
@@ -502,10 +465,9 @@ const extractPartialTurnsStream = (
   raw: string,
   participantIds: Set<string>,
 ): StreamTurn[] => {
-  if (!looksLikeJsonStart(raw)) return [];
   return extractPartialArrayObjects(raw, "turns", (objContent) => {
     const role = extractPartialStringField(`{${objContent}}`, "role");
-    const content = extractPartialStringField(`{${objContent}}`, "content");
+    const content = getSafeAiField(`{${objContent}}`, "content", "", 1000);
     if (!role && !content) return null;
     const typedRole = role === "spirit" ? "spirit" : "narrator";
     if (typedRole !== "spirit") {
@@ -519,22 +481,49 @@ const extractPartialTurnsStream = (
       `{${objContent}}`,
       "speakerName",
     );
+    if (!participantIds.has(speakerRosterId)) return null;
     return {
       role: "spirit",
       content: content || "",
-      ...(speakerRosterId && participantIds.has(speakerRosterId)
-        ? { speakerRosterId }
-        : {}),
+      speakerRosterId,
       ...(speakerName ? { speakerName: speakerName.slice(0, 32) } : {}),
     };
   });
+};
+
+const fallbackStoryResult = (
+  raw: string,
+  payload: Record<string, unknown>,
+  participantIds: Set<string>,
+) => {
+  const turns = extractPartialTurnsStream(raw, participantIds).filter((turn) =>
+    Boolean(turn.content),
+  );
+  return normalizeResult(
+    turns.length > 0
+      ? { turns }
+      : {
+          turns: [
+            {
+              role: "narrator",
+              content: getSafeAiField(
+                raw,
+                "content",
+                "故事的词意暂时紊乱，片刻后再继续推进吧。",
+                1000,
+              ),
+            },
+          ],
+        },
+    payload,
+  );
 };
 
 async function streamSpiritStoryUpstream(
   upstreamResponse: Response,
   res: ApiResponse,
   payload: Record<string, unknown>,
-  activeIds: Set<string>,
+  participantIds: Set<string>,
   chargedUsage: unknown,
 ): Promise<void> {
   beginNdjsonStream(res, 200);
@@ -566,7 +555,10 @@ async function streamSpiritStoryUpstream(
           if (!delta) continue;
           rawContent += delta;
 
-          const partialTurns = extractPartialTurnsStream(rawContent, activeIds);
+          const partialTurns = extractPartialTurnsStream(
+            rawContent,
+            participantIds,
+          );
           const key = JSON.stringify(partialTurns);
           if (key !== lastEmittedKey) {
             lastEmittedKey = key;
@@ -588,32 +580,17 @@ async function streamSpiritStoryUpstream(
       return;
     }
 
-    const cleaned = stripJsonFences(rawContent);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = parseJsonLoose(rawContent);
     } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (!match) {
-        sendNdjsonLine(res, {
-          type: "done",
-          result: normalizeResult(
-            {
-              turns: [
-                {
-                  role: "narrator",
-                  content: String(rawContent).slice(0, 1000),
-                },
-              ],
-            },
-            payload,
-          ),
-          usage: chargedUsage,
-        });
-        res.end();
-        return;
-      }
-      parsed = JSON.parse(match[0]);
+      sendNdjsonLine(res, {
+        type: "done",
+        result: fallbackStoryResult(rawContent, payload, participantIds),
+        usage: chargedUsage,
+      });
+      res.end();
+      return;
     }
 
     sendNdjsonLine(res, {

@@ -77,39 +77,6 @@ const RARITY_LEVELS: Record<Rarity, number> = {
   UR: 100,
 };
 
-type CornerKey = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-
-const CORNER_STYLES: Record<CornerKey, { pos: string; rotate: number }> = {
-  "top-left": { pos: "top-1 left-1", rotate: 0 },
-  "top-right": { pos: "top-1 right-1", rotate: 90 },
-  "bottom-right": { pos: "bottom-1 right-1", rotate: 180 },
-  "bottom-left": { pos: "bottom-1 left-1", rotate: 270 },
-};
-
-const CornerOrnament: React.FC<{ color: string; corner: CornerKey }> = ({
-  color,
-  corner,
-}) => {
-  const { pos, rotate } = CORNER_STYLES[corner];
-  return (
-    <svg
-      className={`absolute w-3.5 h-3.5 ${pos} z-20 pointer-events-none`}
-      style={{
-        color,
-        transform: `rotate(${rotate}deg)`,
-        filter: `drop-shadow(0 0 3px ${color})`,
-      }}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    >
-      <path d="M2 2 L2 10 M2 2 L10 2" strokeLinecap="round" />
-      <circle cx="3.5" cy="3.5" r="1" fill="currentColor" stroke="none" />
-    </svg>
-  );
-};
-
 export const HeroCard: React.FC<HeroCardProps> = ({
   character,
   size = "md",
@@ -155,8 +122,6 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   const borderAlpha = selected ? 0.95 : 0.55 + tier * 0.11;
   const glowSize = 10 + tier * 10;
   const glowIntensity = 0.2 + tier * 0.14;
-
-  const cornerColor = config.primaryColor;
 
   return (
     <motion.div
@@ -226,29 +191,13 @@ export const HeroCard: React.FC<HeroCardProps> = ({
       }
       transition={{ duration: 0.35, ease: "easeOut" }}
     >
-      {/* 外框装饰层 */}
+      {/* 外框装饰层：仅保留极淡的斜向渐变，不再叠加第二层描边 */}
       <div
         className={`absolute inset-0 rounded-2xl ${sizeCfg.frame} pointer-events-none`}
         style={{
-          background: `linear-gradient(135deg, ${config.primaryColor}18, transparent 40%, transparent 60%, ${config.secondaryColor}18)`,
+          background: `linear-gradient(135deg, ${config.primaryColor}12, transparent 45%, transparent 55%, ${config.secondaryColor}12)`,
         }}
-      >
-        {!isDetailHighRarityHover && (
-          <div
-            className="w-full h-full rounded-xl border opacity-60"
-            style={{
-              borderColor: `${config.primaryColor}44`,
-              background:
-                "linear-gradient(145deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(0,0,0,0.15) 100%)",
-            }}
-          />
-        )}
-      </div>
-
-      <CornerOrnament color={cornerColor} corner="top-left" />
-      <CornerOrnament color={cornerColor} corner="top-right" />
-      <CornerOrnament color={cornerColor} corner="bottom-right" />
-      <CornerOrnament color={cornerColor} corner="bottom-left" />
+      />
 
       {/* 顶部高光 */}
       {(isUR || isSSR) && !isDetailHighRarityHover && (

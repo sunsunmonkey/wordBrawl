@@ -210,8 +210,6 @@ export class BattleEngine {
   private readonly p2Power: number;
   private readonly p1Underdog: UnderdogProfile;
   private readonly p2Underdog: UnderdogProfile;
-  private p1ClutchUsed = false;
-  private p2ClutchUsed = false;
   // 每个引擎实例的唯一 id 序列，避免 Date.now() 在同步循环中产生重复 key
   private static instanceCounter: number = 0;
   private readonly instanceId: number;
@@ -244,18 +242,6 @@ export class BattleEngine {
 
   private getUnderdogProfile(c: CharacterData): UnderdogProfile {
     return c === this.p1 ? this.p1Underdog : this.p2Underdog;
-  }
-
-  private isClutchUsed(c: CharacterData): boolean {
-    return c === this.p1 ? this.p1ClutchUsed : this.p2ClutchUsed;
-  }
-
-  private markClutchUsed(c: CharacterData) {
-    if (c === this.p1) {
-      this.p1ClutchUsed = true;
-    } else {
-      this.p2ClutchUsed = true;
-    }
   }
 
   /** 获取当前双方状态快照（用于 UI 渲染） */
@@ -441,33 +427,6 @@ export class BattleEngine {
     return logs;
   }
 
-  private maybeApplyUnderdogClutch(defender: CharacterData, attacker: CharacterData, incomingDamage: number, isUlt: boolean, isFinisher: boolean): { damage: number; suffix: string } {
-    const underdog = this.getUnderdogProfile(defender);
-    if (underdog.intensity <= 0 || this.isClutchUsed(defender) || incomingDamage < defender.hp) {
-      return { damage: incomingDamage, suffix: '' };
-    }
-
-    const lowHpBonus = defender.hp / defender.maxHp < 0.3 ? 0.08 : 0;
-    const overkillBonus = incomingDamage > defender.hp * 1.8 ? 0.05 : 0;
-    const chance = clamp(0.14 + underdog.intensity * 0.22 + lowHpBonus + overkillBonus + (isUlt ? 0.04 : 0) - (isFinisher ? 0.04 : 0), 0, 0.42);
-    this.markClutchUsed(defender);
-
-    if (Math.random() >= chance) {
-      return { damage: incomingDamage, suffix: '' };
-    }
-
-    const clutchDamage = Math.max(0, defender.hp - 1);
-    defender.attackBuff = Math.max(defender.attackBuff, Math.floor(28 + underdog.intensity * 32));
-    defender.buffTurnsLeft = Math.max(defender.buffTurnsLeft, 2);
-    this.addCharge(defender, 38 + underdog.intensity * 36);
-    this.addCharge(attacker, 10);
-
-    return {
-      damage: clutchDamage,
-      suffix: `【${defender.name}】触发${underdog.label}，极限锁血并获得反击窗口！`,
-    };
-  }
-
   /**
    * 执行单个技能（手动模式核心）。
    * attackerId 指定谁出手，skill 由调用方传入。
@@ -518,12 +477,10 @@ export class BattleEngine {
       if (isFinisher) {
         actualDmg = Math.max(actualDmg, defender.hp);
       }
-      const clutch = this.maybeApplyUnderdogClutch(defender, attacker, actualDmg, false, isFinisher);
-      actualDmg = clutch.damage;
       defender.hp = Math.max(0, defender.hp - actualDmg);
       damage = actualDmg;
       const voice = this.formatVoice(attacker, 'skill');
-      logMessage = `【${attacker.name}】${voice}施放【${skill.name}】削弱对手 ${debuffAmount}%，并造成 ${actualDmg} 点伤害！${isFinisher ? '天命一击，直接击穿胜负线！' : ''}${clutch.suffix}`;
+      logMessage = `【${attacker.name}】${voice}施放【${skill.name}】削弱对手 ${debuffAmount}%，并造成 ${actualDmg} 点伤害！${isFinisher ? '天命一击，直接击穿胜负线！' : ''}`;
     } else {
       // attack / ultimate
       const baseDamage = this.getEffectiveAttack(attacker) * skill.damageMultiplier;
@@ -539,18 +496,16 @@ export class BattleEngine {
       if (isFinisher) {
         finalDamage = Math.max(finalDamage, defender.hp);
       }
-      const clutch = this.maybeApplyUnderdogClutch(defender, attacker, finalDamage, isUlt, isFinisher);
-      finalDamage = clutch.damage;
       defender.hp = Math.max(0, defender.hp - finalDamage);
       damage = finalDamage;
 
       if (isUlt) {
         const voice = this.formatVoice(attacker, 'ultimate');
-        logMessage = `【${attacker.name}】${voice}爆气释放大招【${skill.name}】！${skill.description} 对【${defender.name}】造成毁灭性 ${finalDamage} 点伤害！${isFinisher ? '天命一击，一招定胜负！' : ''}${clutch.suffix}`;
+        logMessage = `【${attacker.name}】${voice}爆气释放大招【${skill.name}】！${skill.description} 对【${defender.name}】造成毁灭性 ${finalDamage} 点伤害！${isFinisher ? '天命一击，一招定胜负！' : ''}`;
         attacker.ultimateCharge = 0;
       } else {
         const voice = this.formatVoice(attacker, 'skill');
-        logMessage = `【${attacker.name}】${voice}使出【${skill.name}】！${isCrit ? '触发暴击，' : ''}对【${defender.name}】造成 ${finalDamage} 点伤害。${isFinisher ? '天命一击，瞬间清场！' : ''}${clutch.suffix}`;
+        logMessage = `【${attacker.name}】${voice}使出【${skill.name}】！${isCrit ? '触发暴击，' : ''}对【${defender.name}】造成 ${finalDamage} 点伤害。${isFinisher ? '天命一击，瞬间清场！' : ''}`;
       }
     }
 

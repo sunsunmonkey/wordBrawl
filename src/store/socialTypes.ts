@@ -78,9 +78,13 @@ export interface ChallengeInvite {
   fromPlayerId: string;
   fromPlayerName: string;
   fromSpiritName: string;
+  /** 发起约战时锁定的词灵快照，避免等待期间切换出战导致预览与实战不一致 */
+  fromSpirit?: SerializedSpirit;
   toPlayerId: string;
   toPlayerName: string;
   toSpiritName: string;
+  /** 发起约战时锁定的词灵快照，避免等待期间切换出战导致预览与实战不一致 */
+  toSpirit?: SerializedSpirit;
   createdAt: number;
   status: "pending" | "accepted" | "declined" | "expired";
 }

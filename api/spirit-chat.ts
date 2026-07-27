@@ -3,15 +3,16 @@ import {
   beginNdjsonStream,
   clamp,
   consumeUsage,
-  extractPartialStringField,
+  extractPartialStringFieldWithStatus,
   getAiCredentials,
+  getSafeAiField,
+  getSafeAiStreamField,
   getUsageStatus,
-  looksLikeJsonStart,
+  parseJsonLoose,
   readBody,
   sendJson,
   sendNdjsonLine,
   setCorsHeaders,
-  stripJsonFences,
   type ApiRequest,
   type ApiResponse,
 } from "./_shared.js";
@@ -27,7 +28,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，不是通�
 - 不要自称 AI，不要跳出游戏世界，不要解释你在根据 prompt 回答。
 - 不要替玩家做现实世界承诺；如果玩家要求现实建议，可以用角色口吻温和回应。
 - 不要直接修改数值、发放奖励或承诺系统未实现的效果（经验值除外）。
-- 如果玩家只是闲聊，不需要强行总结成重大约定；只有稳定事实、情绪偏好、重要承诺才写入长期记忆。
+- 如果玩家只是闲聊，不需要强行总结成重大约定；只有稳定事实、情绪偏好、重要承诺才值得长期记住。
 
 核心机制（重要）：
 1. 战斗邀请：如果对话中玩家有意挑衅你，或者你们聊到了热血沸腾的话题，或者你极度渴望向玩家证明自己的实力，你可以主动发起一场战斗！
@@ -47,14 +48,33 @@ const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，不是通�
   "reply": "你对玩家说的话。中文，1-8 句。要像角色本人，不要像客服。可以短，也可以在用户想畅聊时更展开。",
   "mood": "当前心情，2-8字",
   "bond": 0,
-  "memorySummary": "更新后的长期关系记忆，保留最重要事实和情感，不超过180字",
-  "playerFacts": ["关于玩家/契约者的稳定事实"],
-  "promises": ["玩家和词灵之间的重要约定"],
   "lastSuggestedAction": "词灵自然提出的下一步行动，可为空",
   "triggerEvent": null,
   "xpGranted": 0
 }
 bond 是更新后的总羁绊值 0-100，可根据本轮互动微调，普通聊天 +0 到 +2，真诚安慰/战后复盘可 +1 到 +4。`;
+
+const MEMORY_SYSTEM_PROMPT = `根据词灵资料、现有关系记忆和最近对话，整理长期记忆。
+- 这是低频批处理，不要写入一次性寒暄、模型臆测或无关细节。
+- 只保留稳定事实、持续情绪偏好、重要承诺、未完成的共同目标和真正改变关系的事件。
+- 应结合已有记忆进行合并、去重和淘汰，不要只复述最后一句。
+
+只返回合法 JSON，不要 markdown、注释或额外文字：
+{
+  "memorySummary": "更新后的长期关系记忆，不超过180字",
+  "playerFacts": ["关于玩家/契约者的稳定事实"],
+  "promises": ["玩家和词灵之间的重要约定"]
+}`;
+
+const SUGGESTION_SYSTEM_PROMPT = `根据给定的词灵资料和最近对话，猜测契约者接下来最可能想说的话。
+- 只生成 3 条，都是契约者可直接发送的第一人称短句，8-28 字。
+- 每条具体承接最后一轮对话，分别覆盖追问、表达感受、分享经历或推进约定中的不同方向。
+- 不能复述契约者刚说过的话，不能写成词灵台词，不能使用泛泛寒暄或与上下文无关的话题。
+
+只返回合法 JSON，不要 markdown、注释或额外文字：
+{
+  "suggestedReplies": ["契约者下一句可直接发送的续聊短句"]
+}`;
 
 const normalizeText = (
   value: unknown,
@@ -82,6 +102,24 @@ const normalizeList = (
     .slice(0, maxItems);
   return list.length > 0 ? list : fallback;
 };
+
+const normalizeSuggestedReplies = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((item) =>
+          String(item || "")
+            .trim()
+            .slice(0, 56),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 4);
+};
+
+const normalizeSuggestionResult = (value: unknown): string[] =>
+  normalizeSuggestedReplies(asRecord(value).suggestedReplies);
 
 const normalizeTriggerEvent = (value: unknown) => {
   if (!value || typeof value !== "object") return null;
@@ -117,23 +155,46 @@ const normalizeResult = (
   const currentLastSuggestedAction = fallbackChat.lastSuggestedAction
     ? String(fallbackChat.lastSuggestedAction)
     : undefined;
-
   return {
     reply: normalizeText(
-      data.reply,
+      getSafeAiField(
+        String(data.reply || ""),
+        "reply",
+        "我听见了。只是这句话还需要一点时间在我心里成形。",
+        800,
+      ),
       "我听见了。只是这句话还需要一点时间在我心里成形。",
       800,
     ),
     mood: normalizeText(data.mood, currentMood, 24),
     bond: clamp(data.bond, 0, 100, currentBond),
-    memorySummary: normalizeText(data.memorySummary, currentMemory, 600),
-    playerFacts: normalizeList(data.playerFacts, currentPlayerFacts, 12, 80),
-    promises: normalizeList(data.promises, currentPromises, 12, 80),
+    memorySummary: currentMemory,
+    playerFacts: currentPlayerFacts,
+    promises: currentPromises,
     lastSuggestedAction: data.lastSuggestedAction
       ? normalizeText(data.lastSuggestedAction, "", 80)
       : currentLastSuggestedAction,
     triggerEvent: normalizeTriggerEvent(data.triggerEvent),
     xpGranted: clamp(data.xpGranted, 0, 50, 0),
+  };
+};
+
+const normalizeMemory = (
+  value: unknown,
+  fallbackChat: Record<string, unknown>,
+) => {
+  const data = asRecord(value);
+  const currentMemory = String(fallbackChat.memorySummary || "");
+  const currentPlayerFacts = Array.isArray(fallbackChat.playerFacts)
+    ? (fallbackChat.playerFacts as string[])
+    : [];
+  const currentPromises = Array.isArray(fallbackChat.promises)
+    ? (fallbackChat.promises as string[])
+    : [];
+  return {
+    memorySummary: normalizeText(data.memorySummary, currentMemory, 600),
+    playerFacts: normalizeList(data.playerFacts, currentPlayerFacts, 12, 80),
+    promises: normalizeList(data.promises, currentPromises, 12, 80),
   };
 };
 
@@ -158,8 +219,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
+  const body = readBody(req);
+  const isSuggestionRequest = body.requestType === "suggestions";
+  const isMemoryRequest = body.requestType === "memory";
+  const isAuxiliaryRequest = isSuggestionRequest || isMemoryRequest;
   const usage = await getUsageStatus(req);
-  if (!usage.unlimited && usage.remaining === 0) {
+  if (!isAuxiliaryRequest && !usage.unlimited && usage.remaining === 0) {
     sendJson(res, 429, {
       error: `今天的免费体验次数已用完（每日 ${usage.limit} 次）`,
       usage,
@@ -167,7 +232,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const body = readBody(req);
   const character = asRecord(body.character);
   const relationship = asRecord(body.relationship);
   const recentMessages = Array.isArray(body.recentMessages)
@@ -181,30 +245,33 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     sendJson(res, 400, { error: "缺少角色数据" });
     return;
   }
-  if (!userMessage) {
+  if (!isAuxiliaryRequest && !userMessage) {
     sendJson(res, 400, { error: "请先输入要说的话" });
     return;
   }
-  if (userMessage.length > 2000) {
+  if (!isAuxiliaryRequest && userMessage.length > 2000) {
     sendJson(res, 400, { error: "消息太长了，请控制在 2000 字以内" });
     return;
   }
 
-  const payload = {
-    scene,
-    character,
-    relationship,
-    recentBattle,
-    recentMessages,
-    userMessage,
-  };
+  const payload = isAuxiliaryRequest
+    ? { character, relationship, recentMessages }
+    : {
+        scene,
+        character,
+        relationship,
+        recentBattle,
+        recentMessages,
+        userMessage,
+      };
 
-  const chargedUsage = await consumeUsage(req);
+  const chargedUsage = isAuxiliaryRequest ? usage : await consumeUsage(req);
 
   const acceptHeader = String(
     (req.headers && (req.headers as Record<string, unknown>).accept) || "",
   );
-  const wantsStream = acceptHeader.includes("application/x-ndjson");
+  const wantsStream =
+    !isAuxiliaryRequest && acceptHeader.includes("application/x-ndjson");
 
   try {
     const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
@@ -216,10 +283,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "system",
+            content: isSuggestionRequest
+              ? SUGGESTION_SYSTEM_PROMPT
+              : isMemoryRequest
+                ? MEMORY_SYSTEM_PROMPT
+                : SYSTEM_PROMPT,
+          },
           { role: "user", content: JSON.stringify(payload) },
         ],
-        temperature: 0.88,
+        temperature: isMemoryRequest ? 0.3 : 0.88,
         ...(wantsStream ? { stream: true } : {}),
       }),
     });
@@ -255,24 +329,36 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    const cleaned = stripJsonFences(rawContent);
-    let parsed;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = parseJsonLoose(String(rawContent));
     } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (!match) {
-        sendJson(res, 200, {
-          ok: true,
-          result: normalizeResult(
-            { reply: String(rawContent).slice(0, 800) },
-            relationship,
-          ),
-          usage: chargedUsage,
-        });
-        return;
-      }
-      parsed = JSON.parse(match[0]);
+      parsed = isSuggestionRequest
+        ? { suggestedReplies: [] }
+        : {
+            reply: getSafeAiField(
+              String(rawContent),
+              "reply",
+              "我听见了。只是这句话还需要一点时间在我心里成形。",
+              800,
+            ),
+          };
+    }
+
+    if (isSuggestionRequest) {
+      sendJson(res, 200, {
+        ok: true,
+        suggestedReplies: normalizeSuggestionResult(parsed),
+      });
+      return;
+    }
+
+    if (isMemoryRequest) {
+      sendJson(res, 200, {
+        ok: true,
+        memory: normalizeMemory(parsed, relationship),
+      });
+      return;
     }
 
     sendJson(res, 200, {
@@ -312,6 +398,7 @@ async function streamSpiritChatUpstream(
   let buffer = "";
   let rawContent = "";
   let lastEmitted = "";
+  let replyCompleted = false;
 
   try {
     while (true) {
@@ -334,15 +421,18 @@ async function streamSpiritChatUpstream(
           if (!delta) continue;
           rawContent += delta;
 
-          let partial: string;
-          if (looksLikeJsonStart(rawContent)) {
-            partial = extractPartialStringField(rawContent, "reply");
-          } else {
-            partial = rawContent.trim();
-          }
+          const partial = getSafeAiStreamField(rawContent, "reply", 800);
           if (partial && partial !== lastEmitted) {
             lastEmitted = partial;
             sendNdjsonLine(res, { type: "chunk", content: partial });
+          }
+          const replyState = extractPartialStringFieldWithStatus(
+            rawContent,
+            "reply",
+          );
+          if (replyState.isComplete && partial && !replyCompleted) {
+            replyCompleted = true;
+            sendNdjsonLine(res, { type: "reply_done", content: partial });
           }
         } catch {
           // 忽略无法解析的 SSE 数据行
@@ -360,30 +450,27 @@ async function streamSpiritChatUpstream(
       return;
     }
 
-    const cleaned = stripJsonFences(rawContent);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = parseJsonLoose(rawContent);
     } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (!match) {
-        sendNdjsonLine(res, {
-          type: "done",
-          result: normalizeResult(
-            { reply: String(rawContent).slice(0, 800) },
-            relationship,
-          ),
-          usage: chargedUsage,
-        });
-        res.end();
-        return;
-      }
-      parsed = JSON.parse(match[0]);
+      parsed = {
+        reply: getSafeAiField(
+          rawContent,
+          "reply",
+          "我听见了。只是这句话还需要一点时间在我心里成形。",
+          800,
+        ),
+      };
     }
 
+    const result = normalizeResult(parsed, relationship);
+    if (!replyCompleted) {
+      sendNdjsonLine(res, { type: "reply_done", content: result.reply });
+    }
     sendNdjsonLine(res, {
       type: "done",
-      result: normalizeResult(parsed, relationship),
+      result,
       usage: chargedUsage,
     });
     res.end();

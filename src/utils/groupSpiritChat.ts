@@ -1,10 +1,7 @@
 import OpenAI from "openai";
 import type { AIConfig } from "./ai";
 import type { SerializedSpirit, SocialChatMessage } from "../store/socialTypes";
-import {
-  extractPartialStringFieldWithStatus,
-  looksLikeJsonStart,
-} from "./jsonStream";
+import { getSafeAiField, getSafeAiStreamField } from "./aiResponse";
 
 const stripJsonFences = (raw: string): string => {
   const trimmed = raw.trim();
@@ -28,8 +25,7 @@ const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
 const normalizeReply = (value: unknown): string => {
-  const text = String(value || "").trim();
-  return (text || "……我听见了。").slice(0, 240);
+  return getSafeAiField(String(value || ""), "reply", "……我听见了。", 240);
 };
 
 const SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，现在正和你的契约者以及其他玩家一起待在一个群聊房间里。
@@ -153,21 +149,10 @@ export async function requestGroupSpiritChat(
     rawContent += delta;
     if (!onReplyChunk) continue;
 
-    if (looksLikeJsonStart(rawContent)) {
-      const { value } = extractPartialStringFieldWithStatus(
-        rawContent,
-        "reply",
-      );
-      if (value && value !== lastEmitted) {
-        lastEmitted = value;
-        onReplyChunk(value);
-      }
-    } else {
-      const partial = rawContent.trim();
-      if (partial && partial !== lastEmitted) {
-        lastEmitted = partial;
-        onReplyChunk(partial);
-      }
+    const partial = getSafeAiStreamField(rawContent, "reply", 240);
+    if (partial && partial.value !== lastEmitted) {
+      lastEmitted = partial.value;
+      onReplyChunk(partial.value);
     }
   }
 
@@ -176,7 +161,7 @@ export async function requestGroupSpiritChat(
     const parsed = parseJsonLoose(rawContent) as Record<string, unknown>;
     return normalizeReply(parsed.reply);
   } catch {
-    return rawContent.trim().slice(0, 240) || "……";
+    return getSafeAiField(rawContent, "reply", "……", 240);
   }
 }
 

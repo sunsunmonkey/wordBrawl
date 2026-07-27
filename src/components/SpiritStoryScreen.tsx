@@ -36,12 +36,16 @@ import {
   useSpiritStoryStore,
   type SpiritStoryMessage,
 } from "../store/useSpiritStoryStore";
-import { requestSpiritStory } from "../utils/spiritStory";
+import {
+  requestSpiritStory,
+  requestSpiritStorySuggestions,
+} from "../utils/spiritStory";
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
 import { LOADING_STEPS } from "./loadingSteps";
 
 const MAX_STORY_PARTICIPANTS = 10;
 const COLLAPSED_ROSTER_COUNT = 8;
+const SUGGESTION_IDLE_DELAY_MS = 1800;
 
 const formatTime = (ts: number) => {
   const d = new Date(ts);
@@ -53,6 +57,26 @@ const storyColor = (tension: number) => {
   if (tension >= 70) return "#FF003C";
   if (tension >= 40) return "#FFD700";
   return "#66FCF1";
+};
+
+const getInitialStoryPrompts = (quickScenes: string[]): string[] => {
+  const candidates = [
+    ...quickScenes,
+    "让一处不起眼的细节突然变得可疑。",
+    "让两名词灵因为立场不同产生第一次分歧。",
+    "场景里出现新的线索，看看谁会先察觉。",
+    "让最沉默的那位词灵先做出意外反应。",
+    "让局势稍微缓和，给角色一次试探彼此的机会。",
+    "有人说了一句意味不明的话，其他人各自解读。",
+  ];
+  for (let index = candidates.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [candidates[index], candidates[randomIndex]] = [
+      candidates[randomIndex],
+      candidates[index],
+    ];
+  }
+  return [...new Set(candidates)].slice(0, 3);
 };
 
 export const SpiritStoryScreen: React.FC = () => {
@@ -83,11 +107,16 @@ export const SpiritStoryScreen: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initialPromptsByKeyRef = useRef<Record<string, string[]>>({});
+  const suggestionRequestRoomIdsRef = useRef(new Set<string>());
+  const suggestedForMessageIdByRoomIdRef = useRef<Record<string, string>>({});
+  const draftInputRef = useRef("");
+  const [suggestedPromptsByRoomId, setSuggestedPromptsByRoomId] = useState<
+    Record<string, string[]>
+  >({});
 
   // Draft state (新建故事时使用)
-  const [draftIds, setDraftIds] = useState<string[]>(() =>
-    availableRoster.slice(0, 3).map((char) => char.rosterId),
-  );
+  const [draftIds, setDraftIds] = useState<string[]>([]);
   const [draftScenarioId, setDraftScenarioId] = useState<string>(
     DEFAULT_STORY_SCENARIO_ID,
   );
@@ -122,6 +151,82 @@ export const SpiritStoryScreen: React.FC = () => {
     () => ({ apiKey, baseUrl, model, apiMode }),
     [apiKey, baseUrl, model, apiMode],
   );
+  const latestStoryMessageId = activeRoom?.messages.at(-1)?.id;
+  const canGenerateSuggestions =
+    apiMode === "free" || Boolean(apiKey && baseUrl && model);
+  const initialPromptKey = activeRoom
+    ? `room:${activeRoom.id}:${activeRoom.scenarioId}`
+    : `draft:${draftScenarioId}:${draftIds.join(",")}`;
+  const initialPrompts =
+    initialPromptsByKeyRef.current[initialPromptKey] ??
+    (initialPromptsByKeyRef.current[initialPromptKey] = getInitialStoryPrompts(
+      scenarioPreset.quickScenes,
+    ));
+  const suggestedPrompts = activeRoom
+    ? (suggestedPromptsByRoomId[activeRoom.id] ?? initialPrompts)
+    : initialPrompts;
+
+  useEffect(() => {
+    if (
+      !activeRoom ||
+      !latestStoryMessageId ||
+      isSending ||
+      input.trim() ||
+      !canGenerateSuggestions
+    ) {
+      return;
+    }
+
+    const roomId = activeRoom.id;
+    if (
+      suggestionRequestRoomIdsRef.current.has(roomId) ||
+      suggestedForMessageIdByRoomIdRef.current[roomId] === latestStoryMessageId
+    ) {
+      return;
+    }
+
+    const sourceMessageId = latestStoryMessageId;
+    const timeoutId = window.setTimeout(() => {
+      if (draftInputRef.current.trim() || isSending) return;
+
+      const currentRoom = useSpiritStoryStore.getState().rooms[roomId];
+      if (currentRoom?.messages.at(-1)?.id !== sourceMessageId) return;
+
+      suggestionRequestRoomIdsRef.current.add(roomId);
+      suggestedForMessageIdByRoomIdRef.current[roomId] = sourceMessageId;
+      void requestSpiritStorySuggestions(cfg, participants, currentRoom)
+        .then((nextPrompts) => {
+          const latestRoom = useSpiritStoryStore.getState().rooms[roomId];
+          if (
+            nextPrompts.length === 0 ||
+            latestRoom?.messages.at(-1)?.id !== sourceMessageId ||
+            draftInputRef.current.trim()
+          ) {
+            return;
+          }
+          setSuggestedPromptsByRoomId((current) => ({
+            ...current,
+            [roomId]: nextPrompts,
+          }));
+        })
+        .catch(() => {
+          // 推进建议仅是辅助，不影响当前故事。
+        })
+        .finally(() => {
+          suggestionRequestRoomIdsRef.current.delete(roomId);
+        });
+    }, SUGGESTION_IDLE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeRoom,
+    canGenerateSuggestions,
+    cfg,
+    input,
+    isSending,
+    latestStoryMessageId,
+    participants,
+  ]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -129,19 +234,11 @@ export const SpiritStoryScreen: React.FC = () => {
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [activeRoom?.messages.length, isSending]);
 
-  useEffect(() => {
-    if (!isComposing) return;
-    // Auto-select first few available when nothing chosen yet
-    if (draftIds.length === 0 && availableRoster.length >= 2) {
-      setDraftIds(availableRoster.slice(0, 3).map((c) => c.rosterId));
-    }
-  }, [isComposing, availableRoster, draftIds.length]);
-
   const startNewComposing = () => {
     setActiveRoomId(null);
     setError("");
     setInput("");
-    setDraftIds(availableRoster.slice(0, 3).map((c) => c.rosterId));
+    setDraftIds([]);
     setDraftScenarioId(DEFAULT_STORY_SCENARIO_ID);
   };
 
@@ -213,6 +310,7 @@ export const SpiritStoryScreen: React.FC = () => {
 
     setError("");
     setInput("");
+    draftInputRef.current = "";
     const playerMessage = appendMessage(currentRoom.id, {
       role: "player",
       content: text,
@@ -226,7 +324,6 @@ export const SpiritStoryScreen: React.FC = () => {
       const result = await requestSpiritStory(
         cfg,
         participants,
-        availableRoster,
         latestRoom,
         playerMessage.content,
       );
@@ -244,7 +341,6 @@ export const SpiritStoryScreen: React.FC = () => {
           tension: result.tension,
           storySummary: result.storySummary,
           participantStates: result.participantStates,
-          rosterEvents: result.rosterEvents,
         },
       );
     } catch (err) {
@@ -710,6 +806,14 @@ export const SpiritStoryScreen: React.FC = () => {
                       )
                     ) {
                       clearRoom(activeRoom.id);
+                      delete initialPromptsByKeyRef.current[
+                        `room:${activeRoom.id}:${activeRoom.scenarioId}`
+                      ];
+                      setSuggestedPromptsByRoomId((current) => {
+                        const next = { ...current };
+                        delete next[activeRoom.id];
+                        return next;
+                      });
                     }
                   }}
                   disabled={!activeRoom}
@@ -782,24 +886,34 @@ export const SpiritStoryScreen: React.FC = () => {
                 </motion.div>
               )}
               <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                  {scenarioPreset.quickScenes.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => void sendMessage(prompt)}
-                      disabled={isSending}
-                      className="shrink-0 rounded-full border border-[#45A29E]/40 bg-[#1F2833]/60 px-4 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-all hover:border-[#66FCF1] hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] disabled:opacity-40"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="flex shrink-0 items-center gap-1 text-[9px] font-black tracking-[0.16em] text-[#45A29E]">
+                    <Sparkles size={11} />
+                    {activeRoom?.messages.length ? "猜你想推进" : "从这里开始"}
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {suggestedPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => void sendMessage(prompt)}
+                        disabled={isSending}
+                        className="shrink-0 rounded-full border border-[#45A29E]/40 bg-[#1F2833]/60 px-4 py-1.5 text-[10px] tracking-wider text-[#8a8d91] transition-all hover:border-[#66FCF1] hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] disabled:opacity-40"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="relative flex items-center gap-3">
                   <textarea
                     value={input}
-                    onChange={(event) => setInput(event.target.value)}
+                    onChange={(event) => {
+                      const nextInput = event.target.value;
+                      draftInputRef.current = nextInput;
+                      setInput(nextInput);
+                    }}
                     disabled={isSending || participants.length < 2}
                     rows={2}
                     placeholder={

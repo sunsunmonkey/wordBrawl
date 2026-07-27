@@ -3,15 +3,15 @@ import {
   beginNdjsonStream,
   clamp,
   consumeUsage,
-  extractPartialStringField,
   getAiCredentials,
+  getSafeAiField,
+  getSafeAiStreamField,
   getUsageStatus,
-  looksLikeJsonStart,
+  parseJsonLoose,
   readBody,
   sendJson,
   sendNdjsonLine,
   setCorsHeaders,
-  stripJsonFences,
   type ApiRequest,
   type ApiResponse,
 } from "./_shared.js";
@@ -46,27 +46,15 @@ const GROUP_SYSTEM_PROMPT = `你是《词灵世界》里的一个"词灵"，现�
 }`;
 
 const normalizeReply = (value: unknown): string => {
-  const text = String(value || "").trim();
-  const fallback = "……我听见了。";
-  return (text || fallback).slice(0, 240);
+  return getSafeAiField(String(value || ""), "reply", "……我听见了。", 240);
 };
 
 const parseResult = (raw: string): { reply: string } => {
-  const cleaned = stripJsonFences(raw);
   try {
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseJsonLoose(raw);
     return { reply: normalizeReply(asRecord(parsed).reply) };
   } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[0]);
-        return { reply: normalizeReply(asRecord(parsed).reply) };
-      } catch {
-        // fallthrough
-      }
-    }
-    return { reply: raw.trim().slice(0, 240) || "……" };
+    return { reply: getSafeAiField(raw, "reply", "……", 240) };
   }
 };
 
@@ -260,12 +248,7 @@ async function streamGroupChatUpstream(
           if (!delta) continue;
           rawContent += delta;
 
-          let partial: string;
-          if (looksLikeJsonStart(rawContent)) {
-            partial = extractPartialStringField(rawContent, "reply");
-          } else {
-            partial = rawContent.trim();
-          }
+          const partial = getSafeAiStreamField(rawContent, "reply", 240);
           if (partial && partial !== lastEmitted) {
             lastEmitted = partial;
             sendNdjsonLine(res, { type: "chunk", content: partial });
