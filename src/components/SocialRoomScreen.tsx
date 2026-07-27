@@ -29,6 +29,7 @@ import { RARITY_CONFIGS } from "../store/useGameStore";
 import { requestGroupSpiritChat } from "../utils/groupSpiritChat";
 
 const MAX_INPUT = 200;
+const MAX_SPIRITS_PER_MESSAGE = 5;
 const SPIRIT_REPLY_COOLDOWN_MS = 30_000; // 同一词灵两次回复间隔
 
 const formatTime = (ts: number): string => {
@@ -39,6 +40,27 @@ const formatTime = (ts: number): string => {
 
 const stripAtPrefix = (text: string): string =>
   text.replace(/^@\S+\s*/, "").trim();
+
+const isMessageContinuation = (
+  message: SocialChatMessage,
+  previous?: SocialChatMessage,
+): boolean => {
+  if (
+    !previous ||
+    message.type === "system" ||
+    message.type === "battle_report"
+  ) {
+    return false;
+  }
+
+  const elapsed = message.timestamp - previous.timestamp;
+  return (
+    message.type === previous.type &&
+    message.senderId === previous.senderId &&
+    elapsed >= 0 &&
+    elapsed < 180_000
+  );
+};
 
 export const SocialRoomScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
@@ -62,9 +84,7 @@ export const SocialRoomScreen: React.FC = () => {
   const [pendingSpiritReplies, setPendingSpiritReplies] = useState<
     Record<string, string>
   >({});
-  const [streamingSpiritId, setStreamingSpiritId] = useState<string | null>(
-    null,
-  );
+  const [streamingSpiritIds, setStreamingSpiritIds] = useState<string[]>([]);
   // 词灵详情查看：点击玩家列表里的词灵卡，弹出精美大卡 + persona
   const [inspectSpirit, setInspectSpirit] = useState<{
     spirit: SerializedSpirit;
@@ -88,7 +108,7 @@ export const SocialRoomScreen: React.FC = () => {
     const el = scrollRef.current;
     if (!el || !stickToBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [currentRoom?.messages.length, pendingSpiritReplies, streamingSpiritId]);
+  }, [currentRoom?.messages.length, pendingSpiritReplies, streamingSpiritIds]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -209,7 +229,6 @@ export const SocialRoomScreen: React.FC = () => {
     if (!text || isSending) return;
     if (!currentRoom) return;
 
-    setInput("");
     setErrorLocal("");
 
     // 解析 @ 提及：匹配 "@名字" 直到空格
@@ -220,9 +239,16 @@ export const SocialRoomScreen: React.FC = () => {
       mentionedNames.push(match[1]);
     }
 
-    const mentionedSpirits = mentionedNames
-      .map((name) => mentionableSpirits.find((s) => s.name === name))
-      .filter((s): s is SerializedSpirit => Boolean(s));
+    const mentionedSpirits = mentionedNames.reduce<SerializedSpirit[]>(
+      (spirits, name) => {
+        const spirit = mentionableSpirits.find((s) => s.name === name);
+        if (spirit && !spirits.some((s) => s.rosterId === spirit.rosterId)) {
+          spirits.push(spirit);
+        }
+        return spirits;
+      },
+      [],
+    );
 
     const mentionedPlayerIds = mentionedNames
       .map(
@@ -230,6 +256,13 @@ export const SocialRoomScreen: React.FC = () => {
           currentRoom.players.find((p) => p.nickname === name)?.playerId,
       )
       .filter((id): id is string => Boolean(id));
+
+    if (mentionedSpirits.length > MAX_SPIRITS_PER_MESSAGE) {
+      showError(`一次最多 @ ${MAX_SPIRITS_PER_MESSAGE} 位词灵`);
+      return;
+    }
+
+    setInput("");
 
     // 发送玩家消息
     sendPlayerMessage(text, [
@@ -243,72 +276,109 @@ export const SocialRoomScreen: React.FC = () => {
       return;
     }
 
-    // 触发词灵回复（仅第一个被 @ 的词灵回复，避免刷屏）
-    const targetSpirit = mentionedSpirits[0];
     const now = Date.now();
-    const lastReplyAt =
-      lastSpiritReplyAtRef.current[targetSpirit.rosterId] ?? 0;
-    if (now - lastReplyAt < SPIRIT_REPLY_COOLDOWN_MS) {
-      // 冷却中，发系统提示
+    const readySpirits = mentionedSpirits.filter((spirit) => {
+      const lastReplyAt = lastSpiritReplyAtRef.current[spirit.rosterId] ?? 0;
+      return now - lastReplyAt >= SPIRIT_REPLY_COOLDOWN_MS;
+    });
+    const coolingSpirits = mentionedSpirits.filter(
+      (spirit) => !readySpirits.some((s) => s.rosterId === spirit.rosterId),
+    );
+
+    if (coolingSpirits.length > 0) {
+      const waitSeconds = Math.max(
+        ...coolingSpirits.map((spirit) =>
+          Math.ceil(
+            (SPIRIT_REPLY_COOLDOWN_MS -
+              (now - (lastSpiritReplyAtRef.current[spirit.rosterId] ?? now))) /
+              1000,
+          ),
+        ),
+      );
       useSocialStore
         .getState()
         .sendSystemMessage(
-          `${targetSpirit.name} 刚刚说过话了，稍等 ${Math.ceil(
-            (SPIRIT_REPLY_COOLDOWN_MS - (now - lastReplyAt)) / 1000,
-          )} 秒再 @ 它吧。`,
+          `${coolingSpirits.map((spirit) => spirit.name).join("、")} 刚刚说过话了，稍等 ${waitSeconds} 秒再 @ 它吧。`,
         );
-      return;
     }
-    lastSpiritReplyAtRef.current[targetSpirit.rosterId] = now;
+
+    if (readySpirits.length === 0) return;
 
     setIsSending(true);
-    setStreamingSpiritId(targetSpirit.rosterId);
-    setPendingSpiritReplies((prev) => ({
-      ...prev,
-      [targetSpirit.rosterId]: "",
-    }));
-
-    const hostPlayer =
-      currentRoom.players.find(
-        (p) => p.activeSpirit?.rosterId === targetSpirit.rosterId,
-      ) ?? currentRoom.players[0];
-
     const triggerText = stripAtPrefix(text);
     const cfg = { apiKey, baseUrl, model, apiMode };
+    const recentMessages: SocialChatMessage[] = [
+      ...currentRoom.messages,
+      {
+        id: "pending-player-message",
+        type: "player",
+        senderId: playerId,
+        senderName: nickname,
+        senderColor: "#FFFFFF",
+        content: text,
+        timestamp: now,
+      },
+    ];
+    const failedSpirits: string[] = [];
+
+    setStreamingSpiritIds(readySpirits.map((spirit) => spirit.rosterId));
+    setPendingSpiritReplies(
+      Object.fromEntries(readySpirits.map((spirit) => [spirit.rosterId, ""])),
+    );
 
     try {
-      const finalReply = await requestGroupSpiritChat(
-        cfg,
-        targetSpirit,
-        triggerText,
-        {
-          roomCode: currentRoom.roomCode,
-          playerCount: currentRoom.players.length,
-          spiritsInRoom: mentionableSpirits.map((s) => s.name),
-          recentMessages: currentRoom.messages,
-        },
-        {
-          onReplyChunk: (partial) => {
-            setPendingSpiritReplies((prev) => ({
-              ...prev,
-              [targetSpirit.rosterId]: partial,
-            }));
-          },
-        },
+      await Promise.all(
+        readySpirits.map(async (targetSpirit) => {
+          lastSpiritReplyAtRef.current[targetSpirit.rosterId] = Date.now();
+          const hostPlayer =
+            currentRoom.players.find(
+              (p) =>
+                p.activeSpirit?.rosterId === targetSpirit.rosterId ||
+                p.carriedSpirits?.some(
+                  (spirit) => spirit.rosterId === targetSpirit.rosterId,
+                ),
+            ) ?? currentRoom.players[0];
+
+          try {
+            const finalReply = await requestGroupSpiritChat(
+              cfg,
+              targetSpirit,
+              triggerText,
+              {
+                roomCode: currentRoom.roomCode,
+                playerCount: currentRoom.players.length,
+                spiritsInRoom: mentionableSpirits.map((s) => s.name),
+                recentMessages,
+              },
+              {
+                onReplyChunk: (partial) => {
+                  setPendingSpiritReplies((prev) => ({
+                    ...prev,
+                    [targetSpirit.rosterId]: partial,
+                  }));
+                },
+              },
+            );
+            sendSpiritMessage(targetSpirit, hostPlayer, finalReply);
+          } catch {
+            failedSpirits.push(targetSpirit.name);
+          } finally {
+            setPendingSpiritReplies((prev) => {
+              const next = { ...prev };
+              delete next[targetSpirit.rosterId];
+              return next;
+            });
+            setStreamingSpiritIds((ids) =>
+              ids.filter((id) => id !== targetSpirit.rosterId),
+            );
+          }
+        }),
       );
-      // 以词灵身份发送正式消息
-      sendSpiritMessage(targetSpirit, hostPlayer, finalReply);
-      setPendingSpiritReplies((prev) => {
-        const next = { ...prev };
-        delete next[targetSpirit.rosterId];
-        return next;
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "词灵暂时没有回应。";
-      showError(msg);
+      if (failedSpirits.length > 0) {
+        showError(`${failedSpirits.join("、")} 暂时没有回应。`);
+      }
     } finally {
       setIsSending(false);
-      setStreamingSpiritId(null);
     }
   };
 
@@ -440,19 +510,23 @@ export const SocialRoomScreen: React.FC = () => {
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto scrollbar-thin px-4 md:px-6 py-4 space-y-3"
+            className="flex-1 overflow-y-auto scrollbar-thin px-4 md:px-6 py-4"
           >
-            {currentRoom.messages.map((msg) => (
+            {currentRoom.messages.map((msg, index) => (
               <ChatMessageBubble
                 key={msg.id}
                 message={msg}
                 isMe={msg.senderId === playerId}
+                isContinuation={isMessageContinuation(
+                  msg,
+                  currentRoom.messages[index - 1],
+                )}
                 playerNames={playerNameSet}
                 myNickname={nickname}
               />
             ))}
             {/* 流式词灵回复气泡 / 正在输入占位 */}
-            {streamingSpiritId &&
+            {streamingSpiritIds.map((streamingSpiritId) =>
               (() => {
                 const spirit = mentionableSpirits.find(
                   (s) => s.rosterId === streamingSpiritId,
@@ -461,13 +535,18 @@ export const SocialRoomScreen: React.FC = () => {
                 // 与 sendSpiritMessage 的落库颜色保持一致，避免流式结束时颜色跳变。
                 const hostPlayer =
                   currentRoom.players.find(
-                    (p) => p.activeSpirit?.rosterId === spirit.rosterId,
+                    (p) =>
+                      p.activeSpirit?.rosterId === spirit.rosterId ||
+                      p.carriedSpirits?.some(
+                        (carried) => carried.rosterId === spirit.rosterId,
+                      ),
                   ) ?? currentRoom.players[0];
                 const accentColor = hostPlayer?.avatarColor ?? "#FFD700";
                 const partial = pendingSpiritReplies[streamingSpiritId];
                 if (!partial) {
                   return (
                     <SpiritTypingBubble
+                      key={streamingSpiritId}
                       spirit={spirit}
                       accentColor={accentColor}
                     />
@@ -475,21 +554,24 @@ export const SocialRoomScreen: React.FC = () => {
                 }
                 return (
                   <StreamingSpiritBubble
+                    key={streamingSpiritId}
                     spirit={spirit}
                     content={partial}
                     accentColor={accentColor}
                   />
                 );
-              })()}
-            {currentRoom.messages.length === 0 && !streamingSpiritId && (
-              <div className="flex h-full flex-col items-center justify-center text-center">
-                <Sparkles size={36} className="text-[#A78BFA]/40 mb-3" />
-                <div className="text-sm text-white/50">群里还没有人说话</div>
-                <div className="text-xs text-white/30 mt-1">
-                  打个招呼，或者 @ 你的词灵试试
-                </div>
-              </div>
+              })(),
             )}
+            {currentRoom.messages.length === 0 &&
+              streamingSpiritIds.length === 0 && (
+                <div className="flex h-full flex-col items-center justify-center text-center">
+                  <Sparkles size={36} className="text-[#A78BFA]/40 mb-3" />
+                  <div className="text-sm text-white/50">群里还没有人说话</div>
+                  <div className="text-xs text-white/30 mt-1">
+                    打个招呼，或者 @ 你的词灵试试
+                  </div>
+                </div>
+              )}
           </div>
 
           {/* 错误提示 */}
@@ -540,7 +622,7 @@ export const SocialRoomScreen: React.FC = () => {
           {mentionableSpirits.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-4 md:px-6 py-2 border-t border-white/5 overflow-x-auto scrollbar-hide">
               <span className="shrink-0 flex items-center gap-2 text-[9px] font-mono tracking-[0.28em] text-white/30">
-                @ 词灵 ▸
+                @ 词灵（最多 5 位） ▸
                 <span className="flex items-center gap-1 tracking-normal">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#FFD700]" />
                   <span className="text-[#FFD700]/70">我方</span>
@@ -602,7 +684,7 @@ export const SocialRoomScreen: React.FC = () => {
               value={input}
               maxLength={MAX_INPUT}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={`在房间 ${currentRoom.roomCode} 发言... (@词灵 触发回复 · @契约者 提醒队友 · Enter 发送)`}
+              placeholder={`在房间 ${currentRoom.roomCode} 发言... (最多 @ 5 位词灵共同回复 · Enter 发送)`}
               disabled={isSending}
               className="flex-1 bg-black/50 border border-[#A78BFA]/35 focus:border-[#A78BFA] outline-none px-4 py-2.5 text-sm text-white placeholder:text-white/30 transition-colors disabled:opacity-60"
             />
@@ -806,13 +888,14 @@ const PlayerCard: React.FC<{
 const ChatMessageBubble: React.FC<{
   message: SocialChatMessage;
   isMe: boolean;
+  isContinuation: boolean;
   playerNames?: Set<string>;
   myNickname?: string;
-}> = ({ message, isMe, playerNames, myNickname }) => {
+}> = ({ message, isMe, isContinuation, playerNames, myNickname }) => {
   // 系统消息：居中灰条
   if (message.type === "system") {
     return (
-      <div className="flex justify-center">
+      <div className="my-3 flex justify-center">
         <div className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[10px] text-white/50 tracking-wide">
           {message.content}
         </div>
@@ -822,7 +905,7 @@ const ChatMessageBubble: React.FC<{
   // 战报消息：金色卡片
   if (message.type === "battle_report") {
     return (
-      <div className="flex justify-center">
+      <div className="my-3 flex justify-center">
         <div className="rounded-lg border border-[#FFD700]/45 bg-[#FFD700]/10 px-4 py-2 text-xs text-[#FFD700] tracking-wide flex items-center gap-2">
           <Shield size={12} />
           {message.content}
@@ -832,85 +915,73 @@ const ChatMessageBubble: React.FC<{
   }
 
   const isSpirit = message.type === "spirit";
-  // 词灵消息靠左，玩家消息：自己靠右、他人靠左
-  const alignRight = !isSpirit && isMe;
-  const accentColor = message.senderColor;
-
-  if (isSpirit) {
-    return (
-      <SpiritMessageShell
-        name={message.senderName}
-        avatar={message.senderAvatar}
-        accentColor={accentColor}
-        timestamp={message.timestamp}
-      >
-        <div
-          className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-sm"
-          style={{
-            borderColor: `${accentColor}66`,
-            background: "rgba(11,12,16,0.6)",
-            color: "#E5E7EB",
-          }}
-        >
-          {renderContentWithMentions(
-            message.content,
-            message.mentions,
-            playerNames,
-            myNickname,
-          )}
-        </div>
-      </SpiritMessageShell>
-    );
-  }
+  const accentColor = isMe ? "#A78BFA" : message.senderColor;
+  const showIdentity = !isContinuation;
+  const identityLabel = isSpirit ? "SPIRIT" : isMe ? "YOU" : "PLAYER";
+  const bubbleBackground = isMe
+    ? "rgba(167,139,250,0.14)"
+    : isSpirit
+      ? "rgba(11,12,16,0.6)"
+      : `${accentColor}12`;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`flex gap-2.5 ${alignRight ? "justify-end" : "justify-start"}`}
+      className={`flex items-start gap-2.5 ${isContinuation ? "mt-1" : "mt-3"}`}
     >
-      {!alignRight && (
-        <div
-          className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
-          style={{ borderColor: `${accentColor}66` }}
-        >
-          {message.senderAvatar ? (
-            <img
-              src={message.senderAvatar}
-              alt={message.senderName}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div
-              className="h-full w-full flex items-center justify-center text-xs font-black"
+      <div className="w-8 shrink-0 pt-0.5">
+        {showIdentity && (
+          <div
+            className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
+            style={{ borderColor: `${accentColor}66` }}
+          >
+            {message.senderAvatar ? (
+              <img
+                src={message.senderAvatar}
+                alt={message.senderName}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div
+                className="h-full w-full flex items-center justify-center text-xs font-black"
+                style={{ color: accentColor }}
+              >
+                {message.senderName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="max-w-[85%] text-left md:max-w-[78%]">
+        {showIdentity && (
+          <div className="mb-1 flex items-center gap-1.5">
+            <span
+              className="rounded border px-1 py-px text-[8px] font-mono tracking-widest"
+              style={{
+                borderColor: `${accentColor}4d`,
+                background: `${accentColor}12`,
+                color: accentColor,
+              }}
+            >
+              {identityLabel}
+            </span>
+            <span
+              className="text-[10px] font-bold tracking-wide"
               style={{ color: accentColor }}
             >
-              {message.senderName.slice(0, 1).toUpperCase()}
-            </div>
-          )}
-        </div>
-      )}
-      <div className={`max-w-[75%] ${alignRight ? "text-right" : "text-left"}`}>
-        <div className="flex items-center gap-1.5 mb-1">
-          <span
-            className="text-[10px] font-bold tracking-wide"
-            style={{ color: accentColor }}
-          >
-            {alignRight ? "你" : message.senderName}
-          </span>
-          <span className="text-[9px] text-white/30">
-            {formatTime(message.timestamp)}
-          </span>
-        </div>
+              {isMe ? "你" : message.senderName}
+            </span>
+            <span className="text-[9px] text-white/30">
+              {formatTime(message.timestamp)}
+            </span>
+          </div>
+        )}
         <div
           className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-sm"
           style={{
-            borderColor: alignRight
-              ? "rgba(167,139,250,0.45)"
-              : `${accentColor}66`,
-            background: alignRight
-              ? "rgba(167,139,250,0.12)"
-              : "rgba(11,12,16,0.5)",
+            borderColor: isMe ? "rgba(167,139,250,0.45)" : `${accentColor}66`,
+            background: bubbleBackground,
             color: "#E5E7EB",
           }}
         >
@@ -979,7 +1050,7 @@ const SpiritMessageShell: React.FC<{
   <motion.div
     initial={{ opacity: 0, y: 6 }}
     animate={{ opacity: 1, y: 0 }}
-    className="flex gap-2.5 justify-start"
+    className="mt-3 flex gap-2.5 justify-start"
   >
     <div
       className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
