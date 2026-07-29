@@ -11,14 +11,19 @@ import { CharacterAvatar } from "./CharacterAvatar";
 
 interface HeroCardProps {
   character: CharacterData;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   showStats?: boolean;
   showQuote?: boolean;
+  showSkill?: boolean;
   /** 仅社交房间详情卡使用的 UR 悬浮态 */
   ultraHoverEffect?: boolean;
   className?: string;
   selected?: boolean;
   onClick?: () => void;
+}
+
+interface HoverFlipHeroCardProps extends HeroCardProps {
+  backLabel?: string;
 }
 
 const sizeConfig = {
@@ -67,6 +72,21 @@ const sizeConfig = {
     quote: "block",
     power: "text-[10px]",
   },
+  xl: {
+    card: "w-80",
+    frame: "p-[10px]",
+    innerPad: "p-2.5",
+    avatar: "h-72",
+    rarity: "text-sm px-2.5 py-1",
+    verticalName: "hidden",
+    bottomName: "block text-lg",
+    levelBadge: "w-12 h-12 text-xs",
+    starSize: 13,
+    stats: "text-xs gap-3",
+    skill: "block",
+    quote: "block",
+    power: "text-[11px]",
+  },
 };
 
 const RARITY_LEVELS: Record<Rarity, number> = {
@@ -82,6 +102,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
   size = "md",
   showStats = true,
   showQuote = true,
+  showSkill = true,
   ultraHoverEffect = false,
   className = "",
   selected = false,
@@ -282,7 +303,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
                 writingMode: "vertical-rl",
                 textOrientation: "upright",
                 letterSpacing: "0.15em",
-                maxHeight: size === "lg" ? 84 : 56,
+                maxHeight: size === "xl" ? 96 : size === "lg" ? 84 : 56,
               }}
               title={character.name}
             >
@@ -295,15 +316,31 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           <div
             className="z-10 flex items-center justify-center rounded-full border"
             style={{
-              width: size === "lg" ? 28 : size === "md" ? 22 : 18,
-              height: size === "lg" ? 28 : size === "md" ? 22 : 18,
+              width:
+                size === "xl"
+                  ? 32
+                  : size === "lg"
+                    ? 28
+                    : size === "md"
+                      ? 22
+                      : 18,
+              height:
+                size === "xl"
+                  ? 32
+                  : size === "lg"
+                    ? 28
+                    : size === "md"
+                      ? 22
+                      : 18,
               borderColor: `${config.primaryColor}66`,
               background: `radial-gradient(circle at 30% 30%, ${config.primaryColor}33, transparent 70%)`,
               boxShadow: `0 0 8px ${config.glowColor}`,
             }}
           >
             <Sparkles
-              size={size === "lg" ? 14 : size === "md" ? 11 : 9}
+              size={
+                size === "xl" ? 16 : size === "lg" ? 14 : size === "md" ? 11 : 9
+              }
               style={{ color: config.primaryColor }}
             />
           </div>
@@ -322,7 +359,9 @@ export const HeroCard: React.FC<HeroCardProps> = ({
             name={character.name}
             themeColor={config.primaryColor}
             className="w-full h-full object-cover"
-            iconSize={size === "lg" ? 64 : size === "md" ? 44 : 28}
+            iconSize={
+              size === "xl" ? 72 : size === "lg" ? 64 : size === "md" ? 44 : 28
+            }
           />
           {/* 暗角遮罩 */}
           <div
@@ -369,7 +408,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           {/* 等级 + 星级 + 战力 */}
           <div
             className={`grid grid-cols-[auto_auto] items-center justify-center mb-1.5 ${
-              size === "lg" ? "gap-x-3" : "gap-x-2"
+              size === "lg" || size === "xl" ? "gap-x-3" : "gap-x-2"
             }`}
           >
             <div
@@ -449,7 +488,15 @@ export const HeroCard: React.FC<HeroCardProps> = ({
                   title={label}
                 >
                   <Icon
-                    size={size === "sm" ? 7 : size === "md" ? 9 : 11}
+                    size={
+                      size === "sm"
+                        ? 7
+                        : size === "md"
+                          ? 9
+                          : size === "xl"
+                            ? 12
+                            : 11
+                    }
                     style={{ color }}
                   />
                   <span className="text-[#C5C6C7] tabular-nums font-semibold leading-none">
@@ -461,7 +508,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           )}
 
           {/* 技能信息 */}
-          {displaySkill && sizeCfg.skill !== "hidden" && (
+          {showSkill && displaySkill && sizeCfg.skill !== "hidden" && (
             <div
               className="rounded-md p-1.5 mb-1.5 flex items-start gap-1.5"
               style={{
@@ -472,14 +519,14 @@ export const HeroCard: React.FC<HeroCardProps> = ({
               <div
                 className="flex-shrink-0 rounded flex items-center justify-center"
                 style={{
-                  width: size === "lg" ? 28 : 22,
-                  height: size === "lg" ? 28 : 22,
+                  width: size === "xl" ? 32 : size === "lg" ? 28 : 22,
+                  height: size === "xl" ? 32 : size === "lg" ? 28 : 22,
                   background: `radial-gradient(circle at 30% 30%, ${config.primaryColor}33, transparent 70%)`,
                   boxShadow: `0 0 8px ${config.glowColor}`,
                 }}
               >
                 <Flame
-                  size={size === "lg" ? 15 : 12}
+                  size={size === "xl" ? 16 : size === "lg" ? 15 : 12}
                   style={{ color: "#FFD700" }}
                 />
               </div>
@@ -530,5 +577,128 @@ export const HeroCard: React.FC<HeroCardProps> = ({
         </div>
       </div>
     </motion.div>
+  );
+};
+
+/**
+ * 标准英雄卡的悬停翻面版本。
+ * 正面保留战斗信息，背面收纳词灵宣言，供详情与看板等展示场景统一使用。
+ */
+export const HoverFlipHeroCard: React.FC<HoverFlipHeroCardProps> = ({
+  character,
+  size = "md",
+  showStats = true,
+  showQuote = false,
+  showSkill = true,
+  ultraHoverEffect = false,
+  className = "",
+  selected = false,
+  onClick,
+  backLabel = "SPIRIT ARCHIVE",
+}) => {
+  const [flipped, setFlipped] = React.useState(false);
+  const rarity: Rarity = character.rarity || "R";
+  const config = RARITY_CONFIGS[rarity];
+  const quote =
+    character.spiritProfile?.catchphrases?.[0] ||
+    `${character.name}，正在等待下一道指令。`;
+  const backTextSize =
+    size === "xl"
+      ? "text-xl"
+      : size === "lg"
+        ? "text-lg"
+        : size === "md"
+          ? "text-sm"
+          : "text-[11px]";
+
+  return (
+    <div
+      className={`group/flip relative ${sizeConfig[size].card} ${className} ${
+        onClick ? "cursor-pointer" : ""
+      }`}
+      style={{ perspective: 1600 }}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
+      onFocus={() => setFlipped(true)}
+      onBlur={() => setFlipped(false)}
+      onClick={onClick}
+    >
+      <motion.div
+        className="relative"
+        style={{ transformStyle: "preserve-3d", willChange: "transform" }}
+        animate={{ rotateY: flipped ? 180 : 0 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div style={{ backfaceVisibility: "hidden" }}>
+          <HeroCard
+            character={character}
+            size={size}
+            showStats={showStats}
+            showQuote={showQuote}
+            showSkill={showSkill}
+            ultraHoverEffect={ultraHoverEffect}
+            className="!w-full"
+            selected={selected}
+          />
+        </div>
+
+        <div
+          className="absolute inset-0 overflow-hidden rounded-2xl border"
+          style={{
+            backfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+            background:
+              "linear-gradient(145deg, #151725 0%, #0a0b12 58%, #111521 100%)",
+            borderColor: `${config.primaryColor}bb`,
+            boxShadow: `0 0 18px rgba(${config.rgb}, .24), inset 0 0 28px rgba(${config.rgb}, .12)`,
+          }}
+        >
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 opacity-70"
+            style={{
+              background: `
+                radial-gradient(circle at 20% 16%, rgba(${config.rgb}, .3), transparent 28%),
+                radial-gradient(circle at 82% 85%, rgba(${config.rgb}, .18), transparent 30%),
+                linear-gradient(135deg, transparent 49.7%, rgba(${config.rgb}, .15) 50%, transparent 50.3%)
+              `,
+            }}
+          />
+          <div className="relative flex h-full flex-col items-center justify-center px-5 py-6 text-center">
+            <div
+              className="font-mono text-[8px] font-bold tracking-[0.2em]"
+              style={{ color: config.primaryColor }}
+            >
+              {backLabel} · {config.labelEn}
+            </div>
+            <div
+              className="mt-3 font-display text-base font-black"
+              style={{
+                color: "#fff",
+                textShadow: `0 0 12px ${config.glowColor}`,
+              }}
+            >
+              {character.name}
+            </div>
+            <p
+              className={`mt-3 max-w-[19rem] font-display font-semibold leading-[1.7] text-white/85 ${backTextSize}`}
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: size === "sm" ? 4 : 5,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              <span style={{ color: config.primaryColor }}>“</span>
+              {quote}
+              <span style={{ color: config.primaryColor }}>”</span>
+            </p>
+            <div className="mt-5 font-mono text-[8px] tracking-[0.16em] text-white/35">
+              移开鼠标返回卡面
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 };

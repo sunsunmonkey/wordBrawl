@@ -731,7 +731,7 @@ export const CharacterCreateScreen: React.FC = () => {
                   我的词灵 · LOCAL ROSTER
                 </h3>
                 <span className="text-[9px] text-[#8a8d91]">
-                  {roster.length}/24
+                  已收录 {roster.length} 位
                 </span>
                 <motion.div
                   animate={{ rotate: isRosterOpen ? 180 : 0 }}

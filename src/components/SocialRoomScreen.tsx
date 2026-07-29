@@ -1702,7 +1702,7 @@ const ChallengeVersusPreview: React.FC<{
 };
 
 /**
- * 约战预览用的可翻面英雄卡：正面为战斗信息，点击翻至专属 Slogan。
+ * 约战预览用的可翻面英雄卡：正面为战斗信息，悬停翻至专属 Slogan。
  * 复用词灵详情弹层的翻面逻辑，使约战预览与详情观感一致。
  */
 const ChallengeFlipCard: React.FC<{
@@ -1731,9 +1731,10 @@ const ChallengeFlipCard: React.FC<{
 
   return (
     <div
-      className="relative w-full cursor-pointer select-none"
+      className="relative w-full select-none"
       style={{ perspective: 1600 }}
-      onClick={() => setFlipped((f) => !f)}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
     >
       <motion.div
         className="relative w-full"
@@ -1833,7 +1834,7 @@ const SpiritDetailModal: React.FC<{
     persona.catchphrases?.[0]?.trim() ||
     `${spirit.name}，以${signatureSkill}为誓。`;
 
-  // 3D 翻面：点击卡片切换正反面
+  // 3D 翻面：悬停卡片切换正反面
   const [flipped, setFlipped] = useState(false);
 
   // 关闭：点击遮罩 / ESC
@@ -1865,18 +1866,8 @@ const SpiritDetailModal: React.FC<{
           boxShadow: `0 0 50px rgba(${rarityCfg.rgb}, 0.22), 0 12px 40px rgba(0,0,0,0.55)`,
         }}
       >
-        {/* 关闭按钮 */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="关闭"
-          className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/70 hover:text-white hover:border-white/50 transition-all"
-        >
-          <X size={15} />
-        </button>
-
         {/* 顶部：所属契约者 + 稀有度标签 */}
-        <div className="mb-4 flex items-center gap-2 flex-wrap pr-10">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <span
             className="text-[11px] font-mono tracking-[0.3em]"
             style={{ color: `${rarityCfg.primaryColor}cc` }}
@@ -1900,10 +1891,11 @@ const SpiritDetailModal: React.FC<{
           <div
             className="relative w-72"
             style={{ perspective: 1600 }}
-            onClick={() => setFlipped((f) => !f)}
+            onMouseEnter={() => setFlipped(true)}
+            onMouseLeave={() => setFlipped(false)}
           >
             <motion.div
-              className="relative w-full cursor-pointer"
+              className="relative w-full"
               style={{ transformStyle: "preserve-3d", willChange: "transform" }}
               animate={{ rotateY: flipped ? 180 : 0 }}
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
@@ -1962,7 +1954,7 @@ const SpiritDetailModal: React.FC<{
 
           {/* 翻面提示 */}
           <div className="mt-3 text-xs tracking-wider text-white/45">
-            {flipped ? "点击卡片翻回正面" : "点击卡片查看详情"}
+            {flipped ? "移开鼠标返回卡面" : "悬停卡片查看词灵档案"}
           </div>
 
           {/* 自己的非出战词灵：切换出战按钮 */}

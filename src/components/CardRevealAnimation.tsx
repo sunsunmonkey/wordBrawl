@@ -116,7 +116,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
             style={{ perspective: 1400 }}
           >
         <motion.div
-          className={`relative shrink-0 ${revealed ? "cursor-pointer" : ""}`}
+          className={`relative shrink-0 ${revealed ? "cursor-default" : ""}`}
           style={{
             transformStyle: "preserve-3d",
             willChange: "transform",
@@ -127,11 +127,13 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
           onAnimationComplete={() => {
             if (flipped && !showSlogan) setRevealed(true);
           }}
-          onClick={(event) => {
-            if (!revealed) return;
-            event.stopPropagation();
-            setShowSlogan((visible) => !visible);
+          onMouseEnter={() => {
+            if (revealed) setShowSlogan(true);
           }}
+          onMouseLeave={() => {
+            if (revealed) setShowSlogan(false);
+          }}
+          onClick={(event) => event.stopPropagation()}
         >
           {/* 正面：角色卡（决定容器尺寸） */}
           <div style={{ backfaceVisibility: "hidden" }}>
@@ -143,7 +145,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
             />
           </div>
 
-          {/* 初始为卡背，揭示完成后点击翻至专属 Slogan */}
+          {/* 初始为卡背，揭示完成后悬停翻至专属 Slogan */}
           <div
             className="absolute inset-0 overflow-hidden rounded-2xl"
             style={{
@@ -313,7 +315,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
             >
-              点击卡片查看 Slogan · 点击外侧收入麾下
+              悬停卡片查看 Slogan · 点击外侧收入麾下
             </motion.div>
           )}
         </div>
