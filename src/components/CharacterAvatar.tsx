@@ -24,7 +24,6 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
         alt={name}
         className={`${className} object-cover`}
         loading="lazy"
-        decoding="async"
       />
     );
   }

@@ -1,24 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Castle,
   UsersRound,
   Sparkles,
   Plus,
+  RotateCcw,
   FlaskConical,
+  Lock,
   MessageCircle,
   Clapperboard,
+  ChevronRight,
   Send,
   Timer,
   Users,
 } from "lucide-react";
-import { RARITY_CONFIGS, useGameStore } from "../store/useGameStore";
+import { useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
   isRosterCharacterRecruitLocked,
   isRosterCharacterUnavailable,
   resetCharacterRuntimeState,
-  RECRUIT_STAGE_COUNT,
   useRosterStore,
   type ActiveEvolutionStage,
   type FormHistoryEntry,
@@ -26,16 +28,20 @@ import {
 } from "../store/useRosterStore";
 import { useTowerStore } from "../store/useTowerStore";
 import { useSpiritChatStore } from "../store/useSpiritChatStore";
-import { buildLocalEvolution } from "../utils/towerProgress";
+import {
+  buildLocalEvolution,
+  evolutionLabel,
+  getNextEvolutionProgress,
+  levelAscensionLabel,
+  xpProgress,
+} from "../utils/towerProgress";
 import { BackButton } from "./BackButton";
 import { generateEvolutionImage, type AIConfig } from "../utils/ai";
 import { cacheImageUrlAsDataUrl } from "../utils/localImage";
 import { getScaledTowerBoss } from "../data/towerBosses";
 import type { BattleSummary } from "../utils/towerAnalysis";
 import { runBackgroundRecruit } from "../utils/recruitPipeline";
-import { CharacterAvatar } from "./CharacterAvatar";
-import { LOADING_STEPS } from "./loadingSteps";
-import { HoverFlipHeroCard } from "./HeroCard";
+import { SpiritCard } from "./SpiritCard";
 
 const RECRUIT_COOLDOWN_MS = 60_000;
 const RECRUIT_COOLDOWN_KEY = "word-brawl-recruit-last-generated-at";
@@ -170,6 +176,8 @@ export const ModeSelectScreen: React.FC = () => {
   const roster = useRosterStore((s) => s.roster);
   const updateCharacter = useRosterStore((s) => s.updateCharacter);
   const createPendingRecruit = useRosterStore((s) => s.createPendingRecruit);
+  const retryPendingRecruit = useRosterStore((s) => s.retryPendingRecruit);
+  const removeCharacter = useRosterStore((s) => s.removeCharacter);
   const setCurrentLayer = useTowerStore((s) => s.setCurrentLayer);
   const setLastSummary = useTowerStore((s) => s.setLastSummary);
   const setLastRosterId = useTowerStore((s) => s.setLastRosterId);
@@ -182,6 +190,8 @@ export const ModeSelectScreen: React.FC = () => {
   const rosterCount = roster.length;
   const firstNonGeneratingRoster =
     roster.find((char) => char.recruitLock?.status !== "generating") ?? null;
+  const rosterPreview = roster.slice(0, 24);
+  const hiddenRosterCount = Math.max(0, rosterCount - rosterPreview.length);
   const [selectedRosterId, setSelectedRosterId] = useState<string | null>(
     firstNonGeneratingRoster?.rosterId ?? null,
   );
@@ -189,12 +199,9 @@ export const ModeSelectScreen: React.FC = () => {
     string | null
   >(null);
   const [regenerateError, setRegenerateError] = useState("");
-  const [previewRosterId, setPreviewRosterId] = useState<string | null>(null);
   const selectedRoster =
     roster.find((char) => char.rosterId === selectedRosterId) ??
     firstNonGeneratingRoster;
-  const previewRoster =
-    roster.find((char) => char.rosterId === previewRosterId) ?? null;
   const selectedFallbackForm = getLatestFallbackEvolutionForm(selectedRoster);
   const debugNextStage = getNextDebugEvolutionStage(selectedRoster);
   const selectedEvolutionLocked =
@@ -302,6 +309,23 @@ export const ModeSelectScreen: React.FC = () => {
     runBackgroundRecruit(pending.rosterId, trimmed, cfg);
   };
 
+  const retryRecruit = (target: RosterCharacter) => {
+    const description =
+      target.recruitLock?.description || target.sourceDescription || "";
+    if (!description) return;
+    const revived = retryPendingRecruit(target.rosterId);
+    if (!revived) return;
+    runBackgroundRecruit(revived.rosterId, description, cfg);
+  };
+
+  const dropRecruit = (target: RosterCharacter) => {
+    if (!window.confirm("确认放弃这次召唤？")) return;
+    removeCharacter(target.rosterId);
+    if (selectedRosterId === target.rosterId) {
+      setSelectedRosterId(null);
+    }
+  };
+
   useEffect(() => {
     if (!evolutionDebugAvailable && evolutionDebugMode) {
       setEvolutionDebugMode(false);
@@ -312,30 +336,18 @@ export const ModeSelectScreen: React.FC = () => {
     setPhase("RECRUIT_CREATE");
   };
 
-  const startTowerForRoster = (target: RosterCharacter) => {
-    if (isRosterCharacterUnavailable(target)) return;
-    setSelectedRosterId(target.rosterId);
+  const startTower = () => {
+    if (!selectedRoster || selectedUnavailable) return;
     setBattleMode("pve_tower");
-    setTowerRosterId(target.rosterId);
-    setTowerLayer(target.tower.nextLayer ?? 1);
+    setTowerRosterId(selectedRoster.rosterId);
+    setTowerLayer(selectedRoster.tower.nextLayer ?? 1);
     setPhase("TOWER_HUB");
   };
 
-  const startTower = () => {
-    if (!selectedRoster) return;
-    startTowerForRoster(selectedRoster);
-  };
-
-  const startSpiritChatForRoster = (target: RosterCharacter) => {
-    if (isRosterCharacterUnavailable(target)) return;
-    setSelectedRosterId(target.rosterId);
-    setOpenSpiritRosterId(target.rosterId);
-    setPhase("SPIRIT_CHAT");
-  };
-
   const startSpiritChat = () => {
-    if (!selectedRoster) return;
-    startSpiritChatForRoster(selectedRoster);
+    if (!selectedRoster || selectedUnavailable) return;
+    setOpenSpiritRosterId(selectedRoster.rosterId);
+    setPhase("SPIRIT_CHAT");
   };
 
   const startSpiritStory = () => {
@@ -493,47 +505,804 @@ export const ModeSelectScreen: React.FC = () => {
   };
 
   return (
-    <CommandDeckLayout
-      roster={roster}
-      rosterCount={rosterCount}
-      selectedRoster={selectedRoster}
-      selectedUnavailable={selectedUnavailable}
-      selectedEvolutionLocked={selectedEvolutionLocked}
-      selectedRecruitLocked={selectedRecruitLocked}
-      canRegenerateEvolutionImage={canRegenerateEvolutionImage}
-      regeneratingRosterId={regeneratingRosterId}
-      regenerateError={regenerateError}
-      evolutionDebugAvailable={evolutionDebugAvailable}
-      evolutionDebugMode={evolutionDebugMode}
-      activeEvolutionDebugMode={activeEvolutionDebugMode}
-      debugNextStage={debugNextStage}
-      summonInput={summonInput}
-      summonError={summonError}
-      summonCooldownLeftMs={summonCooldownLeftMs}
-      summonCooldownSec={summonCooldownSec}
-      placeholderText={placeholderText}
-      onBack={() => setPhase("WELCOME")}
-      onSelectRoster={setSelectedRosterId}
-      previewRoster={previewRoster}
-      onPreviewRoster={setPreviewRosterId}
-      onClosePreview={() => setPreviewRosterId(null)}
-      onStartRecruit={startRecruit}
-      onStartSocial={startSocial}
-      onGoRoster={goRoster}
-      onStartSpiritChat={startSpiritChat}
-      onStartSpiritStory={startSpiritStory}
-      onStartTower={startTower}
-      onStartSpiritChatForRoster={startSpiritChatForRoster}
-      onStartTowerForRoster={startTowerForRoster}
-      onRegenerateEvolutionImage={regenerateEvolutionImage}
-      onSetEvolutionDebugMode={setEvolutionDebugMode}
-      onStartDebugEvolutionAnimation={startDebugEvolutionAnimation}
-      onSummonInputChange={(value) => {
-        setSummonInput(value);
-        if (summonError) setSummonError("");
-      }}
-      onSubmitSummon={submitSummon}
-    />
+    <div className="min-h-screen relative overflow-hidden bg-[#05060a] text-white">
+      {/* 静态背景层 */}
+      <div className="pointer-events-none absolute inset-0 z-0">
+        <div
+          className="absolute -top-40 -left-40 w-[55vw] h-[55vw] rounded-full opacity-30"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255,215,0,0.25) 0%, transparent 55%)",
+            filter: "blur(60px)",
+          }}
+        />
+        <div
+          className="absolute -bottom-40 -right-40 w-[55vw] h-[55vw] rounded-full opacity-30"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(102,252,241,0.22) 0%, transparent 55%)",
+            filter: "blur(60px)",
+          }}
+        />
+        <div
+          className="absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(102,252,241,1) 1px, transparent 1px), linear-gradient(90deg, rgba(102,252,241,1) 1px, transparent 1px)",
+            backgroundSize: "80px 80px",
+            maskImage:
+              "radial-gradient(ellipse at center, black 40%, transparent 80%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse at center, black 40%, transparent 80%)",
+          }}
+        />
+      </div>
+
+      {/* 巨型水印 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden select-none"
+      >
+        <div
+          className="font-display font-black leading-none tracking-tighter text-white/[0.02]"
+          style={{ fontSize: "min(30vw, 520px)", letterSpacing: "-0.06em" }}
+        >
+          HUB
+        </div>
+      </div>
+
+      {/* 顶部 HUD */}
+      <div className="relative z-20 flex items-center justify-between px-6 md:px-10 py-5">
+        <div className="flex items-center gap-3">
+          <div aria-hidden className="h-11 w-11 shrink-0" />
+          <div className="hidden md:flex items-center gap-3 ml-2 text-[10px] font-mono tracking-[0.4em] text-white/40">
+            <div className="w-6 h-[1px] bg-[#66FCF1]" />
+            <span>WORD-SPIRIT / 002</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <IconButton
+            onClick={startSocial}
+            icon={<MessageCircle size={16} />}
+            label="社交"
+            accent="#A78BFA"
+          />
+          <IconButton
+            onClick={goRoster}
+            icon={<UsersRound size={16} />}
+            label={`我的词灵 · ${rosterCount}`}
+            accent="#66FCF1"
+          />
+        </div>
+      </div>
+      <BackButton
+        onClick={() => setPhase("WELCOME")}
+        color="#66FCF1"
+        className="fixed left-6 top-5 z-30"
+      />
+
+      {/* 主内容 */}
+      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-16 pb-16 max-w-[1400px] mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
+        >
+          {/* 编辑式标题 */}
+          <div className="flex items-end justify-between mb-6 flex-wrap gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-[1px] bg-[#FFD700]" />
+                <span className="text-[10px] tracking-[0.5em] text-[#FFD700]/90 font-mono">
+                  CHAPTER · 01
+                </span>
+              </div>
+              <h1
+                className="font-display font-black leading-[0.9] tracking-tight"
+                style={{
+                  fontSize: "clamp(2.2rem, 5vw, 4rem)",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                <span
+                  className="text-white"
+                  style={{ textShadow: "0 0 30px rgba(255,215,0,0.25)" }}
+                >
+                  词灵
+                </span>
+                <span
+                  className="text-[#FFD700]"
+                  style={{ textShadow: "0 0 30px rgba(255,215,0,0.55)" }}
+                >
+                  枢庭
+                </span>
+              </h1>
+              <div
+                className="mt-1 font-mono font-bold text-white/25"
+                style={{
+                  fontSize: "clamp(0.6rem, 0.9vw, 0.85rem)",
+                  letterSpacing: "0.4em",
+                }}
+              >
+                S U M M O N · C H A T · S T O R Y · A S C E N D
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-mono tracking-widest text-white/30">
+              <div>ROSTER {String(rosterCount).padStart(2, "0")} / 24</div>
+              <div className="text-[#66FCF1]/70 mt-1">
+                {selectedRoster
+                  ? `SELECTED · ${selectedRoster.name}`
+                  : "NO SELECTION"}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-5">
+            {/* 召唤词灵：一句话内嵌输入 */}
+            <div className="relative border border-[#FFD700]/30 bg-black/30 backdrop-blur-sm px-4 py-3 md:px-5 md:py-3.5 overflow-hidden">
+              <span
+                aria-hidden
+                className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-[#FFD700]/70"
+              />
+              <span
+                aria-hidden
+                className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#FFD700]/70"
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-[#FFD700]/70"
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-[#FFD700]/70"
+              />
+              <div className="relative flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <span className="w-1 h-1 bg-[#FFD700]" />
+                  <span className="text-[9px] font-mono tracking-[0.4em] text-[#FFD700]/75">
+                    N°01 · SUMMON
+                  </span>
+                  <span className="hidden sm:inline text-[9px] font-mono tracking-[0.4em] text-[#FFD700]/75">
+                    一句描述，生成你的词灵
+                  </span>
+                </div>
+                {summonCooldownLeftMs > 0 ? (
+                  <div className="relative flex items-center gap-3 border-b border-[#FFD700]/30 py-1">
+                    <Timer
+                      size={14}
+                      className="shrink-0 text-[#FFD700] animate-pulse"
+                    />
+                    <div className="flex-1 min-w-0 flex items-baseline gap-2 text-sm font-mono text-[#FFD700]">
+                      <span className="tracking-[0.15em]">冷却中</span>
+                      <span className="text-[#FFD700]/60 text-[11px]">
+                        {summonCooldownSec} 秒后可再次召唤
+                      </span>
+                    </div>
+                    <div className="tabular-nums font-black text-lg text-[#FFD700] leading-none">
+                      {summonCooldownSec}
+                      <span className="text-[10px] tracking-widest ml-0.5">
+                        s
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative flex items-center gap-2 border-b border-[#FFD700]/20 focus-within:border-[#FFD700]/70 transition-colors py-1">
+                    <Sparkles
+                      size={14}
+                      className="shrink-0 text-[#FFD700]/70"
+                    />
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        type="text"
+                        value={summonInput}
+                        onChange={(e) => {
+                          setSummonInput(e.target.value);
+                          if (summonError) setSummonError("");
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            submitSummon();
+                          }
+                        }}
+                        placeholder=" "
+                        className="peer w-full bg-transparent border-0 outline-none text-sm text-[#F5F1DE] placeholder-transparent font-mono py-1.5"
+                      />
+                      {!summonInput && (
+                        <div
+                          aria-hidden
+                          className="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center text-sm font-mono text-white/30 truncate"
+                        >
+                          {placeholderText}
+                          <span className="ml-0.5 inline-block w-[1px] h-4 bg-[#FFD700] animate-pulse" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="hidden sm:inline text-[9px] font-mono text-white/20 tabular-nums">
+                      {summonInput.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={submitSummon}
+                      disabled={summonInput.trim().length === 0}
+                      className="group shrink-0 flex items-center gap-1.5 px-3 h-8 text-[10px] font-black tracking-[0.25em] text-[#FFD700] border border-[#FFD700]/60 hover:border-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] transition-all disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#FFD700] disabled:cursor-not-allowed"
+                    >
+                      <span>召唤</span>
+                      <Send
+                        size={11}
+                        className="transition-transform group-hover:translate-x-0.5"
+                      />
+                    </button>
+                  </div>
+                )}
+                {summonCooldownLeftMs > 0 && (
+                  <div className="h-[2px] w-full bg-[#FFD700]/10 rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-[#FFD700]"
+                      initial={false}
+                      animate={{
+                        width: `${Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            100 -
+                              (summonCooldownLeftMs / RECRUIT_COOLDOWN_MS) *
+                                100,
+                          ),
+                        )}%`,
+                      }}
+                      transition={{ duration: 0.6, ease: "linear" }}
+                    />
+                  </div>
+                )}
+                {summonError && (
+                  <div className="text-[10px] text-[#FF6B9D] font-mono">
+                    {summonError}
+                  </div>
+                )}
+                {!summonError && summonCooldownLeftMs <= 0 && (
+                  <div className="text-[9px] font-mono tracking-[0.15em] text-white/25 flex items-center gap-3 flex-wrap">
+                    <span>后台生成 · 自动收入麾下</span>
+                    <span className="hidden sm:inline text-white/15">·</span>
+                    <span className="hidden sm:inline">Enter 快速召唤</span>
+                    <span className="hidden md:inline text-white/15">·</span>
+                    <span className="hidden md:inline">召唤后 60s 冷却</span>
+                  </div>
+                )}
+                {/* Prompt showcase chips */}
+                <div
+                  className="mt-1 flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  <span className="shrink-0 text-[9px] font-mono tracking-[0.28em] text-white/25">
+                    灵感 ▸
+                  </span>
+                  {PROMPT_PRESETS.map((preset) => {
+                    const disabled = summonCooldownLeftMs > 0;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => {
+                          setSummonInput(preset.prompt);
+                          setSummonError("");
+                        }}
+                        title={preset.prompt}
+                        className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          borderColor: `${preset.accent}55`,
+                          color: `${preset.accent}dd`,
+                          background: `${preset.accent}10`,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (disabled) return;
+                          e.currentTarget.style.background = `${preset.accent}22`;
+                          e.currentTarget.style.borderColor = preset.accent;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = `${preset.accent}10`;
+                          e.currentTarget.style.borderColor = `${preset.accent}55`;
+                        }}
+                      >
+                        <span className="text-[11px]">{preset.emoji}</span>
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* 社交&朋友入口：群聊 + 1v1 对战 */}
+            <motion.button
+              type="button"
+              onClick={startSocial}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.99 }}
+              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+              className="group relative w-full overflow-hidden border border-white/10 bg-black/30 backdrop-blur-sm px-5 py-4 text-left transition-all hover:border-[#A78BFA]/40"
+            >
+              <span
+                aria-hidden
+                className="absolute top-0 left-0 w-3 h-3 border-t border-l opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
+              />
+              <span
+                aria-hidden
+                className="absolute top-0 right-0 w-3 h-3 border-t border-r opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 left-0 w-3 h-3 border-b border-l opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 right-0 w-3 h-3 border-b border-r opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ borderColor: "#A78BFA" }}
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-20 -right-10 h-44 w-44 rounded-full blur-3xl opacity-0 group-hover:opacity-30 transition-opacity duration-500"
+                style={{ background: "#A78BFA" }}
+              />
+              <div className="relative flex items-center gap-4">
+                <div
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2"
+                  style={{
+                    borderColor: "#A78BFA",
+                    color: "#A78BFA",
+                    boxShadow: "0 0 18px rgba(167,139,250,0.4)",
+                    background: "rgba(167,139,250,0.15)",
+                  }}
+                >
+                  <Users size={22} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-[9px] font-mono tracking-[0.4em] text-[#A78BFA]/85">
+                      SOCIAL · & · FRIENDS
+                    </span>
+                    <span className="text-[9px] font-mono text-[#FFD700] tracking-widest">
+                      · 房间码 / 群聊 / 1v1 对战
+                    </span>
+                  </div>
+                  <div
+                    className="font-black text-xl md:text-2xl tracking-tight"
+                    style={{
+                      color: "#A78BFA",
+                      textShadow: "0 0 14px rgba(167,139,250,0.4)",
+                      fontFamily:
+                        '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+                    }}
+                  >
+                    社交&朋友
+                  </div>
+                  <div className="text-[11px] text-white/50 mt-1 leading-relaxed">
+                    带词灵开房间群聊 · @词灵 persona 回复 · 每人最多 5 位词灵 ·
+                    房内随时发起约战
+                  </div>
+                </div>
+                <ChevronRight
+                  size={18}
+                  className="shrink-0 text-[#A78BFA] transition-transform group-hover:translate-x-1"
+                />
+              </div>
+            </motion.button>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ModeCard
+                onClick={startSpiritChat}
+                disabled={!selectedRoster || selectedUnavailable}
+                icon={<MessageCircle size={22} />}
+                title="灵契会客室"
+                subtitle="独立记忆 · 深度陪伴"
+                accent="#66FCF1"
+                description="和选中词灵一对一对话，它会记住你们之间的每一次交流。"
+                highlight
+              />
+              <ModeCard
+                onClick={startSpiritStory}
+                disabled={
+                  roster.filter((char) => !isRosterCharacterUnavailable(char))
+                    .length < 2
+                }
+                icon={<Clapperboard size={22} />}
+                title="群像共叙"
+                subtitle="多灵同场 · 世界故事"
+                accent="#B78BFF"
+                description="召集多位词灵同框互动，让它们自己推进一段属于你的故事。"
+                highlight
+              />
+              <ModeCard
+                onClick={startTower}
+                disabled={!selectedRoster || selectedUnavailable}
+                icon={<Castle size={22} />}
+                title="九层塔"
+                subtitle={
+                  selectedRoster
+                    ? selectedUnavailable
+                      ? `${selectedRoster.name} · 暂不可用`
+                      : `${selectedRoster.name} · 第${selectedRoster.tower.nextLayer ?? 1}层`
+                    : "选一位词灵出战"
+                }
+                accent="#FF6B9D"
+                description="登塔积累修炼 XP，突破关卡后触发进化，解锁全新形态与技能。"
+                highlight
+              />
+            </div>
+
+            <div className="relative flex flex-col border border-white/10 bg-black/30 backdrop-blur-sm p-6 overflow-hidden">
+              <span
+                aria-hidden
+                className="absolute top-0 left-0 w-3 h-3 border-t border-l border-[#FFD700]"
+              />
+              <span
+                aria-hidden
+                className="absolute top-0 right-0 w-3 h-3 border-t border-r border-[#FFD700]"
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-[#FFD700]"
+              />
+              <span
+                aria-hidden
+                className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-[#FFD700]"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-32 -left-32 h-64 w-64 rounded-full blur-3xl opacity-15"
+                style={{ background: "#FFD700" }}
+              />
+              <div className="mb-5 flex shrink-0 items-center justify-between relative pb-3 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-1.5 bg-[#FFD700]" />
+                  <span className="text-[10px] font-mono tracking-[0.35em] text-white/60">
+                    ROSTER · CORE
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-[10px] font-mono text-white/30">
+                    {String(rosterCount).padStart(2, "0")} / 24
+                  </span>
+                  {evolutionDebugAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => setEvolutionDebugMode(!evolutionDebugMode)}
+                      className="flex items-center gap-1.5 px-2 py-1 text-[9px] font-black tracking-widest transition-all border"
+                      style={{
+                        borderColor: evolutionDebugMode
+                          ? "rgba(255,107,157,0.75)"
+                          : "rgba(255,255,255,0.15)",
+                        color: evolutionDebugMode
+                          ? "#FF6B9D"
+                          : "rgba(255,255,255,0.4)",
+                      }}
+                    >
+                      <FlaskConical size={11} />
+                      DEBUG {evolutionDebugMode ? "ON" : "OFF"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {roster.length > 0 ? (
+                <div className="flex flex-1 flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
+                    {rosterPreview.map((char) => {
+                      const isSelected =
+                        char.rosterId === selectedRoster?.rosterId;
+                      const evolutionLocked =
+                        isRosterCharacterEvolutionLocked(char);
+                      const recruitLocked =
+                        isRosterCharacterRecruitLocked(char);
+                      const progress = xpProgress(char.level, char.xp);
+                      const nextEvo = getNextEvolutionProgress(
+                        char.level,
+                        char.xp,
+                        char.evolutionStage,
+                      );
+                      const nextEvoText = recruitLocked
+                        ? char.recruitLock?.status === "failed"
+                          ? "创造失败"
+                          : "后台创造中"
+                        : evolutionLocked
+                          ? "进化更新中"
+                          : nextEvo.nextStage
+                            ? nextEvo.ready
+                              ? "进化待触发"
+                              : `距${evolutionLabel(nextEvo.nextStage)} ${nextEvo.xpRemaining}XP`
+                            : "最终形态";
+                      const highestLayer =
+                        char.tower.highestEndlessLayer ??
+                        char.tower.highestCleared;
+                      const isFailed =
+                        recruitLocked && char.recruitLock?.status === "failed";
+                      const isGenerating = recruitLocked && !isFailed;
+                      const badges = [
+                        {
+                          label: `Lv.${char.level}`,
+                          title: `等级 ${char.level}`,
+                        },
+                        {
+                          label: `L${highestLayer}`,
+                          color: "#66FCF1",
+                          title: `无尽塔最高 L${highestLayer}`,
+                        },
+                      ];
+                      const canOperate =
+                        isSelected && !evolutionLocked && !recruitLocked;
+                      const actionSlot = canOperate ? (
+                        <>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenSpiritRosterId(char.rosterId);
+                              setPhase("SPIRIT_CHAT");
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setOpenSpiritRosterId(char.rosterId);
+                                setPhase("SPIRIT_CHAT");
+                              }
+                            }}
+                            className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"
+                            style={{
+                              background: "#66FCF1",
+                              boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            聊天
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startTower();
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                startTower();
+                              }
+                            }}
+                            className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"
+                            style={{
+                              background: "#FBBF24",
+                              boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            出战
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm("确认删除该词灵？")) {
+                                removeCharacter(char.rosterId);
+                                if (selectedRosterId === char.rosterId) {
+                                  setSelectedRosterId(null);
+                                }
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (window.confirm("确认删除该词灵？")) {
+                                  removeCharacter(char.rosterId);
+                                  if (selectedRosterId === char.rosterId) {
+                                    setSelectedRosterId(null);
+                                  }
+                                }
+                              }
+                            }}
+                            className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-white transition-all hover:brightness-110"
+                            style={{
+                              background: "#EF4444",
+                              boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            删除
+                          </span>
+                        </>
+                      ) : null;
+                      const footerSlot =
+                        !isGenerating && !isFailed ? (
+                          <div className="flex flex-col gap-1">
+                            <div className="h-[3px] overflow-hidden rounded-full bg-black/50">
+                              <div
+                                className="h-full rounded-full transition-[width] duration-500 ease-out"
+                                style={{
+                                  width: `${Math.round(progress.ratio * 100)}%`,
+                                  background:
+                                    "linear-gradient(90deg, #66FCF1, #FFD700)",
+                                }}
+                              />
+                            </div>
+                            <div className="text-[8px] text-center text-[#8a8d91] truncate">
+                              {levelAscensionLabel(char.level)} · {nextEvoText}
+                            </div>
+                          </div>
+                        ) : null;
+                      return (
+                        <SpiritCard
+                          key={char.rosterId}
+                          character={char}
+                          size="sm"
+                          selected={isSelected}
+                          topRightBadges={badges}
+                          actionSlot={actionSlot}
+                          footerSlot={footerSlot}
+                          onClick={() => setSelectedRosterId(char.rosterId)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedRosterId(char.rosterId);
+                            }
+                          }}
+                          onRetryRecruit={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            retryRecruit(char);
+                          }}
+                          onDropRecruit={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            dropRecruit(char);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {selectedRoster && canRegenerateEvolutionImage && (
+                    <div className="rounded-lg border border-[#FFD700]/45 bg-[#0B0C10]/70 p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-[10px] font-black tracking-[0.28em] text-[#FFD700]">
+                            进化图后台任务
+                          </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
+                            {selectedFallbackForm
+                              ? `${selectedRoster.name} 当前 ${evolutionLabel(selectedFallbackForm.stage)} 使用临时形态图，可在这里重新生成真实进化图。`
+                              : `${selectedRoster.name} 的进化更新可能已中断，可在这里重新生成真实进化图并解锁。`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={regenerateEvolutionImage}
+                          disabled={
+                            regeneratingRosterId === selectedRoster.rosterId
+                          }
+                          className="flex shrink-0 items-center justify-center gap-2 rounded border border-[#FFD700] px-3 py-2 text-[10px] font-black tracking-[0.18em] text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-60"
+                        >
+                          <RotateCcw
+                            size={13}
+                            className={
+                              regeneratingRosterId === selectedRoster.rosterId
+                                ? "animate-spin"
+                                : ""
+                            }
+                          />
+                          {regeneratingRosterId === selectedRoster.rosterId
+                            ? "生成中"
+                            : "重新生成进化图"}
+                        </button>
+                      </div>
+                      {regenerateError && (
+                        <div className="mt-2 text-[10px] text-[#FF6B9D]">
+                          {regenerateError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedRoster && selectedEvolutionLocked && (
+                    <div className="rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3 text-[11px] leading-relaxed text-[#C5C6C7]">
+                      <div className="mb-1 flex items-center gap-2 text-[10px] font-black tracking-[0.26em] text-[#FFD700]">
+                        <Lock size={12} />
+                        角色暂不可用
+                      </div>
+                      {selectedRoster.name}
+                      正在完成进化图更新，期间不能出战或训练。真实形态图完成后会自动恢复使用。
+                    </div>
+                  )}
+
+                  {selectedRoster && selectedRecruitLocked && (
+                    <div className="rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3 text-[11px] leading-relaxed text-[#C5C6C7]">
+                      <div className="mb-1 flex items-center gap-2 text-[10px] font-black tracking-[0.26em] text-[#FFD700]">
+                        <Lock size={12} />
+                        角色暂不可用
+                      </div>
+                      {selectedRoster.recruitLock?.status === "failed"
+                        ? selectedRoster.recruitLock.error ||
+                          "后台创造失败，请移除后重新创造。"
+                        : `${selectedRoster.recruitLock?.description || "新角色"} 正在后台生成，完成后会自动解锁。`}
+                    </div>
+                  )}
+
+                  {activeEvolutionDebugMode && selectedRoster && (
+                    <div className="rounded-lg border border-[#FF6B9D]/50 bg-[#0B0C10]/70 p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-[10px] font-black tracking-[0.28em] text-[#FF6B9D]">
+                            DEBUG EVOLUTION
+                          </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
+                            {debugNextStage
+                              ? `${selectedRoster.name} 可进入 ${evolutionLabel(debugNextStage)} 进化演出测试。`
+                              : `${selectedRoster.name} 已是最终形态。`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={startDebugEvolutionAnimation}
+                          disabled={!debugNextStage || selectedEvolutionLocked}
+                          className="flex shrink-0 items-center justify-center gap-2 rounded border border-[#FF6B9D] px-3 py-2 text-[10px] font-black tracking-[0.18em] text-[#FF6B9D] transition-all hover:bg-[#FF6B9D] hover:text-[#0B0C10] disabled:opacity-50"
+                        >
+                          <FlaskConical size={13} />
+                          测试进化演出
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-auto flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-[10px] leading-relaxed text-[#8a8d91]">
+                      {selectedRoster && !selectedUnavailable
+                        ? `已选中 ${selectedRoster.name}，上方三大核心入口将对其生效。`
+                        : "选择一名词灵作为出战核心。"}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={goRoster}
+                      className="flex items-center justify-center gap-2 rounded border border-[#66FCF1]/45 px-4 py-2.5 text-xs font-bold tracking-[0.2em] text-[#66FCF1] transition-all hover:bg-[#66FCF1]/10"
+                    >
+                      <UsersRound size={15} />
+                      查看全部
+                      {hiddenRosterCount > 0 ? ` +${hiddenRosterCount}` : ""}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startRecruit}
+                  className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#FFD700]/45 bg-[#0B0C10]/55 py-12 text-[#FFD700] transition-all hover:bg-[#FFD700]/10"
+                >
+                  <Plus size={30} />
+                  <span className="font-black tracking-[0.25em]">
+                    创造第一个角色
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        </motion.div>
+
+        {/* 底部签名 */}
+        <div className="mt-16 pt-6 border-t border-white/5 flex items-center justify-between text-[10px] font-mono tracking-[0.35em] text-white/25">
+          <div className="flex items-center gap-4">
+            <span>01 · CONFIG</span>
+            <span className="w-10 h-[1px] bg-white/15" />
+            <span className="text-[#FFD700]">02 · HUB</span>
+            <span className="w-10 h-[1px] bg-white/10" />
+            <span>03 · ASCEND</span>
+          </div>
+          <span className="hidden md:inline">召唤 · 陪伴 · 共叙 · 进化</span>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -562,720 +1331,127 @@ const IconButton: React.FC<{
   </motion.button>
 );
 
-interface CommandDeckLayoutProps {
-  roster: RosterCharacter[];
-  rosterCount: number;
-  selectedRoster: RosterCharacter | null;
-  selectedUnavailable: boolean;
-  selectedEvolutionLocked: boolean;
-  selectedRecruitLocked: boolean;
-  canRegenerateEvolutionImage: boolean;
-  regeneratingRosterId: string | null;
-  regenerateError: string;
-  evolutionDebugAvailable: boolean;
-  evolutionDebugMode: boolean;
-  activeEvolutionDebugMode: boolean;
-  debugNextStage: ActiveEvolutionStage | null;
-  summonInput: string;
-  summonError: string;
-  summonCooldownLeftMs: number;
-  summonCooldownSec: number;
-  placeholderText: string;
-  onBack: () => void;
-  onSelectRoster: (rosterId: string | null) => void;
-  previewRoster: RosterCharacter | null;
-  onPreviewRoster: (rosterId: string | null) => void;
-  onClosePreview: () => void;
-  onStartRecruit: () => void;
-  onStartSocial: () => void;
-  onGoRoster: () => void;
-  onStartSpiritChat: () => void;
-  onStartSpiritStory: () => void;
-  onStartTower: () => void;
-  onStartSpiritChatForRoster: (target: RosterCharacter) => void;
-  onStartTowerForRoster: (target: RosterCharacter) => void;
-  onRegenerateEvolutionImage: () => void;
-  onSetEvolutionDebugMode: (enabled: boolean) => void;
-  onStartDebugEvolutionAnimation: () => void;
-  onSummonInputChange: (value: string) => void;
-  onSubmitSummon: () => void;
+interface ModeCardProps {
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  description: string;
+  accent: string;
+  highlight?: boolean;
+  disabled?: boolean;
+  compact?: boolean;
 }
 
-const CommandDeckLayout: React.FC<CommandDeckLayoutProps> = ({
-  roster,
-  rosterCount,
-  selectedRoster,
-  selectedUnavailable,
-  evolutionDebugAvailable,
-  evolutionDebugMode,
-  summonInput,
-  summonError,
-  summonCooldownLeftMs,
-  summonCooldownSec,
-  placeholderText,
-  onBack,
-  onSelectRoster,
-  previewRoster,
-  onPreviewRoster,
-  onClosePreview,
-  onStartRecruit,
-  onStartSocial,
-  onGoRoster,
-  onStartSpiritChat,
-  onStartSpiritStory,
-  onStartTower,
-  onStartSpiritChatForRoster,
-  onStartTowerForRoster,
-  onSetEvolutionDebugMode,
-  onSummonInputChange,
-  onSubmitSummon,
+const ModeCard: React.FC<ModeCardProps> = ({
+  onClick,
+  icon,
+  title,
+  subtitle,
+  description,
+  accent,
+  disabled,
+  compact,
 }) => {
-  const selectedRarity = selectedRoster?.rarity ?? "SSR";
-  const selectedRarityConfig = RARITY_CONFIGS[selectedRarity];
-  const summonTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [isSummonMultiline, setIsSummonMultiline] = useState(false);
-  const availableRosterCount = roster.filter(
-    (char) => !isRosterCharacterUnavailable(char),
-  ).length;
-  const selectedTowerLayer = selectedRoster?.tower.nextLayer ?? 1;
-
-  useEffect(() => {
-    const textarea = summonTextareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = "0px";
-    const contentHeight = textarea.scrollHeight;
-    const multiline = contentHeight > 40;
-    if (multiline !== isSummonMultiline) {
-      setIsSummonMultiline(multiline);
-    }
-    textarea.style.height = `${multiline ? 52 : 40}px`;
-  }, [isSummonMultiline, summonInput]);
-
+  const modeIndex = React.useMemo(
+    () => Math.floor(Math.random() * 90 + 10).toString(),
+    [],
+  );
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#06080d] text-[#e8edf1]">
-      <div
+    <motion.button
+      onClick={onClick}
+      disabled={disabled}
+      whileHover={disabled ? {} : { y: -4 }}
+      whileTap={disabled ? {} : { scale: 0.99 }}
+      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+      className={`group relative flex flex-col justify-between text-left overflow-hidden bg-black/30 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-colors ${
+        compact ? "p-4 min-h-[180px]" : "p-6 min-h-[220px]"
+      } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+    >
+      {/* 边角刻线 */}
+      <span
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-70"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(117,255,245,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(117,255,245,.035) 1px, transparent 1px), radial-gradient(circle at 72% 12%, rgba(183,154,255,.12), transparent 24%), radial-gradient(circle at 12% 96%, rgba(255,216,77,.08), transparent 30%)",
-          backgroundSize: "64px 64px, 64px 64px, auto, auto",
-        }}
+        className="absolute top-0 left-0 w-3 h-3 border-t border-l opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
       />
-      <div
+      <span
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-[24%] h-[42rem] w-[42rem] -translate-x-1/2 rounded-full opacity-20 blur-3xl"
-        style={{ background: selectedRarityConfig.primaryColor }}
+        className="absolute top-0 right-0 w-3 h-3 border-t border-r opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
+      />
+      <span
+        aria-hidden
+        className="absolute bottom-0 left-0 w-3 h-3 border-b border-l opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
+      />
+      <span
+        aria-hidden
+        className="absolute bottom-0 right-0 w-3 h-3 border-b border-r opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ borderColor: accent }}
       />
 
-      <BackButton
-        onClick={onBack}
-        label="返回欢迎页"
-        color="#75fff5"
-        className="fixed left-6 top-5 z-30"
+      {/* Hover 时的柔和辉光 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full blur-3xl opacity-0 group-hover:opacity-30 transition-opacity duration-500"
+        style={{ background: accent }}
       />
-      <div className="fixed left-[5.5rem] top-8 z-20 hidden items-center gap-3 font-mono text-[10px] tracking-[0.4em] text-white/40 md:flex">
-        <div className="h-[1px] w-6 bg-[#75fff5]" />
-        <span>WORD-SPIRIT / 002</span>
+
+      {/* 顶部：编号 + 图标 */}
+      <div className="relative flex items-start justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-mono tracking-widest"
+            style={{ color: accent, opacity: 0.75 }}
+          >
+            N°{modeIndex}
+          </span>
+          <span
+            className="w-6 h-[1px] group-hover:w-10 transition-all"
+            style={{ background: accent }}
+          />
+        </div>
+        <div
+          className="transition-transform group-hover:scale-110 group-hover:-rotate-6"
+          style={{ color: accent }}
+        >
+          {icon}
+        </div>
       </div>
 
-      <main className="relative mx-auto flex min-h-screen w-full max-w-[1540px] flex-col px-5 py-5 sm:px-8 lg:px-10 xl:px-6">
-        <header className="flex h-14 items-center justify-between">
-          <div />
-          <IconButton
-            onClick={onGoRoster}
-            icon={<UsersRound size={14} />}
-            label={`我的词灵 · ${rosterCount}`}
-            accent="#75fff5"
-          />
-        </header>
-
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-          className="mt-6"
-        >
-          <div className="pt-1">
-            <div className="font-mono text-[10px] tracking-[0.22em] text-[#ffd84d]">
-              ━━ CHAPTER · 01
-            </div>
-            <h1
-              className="mt-1 font-display text-[clamp(2.85rem,4.6vw,4.35rem)] font-black leading-[0.88] tracking-[-0.075em]"
-              style={{ textShadow: "0 0 28px rgba(255,216,77,.22)" }}
-            >
-              词灵<span className="text-[#ffd84d]">枢庭</span>
-            </h1>
-            <div className="mt-2 font-mono text-[9px] font-bold tracking-[0.28em] text-white/30 sm:tracking-[0.44em]">
-              SUMMON · CHAT · STORY · ASCEND
-            </div>
-          </div>
-        </motion.section>
-
-        <section className="mt-7 grid gap-6 xl:h-[580px] xl:grid-cols-[280px_minmax(0,1fr)_380px]">
-          <aside className="order-2 flex max-h-[440px] min-h-[340px] flex-col border border-[#75fff5]/25 bg-[#0c1018]/80 p-5 shadow-[inset_0_1px_rgba(255,255,255,.025),0_20px_80px_rgba(0,0,0,.18)] backdrop-blur-sm xl:order-1 xl:h-full xl:min-h-0 xl:max-h-none">
-            <DeckHeading
-              title="ROSTER · LIVE"
-              meta={`${String(rosterCount).padStart(2, "0")} 位`}
-              accent="#75fff5"
-            />
-            {roster.length > 0 ? (
-              <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:rgba(117,255,245,.45)_transparent] [scrollbar-width:thin]">
-                {roster.map((char) => {
-                  const rarity = RARITY_CONFIGS[char.rarity ?? "N"];
-                  const rarityTier =
-                    rarity.id === "UR"
-                      ? 4
-                      : rarity.id === "SSR"
-                        ? 3
-                        : rarity.id === "SR"
-                          ? 2
-                          : rarity.id === "R"
-                            ? 1
-                            : 0;
-                  const raritySurface =
-                    rarityTier >= 3
-                      ? `linear-gradient(90deg, rgba(${rarity.rgb}, .07), transparent 48%)`
-                      : rarityTier === 2
-                        ? `linear-gradient(90deg, rgba(${rarity.rgb}, .05), transparent 45%)`
-                        : rarityTier === 1
-                          ? `linear-gradient(90deg, rgba(${rarity.rgb}, .035), transparent 40%)`
-                          : "transparent";
-                  const active = char.rosterId === selectedRoster?.rosterId;
-                  const unavailable = isRosterCharacterUnavailable(char);
-                  const status =
-                    char.recruitLock?.status === "failed"
-                      ? "创造失败"
-                      : char.recruitLock
-                        ? "创造中"
-                        : char.evolutionLock
-                          ? "进化中"
-                          : active
-                            ? "已选中"
-                            : `Lv. ${char.level}`;
-                  const isGenerating =
-                    char.recruitLock?.status === "generating";
-                  const recruitStage = Math.min(
-                    RECRUIT_STAGE_COUNT - 1,
-                    Math.max(0, char.recruitLock?.stage ?? 0),
-                  );
-                  const recruitPercent =
-                    recruitStage === RECRUIT_STAGE_COUNT - 1
-                      ? 92
-                      : Math.round(
-                          12 +
-                            ((recruitStage + 1) / (RECRUIT_STAGE_COUNT - 1)) *
-                              64,
-                        );
-                  const recruitStep =
-                    LOADING_STEPS[recruitStage]?.text ?? "解析灵魂语料";
-                  const RecruitStageIcon =
-                    LOADING_STEPS[recruitStage]?.icon ?? Sparkles;
-                  return (
-                    <div
-                      key={char.rosterId}
-                      className="group/roster relative border-b border-l border-white/[.075] transition-colors hover:bg-white/[.025]"
-                      style={{
-                        borderLeftColor: `${rarity.primaryColor}${active ? "ee" : "88"}`,
-                        borderLeftWidth: 1,
-                        boxShadow: active
-                          ? `inset 5px 0 14px ${rarity.primaryColor}14`
-                          : rarityTier >= 3
-                            ? `inset 4px 0 10px ${rarity.primaryColor}0d`
-                            : rarityTier === 2
-                              ? `inset 3px 0 8px ${rarity.primaryColor}09`
-                              : rarityTier === 1
-                                ? `inset 2px 0 6px ${rarity.primaryColor}08`
-                                : "none",
-                        background: raritySurface,
-                      }}
-                    >
-                      <div className="flex w-full items-center gap-3 px-1 py-3">
-                        <button
-                          type="button"
-                          disabled={Boolean(char.recruitLock)}
-                          onClick={() => onPreviewRoster(char.rosterId)}
-                          className="h-11 w-11 shrink-0 overflow-hidden rounded-full border transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
-                          style={{
-                            borderColor: isGenerating
-                              ? "#ffd84dcc"
-                              : `${rarity.primaryColor}${active ? "ee" : "99"}`,
-                            borderWidth: isGenerating
-                              ? 2
-                              : rarityTier >= 3
-                                ? 2
-                                : 1,
-                            boxShadow: isGenerating
-                              ? "0 0 16px rgba(255,216,77,.42), inset 0 0 12px rgba(255,216,77,.12)"
-                              : active
-                                ? `0 0 12px ${rarity.primaryColor}77`
-                                : `0 0 6px ${rarity.primaryColor}33`,
-                          }}
-                          aria-label={`预览 ${char.name} 的英雄卡`}
-                          title="预览英雄卡"
-                        >
-                          {isGenerating ? (
-                            <span className="flex h-full w-full items-center justify-center bg-[#14130d]">
-                              <RecruitStageIcon
-                                size={20}
-                                className="animate-pulse text-[#ffd84d]"
-                                strokeWidth={1.7}
-                              />
-                            </span>
-                          ) : (
-                            <CharacterAvatar
-                              imageUrl={char.imageUrl}
-                              name={char.name}
-                              themeColor={rarity.primaryColor}
-                              iconSize={18}
-                              className="h-full w-full"
-                            />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onSelectRoster(char.rosterId)}
-                          className="min-w-0 flex-1 text-left"
-                          style={{
-                            color: active
-                              ? rarity.primaryColor
-                              : "rgba(232,237,241,.92)",
-                          }}
-                        >
-                          <span className="block truncate text-[15px] font-bold leading-tight">
-                            {char.name}
-                          </span>
-                          {isGenerating ? (
-                            <span className="mt-1.5 block">
-                              <span className="mb-1 flex items-center justify-between font-mono text-[9px] tracking-[0.05em] text-[#ffd84d]">
-                                <span className="truncate">{recruitStep}</span>
-                                <span>{recruitPercent}%</span>
-                              </span>
-                              <span className="block h-1 overflow-hidden rounded-full bg-[#ffd84d]/15">
-                                <span
-                                  className="block h-full rounded-full bg-gradient-to-r from-[#ffd84d]/50 to-[#ffd84d] shadow-[0_0_8px_#ffd84d]"
-                                  style={{ width: `${recruitPercent}%` }}
-                                />
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="mt-1 block truncate font-mono text-[10px] tracking-[0.08em] text-white/40">
-                              {unavailable ? (
-                                status
-                              ) : (
-                                <>
-                                  <span
-                                    className="mr-1 inline-flex min-w-5 items-center justify-center border px-1 py-px text-[8px] font-bold leading-none"
-                                    style={{
-                                      borderColor: `${rarity.primaryColor}aa`,
-                                      borderWidth: 1,
-                                      color:
-                                        rarityTier >= 3
-                                          ? "#0a0b12"
-                                          : rarity.primaryColor,
-                                      background:
-                                        rarityTier >= 3
-                                          ? rarity.borderGradient
-                                          : `rgba(${rarity.rgb}, .10)`,
-                                      boxShadow:
-                                        rarityTier >= 2
-                                          ? `0 0 4px rgba(${rarity.rgb}, .25)`
-                                          : "none",
-                                    }}
-                                  >
-                                    {rarity.id}
-                                  </span>
-                                  {status}
-                                </>
-                              )}
-                            </span>
-                          )}
-                        </button>
-                        <div className="flex h-11 w-[50px] shrink-0 flex-col border-l border-white/[.08]">
-                          <RosterQuickAction
-                            label="聊天"
-                            icon={<MessageCircle size={10} />}
-                            accent="#75fff5"
-                            disabled={unavailable}
-                            onClick={() => onStartSpiritChatForRoster(char)}
-                          />
-                          <RosterQuickAction
-                            label="对战"
-                            icon={<Castle size={10} />}
-                            accent="#ffd84d"
-                            disabled={unavailable}
-                            onClick={() => onStartTowerForRoster(char)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={onStartRecruit}
-                className="mt-4 flex min-h-40 w-full flex-col items-center justify-center gap-2 border border-dashed border-[#75fff5]/35 text-[#75fff5] transition-colors hover:bg-[#75fff5]/10"
-              >
-                <Plus size={22} />
-                <span className="font-mono text-[10px] tracking-[0.16em]">
-                  创造第一位词灵
-                </span>
-              </button>
-            )}
-            {evolutionDebugAvailable && (
-              <button
-                type="button"
-                onClick={() => onSetEvolutionDebugMode(!evolutionDebugMode)}
-                className="mt-2 flex w-full items-center justify-between border border-white/10 px-2 py-1.5 font-mono text-[9px] tracking-[0.12em] transition-colors"
-                style={{
-                  color: evolutionDebugMode
-                    ? "#ff719e"
-                    : "rgba(255,255,255,.38)",
-                  borderColor: evolutionDebugMode
-                    ? "rgba(255,113,158,.55)"
-                    : "rgba(255,255,255,.1)",
-                }}
-              >
-                <span className="flex items-center gap-1.5">
-                  <FlaskConical size={11} />
-                  DEBUG
-                </span>
-                <span>{evolutionDebugMode ? "ON" : "OFF"}</span>
-              </button>
-            )}
-          </aside>
-
-          <section className="order-1 relative min-h-[500px] overflow-hidden border border-[#75fff5]/25 bg-[#0c1018]/80 p-6 shadow-[inset_0_1px_rgba(255,255,255,.025),0_20px_80px_rgba(0,0,0,.18)] backdrop-blur-sm sm:p-7 xl:order-2 xl:h-full xl:min-h-0">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -inset-28 opacity-70"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(255,216,77,.13), transparent 42%)",
-              }}
-            />
-            <div className="relative flex h-full flex-col">
-              <div className="font-mono text-[11px] font-bold tracking-[0.22em] text-[#ffd84d]">
-                N°01 · SUMMON / PRIMARY ACTION
-              </div>
-              <h2 className="mt-6 max-w-2xl font-display text-[2.15rem] font-black leading-tight tracking-[-0.05em] sm:text-[2.65rem]">
-                用一句话，为这个世界唤来新的灵魂。
-              </h2>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/45">
-                描述外形、性格、能力或一个荒诞念头。它会成为可对话、可共叙、可进化的独立词灵。
-              </p>
-
-              {summonCooldownLeftMs > 0 ? (
-                <div className="mt-8 flex items-center gap-3 border border-[#ffd84d]/35 bg-black/30 px-4 py-4">
-                  <Timer
-                    size={15}
-                    className="shrink-0 animate-pulse text-[#ffd84d]"
-                  />
-                  <span className="flex-1 font-mono text-xs tracking-[0.12em] text-[#ffd84d]">
-                    召唤冷却中
-                  </span>
-                  <span className="font-mono text-lg font-black text-[#ffd84d]">
-                    {summonCooldownSec}
-                    <small className="ml-0.5 text-[9px] tracking-widest">
-                      s
-                    </small>
-                  </span>
-                </div>
-              ) : (
-                <label className="mt-8 flex items-center gap-3 border border-[#ffd84d]/45 bg-black/35 px-4 py-2.5 transition-colors focus-within:border-[#ffd84d]">
-                  <Sparkles size={18} className="shrink-0 text-[#ffd84d]" />
-                  <div className="relative min-w-0 flex-1">
-                    <textarea
-                      ref={summonTextareaRef}
-                      rows={1}
-                      value={summonInput}
-                      onChange={(event) =>
-                        onSummonInputChange(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          onSubmitSummon();
-                        }
-                      }}
-                      placeholder=" "
-                      className={`peer block w-full resize-none overflow-y-auto bg-transparent font-mono text-[13px] text-[#ecf0d9] outline-none placeholder:text-transparent [scrollbar-width:none] ${
-                        isSummonMultiline ? "py-1 leading-5" : "py-0 leading-10"
-                      }`}
-                    />
-                    {!summonInput && (
-                      <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pr-2 font-mono text-[13px] leading-5 text-[#7a7152]">
-                        {placeholderText}
-                        <span className="ml-1 h-4 w-px animate-pulse bg-[#ffd84d]" />
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onSubmitSummon}
-                    disabled={!summonInput.trim()}
-                    className="group flex h-10 shrink-0 items-center gap-1.5 border border-[#ffd84d] bg-[#ffd84d] px-4 font-mono text-[11px] font-black tracking-[0.16em] text-[#17140b] transition-colors hover:bg-[#fff0a4] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    召唤
-                    <Send
-                      size={11}
-                      className="transition-transform group-hover:translate-x-0.5"
-                    />
-                  </button>
-                </label>
-              )}
-
-              {summonError && (
-                <div className="mt-2 font-mono text-[10px] text-[#ff719e]">
-                  {summonError}
-                </div>
-              )}
-              <div className="mt-3 flex h-9 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
-                <span className="shrink-0 font-mono text-[10px] tracking-[0.18em] text-white/30">
-                  灵感 ▸
-                </span>
-                {PROMPT_PRESETS.slice(0, 5).map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    disabled={summonCooldownLeftMs > 0}
-                    onClick={() => onSummonInputChange(preset.prompt)}
-                    title={preset.prompt}
-                    className="h-7 shrink-0 border px-2.5 font-mono text-[10px] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                    style={{
-                      borderColor: `${preset.accent}55`,
-                      color: `${preset.accent}dd`,
-                      background: `${preset.accent}0e`,
-                    }}
-                  >
-                    {preset.emoji} {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-5">
-                <div className="flex items-center gap-2">
-                  <span className="h-px w-8 bg-white/[.14]" />
-                  <span className="font-mono text-[9px] tracking-[0.22em] text-white/30">
-                    SECONDARY ROUTES
-                  </span>
-                  <span className="h-px flex-1 bg-white/[.08]" />
-                </div>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <DeckRouteButton
-                    onClick={onStartSpiritChat}
-                    disabled={!selectedRoster || selectedUnavailable}
-                    icon={<MessageCircle size={22} />}
-                    title="灵契会客室"
-                    detail="和已选词灵一对一对话"
-                    accent="#75fff5"
-                  />
-                  <DeckRouteButton
-                    onClick={onStartSpiritStory}
-                    disabled={availableRosterCount < 2}
-                    icon={<Clapperboard size={22} />}
-                    title="群像共叙"
-                    detail="召集多人，让故事生长"
-                    accent="#b79aff"
-                  />
-                  <DeckRouteButton
-                    onClick={onStartTower}
-                    disabled={!selectedRoster || selectedUnavailable}
-                    icon={<Castle size={22} />}
-                    title="九层塔"
-                    detail={
-                      selectedRoster
-                        ? `${selectedRoster.name} · 第${selectedTowerLayer}层`
-                        : "选择一位词灵出战"
-                    }
-                    accent="#ff719e"
-                  />
-                  <DeckRouteButton
-                    onClick={onStartSocial}
-                    disabled={false}
-                    icon={<Users size={22} />}
-                    title="社交与朋友"
-                    detail="进入房间群聊，或向朋友发起约战"
-                    accent="#b79aff"
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <aside className="order-3 relative flex min-h-[460px] items-center justify-center border border-[#75fff5]/25 bg-[#0c1018]/80 p-5 shadow-[inset_0_1px_rgba(255,255,255,.025),0_20px_80px_rgba(0,0,0,.18)] backdrop-blur-sm xl:h-full xl:min-h-0">
-            <span className="absolute -top-px left-4 -translate-y-1/2 bg-[#0c1018] px-2 font-mono text-[10px] font-bold tracking-[0.2em] text-[#75fff5]">
-              COMMAND DECK
-            </span>
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-x-10 top-0 h-24 opacity-70"
-              style={{
-                background:
-                  "radial-gradient(ellipse at top, rgba(117,255,245,.11), transparent 68%)",
-              }}
-            />
-            {selectedRoster ? (
-              <HoverFlipHeroCard
-                character={selectedRoster}
-                size="xl"
-                showStats
-                showQuote={false}
-                showSkill={false}
-                selected
-                backLabel="COURTYARD GUIDE"
-                className="relative !w-full max-w-[320px]"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={onStartRecruit}
-                className="relative flex aspect-[3/4] w-full max-w-[276px] flex-col items-center justify-center gap-3 rounded-2xl border bg-[#0c1018]/80 font-mono text-[10px] tracking-[0.16em] transition-colors hover:bg-[#75fff5]/10"
-                style={{
-                  borderColor: `${selectedRarityConfig.primaryColor}66`,
-                  color: selectedRarityConfig.primaryColor,
-                }}
-              >
-                <Sparkles size={28} />
-                召唤第一位词灵
-              </button>
-            )}
-          </aside>
-        </section>
-
-        <footer className="mt-auto flex items-center justify-between border-t border-white/[.06] py-5 font-mono text-[9px] tracking-[0.16em] text-white/25">
-          <span>
-            01 · CONFIG <span className="mx-2 text-[#ffd84d]">02 · HUB</span> 03
-            · ASCEND
-          </span>
-          <span className="hidden sm:inline">召唤 · 陪伴 · 共叙 · 进化</span>
-        </footer>
-      </main>
-      <AnimatePresence>
-        {previewRoster && (
-          <HeroCardPreviewModal
-            character={previewRoster}
-            onClose={onClosePreview}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-const HeroCardPreviewModal: React.FC<{
-  character: RosterCharacter;
-  onClose: () => void;
-}> = ({ character, onClose }) => {
-  const rarity = RARITY_CONFIGS[character.rarity ?? "R"];
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-5 backdrop-blur-sm"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
-      <motion.div
-        className="relative flex max-h-full flex-col items-center"
-        initial={{ opacity: 0, scale: 0.92, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 8 }}
-        transition={{ type: "spring", stiffness: 260, damping: 24 }}
-        onClick={(event) => event.stopPropagation()}
-      >
+      {/* 标题 */}
+      <div className="relative">
         <div
-          className="mb-3 font-mono text-[10px] font-bold tracking-[0.22em]"
-          style={{ color: rarity.primaryColor }}
+          className={`font-display font-black leading-tight tracking-tight ${
+            compact ? "text-xl" : "text-2xl md:text-3xl"
+          }`}
+          style={{ color: accent, letterSpacing: "-0.02em" }}
         >
-          SPIRIT CARD · {rarity.labelEn}
+          {title}
         </div>
-        <HoverFlipHeroCard
-          character={character}
-          size="lg"
-          showStats
-          showQuote={false}
-          backLabel="SPIRIT ARCHIVE"
-        />
-        <div className="mt-3 font-mono text-[9px] tracking-[0.16em] text-white/35">
-          点击空白处关闭预览
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
+        {subtitle && (
+          <div className="text-[11px] text-white/60 mt-1.5 tracking-wide">
+            {subtitle}
+          </div>
+        )}
+      </div>
 
-const DeckHeading: React.FC<{
-  title: string;
-  meta: string;
-  accent: string;
-}> = ({ title, meta, accent }) => (
-  <div className="flex items-center justify-between border-b border-white/[.07] pb-3 font-mono text-[11px] font-bold tracking-[0.16em]">
-    <span style={{ color: accent }}>{title}</span>
-    <span className="text-[10px] text-white/35">{meta}</span>
-  </div>
-);
+      {/* 描述 */}
+      <p className="relative text-[11px] text-white/40 leading-relaxed mt-3">
+        {description}
+      </p>
 
-const RosterQuickAction: React.FC<{
-  label: string;
-  icon: React.ReactNode;
-  accent: string;
-  disabled?: boolean;
-  onClick: () => void;
-}> = ({ label, icon, accent, disabled = false, onClick }) => (
-  <button
-    type="button"
-    disabled={disabled}
-    onClick={onClick}
-    className="flex min-h-0 w-full flex-1 items-center justify-center gap-1 border-b border-white/[.06] px-1 font-mono text-[8px] font-bold tracking-[0.06em] transition-colors last:border-b-0 hover:bg-white/[.04] disabled:cursor-not-allowed disabled:opacity-35"
-    style={{
-      color: accent,
-    }}
-  >
-    {icon}
-    {label}
-  </button>
-);
-
-const DeckRouteButton: React.FC<{
-  onClick: () => void;
-  disabled: boolean;
-  icon: React.ReactNode;
-  title: string;
-  detail: string;
-  accent: string;
-}> = ({ onClick, disabled, icon, title, detail, accent }) => (
-  <motion.button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    whileHover={disabled ? {} : { y: -2 }}
-    whileTap={disabled ? {} : { scale: 0.99 }}
-    className="group relative min-h-[128px] overflow-hidden border border-white/10 bg-black/25 p-4 text-left transition-colors hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-35"
-  >
-    <span
-      aria-hidden
-      className="absolute inset-y-0 left-0 w-px opacity-60"
-      style={{ background: accent }}
-    />
-    <span className="flex items-center justify-between">
-      <span
-        className="font-mono text-[10px] tracking-[0.14em]"
+      {/* 底部：ENTER 指示 */}
+      <div
+        className="relative mt-4 flex items-center justify-between text-[10px] font-mono tracking-[0.35em] pt-3 border-t border-white/10"
         style={{ color: accent }}
       >
-        ACTION
-      </span>
-      <span style={{ color: accent }}>{icon}</span>
-    </span>
-    <span className="mt-3 block text-base font-bold" style={{ color: accent }}>
-      {title}
-    </span>
-    <span className="mt-1 block text-[10px] leading-4 text-white/40">
-      {detail}
-    </span>
-  </motion.button>
-);
+        <span>ENTER</span>
+        <ChevronRight
+          size={14}
+          className="transition-transform group-hover:translate-x-1"
+        />
+      </div>
+    </motion.button>
+  );
+};

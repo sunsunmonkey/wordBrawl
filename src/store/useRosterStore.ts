@@ -79,6 +79,7 @@ export interface RosterCharacter extends CharacterData {
   };
 }
 
+const MAX_ROSTER_SIZE = 24;
 const MAX_TOWER_RUNS = 10;
 const RECRUIT_LOCK_STALE_MS = 1000 * 60 * 30;
 const DEFAULT_ROSTER_NAMES = ["唐三", "超梦", "孙悟空", "奥特曼", "卡卡西"];
@@ -324,7 +325,8 @@ const supplementDefaultRoster = (
   });
 
   if (missingStarters.length === 0) return roster;
-  return [...roster, ...missingStarters];
+  const room = Math.max(0, MAX_ROSTER_SIZE - roster.length);
+  return [...roster, ...missingStarters.slice(0, room)];
 };
 
 const normalizeStarterRarity = (char: RosterCharacter): RosterCharacter => {
@@ -423,7 +425,7 @@ export const useRosterStore = create<RosterStore>()(
         });
 
         set((state) => ({
-          roster: [recruited, ...state.roster],
+          roster: [recruited, ...state.roster].slice(0, MAX_ROSTER_SIZE),
           pendingRevealQueue: addToRevealQueue
             ? [
                 ...state.pendingRevealQueue,
@@ -451,7 +453,7 @@ export const useRosterStore = create<RosterStore>()(
         });
 
         set((state) => ({
-          roster: [recruited, ...state.roster],
+          roster: [recruited, ...state.roster].slice(0, MAX_ROSTER_SIZE),
         }));
         return recruited;
       },

@@ -1,13 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Sword, Trash2, UsersRound } from "lucide-react";
+import { UsersRound, Sword } from "lucide-react";
 import { useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
   isRosterCharacterRecruitLocked,
-  isRosterCharacterUnavailable,
   useRosterStore,
-  type RosterCharacter,
 } from "../store/useRosterStore";
 import { CharacterDetailModal } from "./CharacterDetailModal";
 import { ParticleField } from "./ParticleField";
@@ -20,9 +18,6 @@ import type { AIConfig } from "../utils/ai";
 
 export const RosterScreen: React.FC = () => {
   const setPhase = useGameStore((s) => s.setPhase);
-  const setBattleMode = useGameStore((s) => s.setBattleMode);
-  const setTowerRosterId = useGameStore((s) => s.setTowerRosterId);
-  const setTowerLayer = useGameStore((s) => s.setTowerLayer);
   const apiKey = useGameStore((s) => s.apiKey);
   const baseUrl = useGameStore((s) => s.baseUrl);
   const model = useGameStore((s) => s.model);
@@ -36,8 +31,15 @@ export const RosterScreen: React.FC = () => {
   const selected = selectedId
     ? roster.find((r) => r.rosterId === selectedId)
     : null;
-  // 保留入队顺序，避免角色从“创造中”切换至正式卡片时因排序条件变化而移动。
-  const displayRoster = roster;
+  const displayRoster = useMemo(
+    () =>
+      [...roster].sort((a, b) => {
+        const aIsGenerating = a.recruitLock?.status === "generating";
+        const bIsGenerating = b.recruitLock?.status === "generating";
+        return Number(bIsGenerating) - Number(aIsGenerating);
+      }),
+    [roster],
+  );
 
   const handleRemoveCharacter = (rosterId: string, name: string) => {
     if (!window.confirm(`确定要将 ${name} 移出麾下吗？`)) return;
@@ -55,20 +57,6 @@ export const RosterScreen: React.FC = () => {
       revived.recruitLock?.description || revived.sourceDescription || "";
     if (!description) return;
     runBackgroundRecruit(rosterId, description, cfg);
-  };
-
-  const handleStartChat = (character: RosterCharacter) => {
-    if (isRosterCharacterUnavailable(character)) return;
-    setOpenSpiritRosterId(character.rosterId);
-    setPhase("SPIRIT_CHAT");
-  };
-
-  const handleStartTower = (character: RosterCharacter) => {
-    if (isRosterCharacterUnavailable(character)) return;
-    setBattleMode("pve_tower");
-    setTowerRosterId(character.rosterId);
-    setTowerLayer(character.tower.nextLayer ?? 1);
-    setPhase("TOWER_HUB");
   };
 
   return (
@@ -122,7 +110,7 @@ export const RosterScreen: React.FC = () => {
               我的词灵
             </h1>
             <span className="ml-auto text-xs text-[#8a8d91] tracking-widest">
-              已收录 {roster.length} 位
+              {roster.length} / 24
             </span>
           </div>
           <div className="text-[10px] text-[#8a8d91] tracking-[0.3em] mb-6">
@@ -174,38 +162,17 @@ export const RosterScreen: React.FC = () => {
                       event.preventDefault();
                       setSelectedId(char.rosterId);
                     }}
-                    actionSlot={
-                      clickable ? (
-                        <>
-                          <RosterCardAction
-                            label="出战"
-                            icon={<Sword size={10} />}
-                            accent="#FFD700"
-                            onClick={() => handleStartTower(char)}
-                          />
-                          <RosterCardAction
-                            label="聊天"
-                            icon={<MessageCircle size={10} />}
-                            accent="#66FCF1"
-                            onClick={() => handleStartChat(char)}
-                          />
-                          <RosterCardAction
-                            label="删除"
-                            icon={<Trash2 size={10} />}
-                            accent="#FF6B9D"
-                            onClick={() =>
-                              handleRemoveCharacter(char.rosterId, char.name)
-                            }
-                          />
-                        </>
-                      ) : undefined
-                    }
                     onRetryRecruit={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleRetryRecruit(char.rosterId);
                     }}
                     onDropRecruit={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveCharacter(char.rosterId, char.name);
+                    }}
+                    onDelete={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleRemoveCharacter(char.rosterId, char.name);
@@ -238,28 +205,3 @@ export const RosterScreen: React.FC = () => {
     </div>
   );
 };
-
-const RosterCardAction: React.FC<{
-  label: string;
-  icon: React.ReactNode;
-  accent: string;
-  onClick: () => void;
-}> = ({ label, icon, accent, onClick }) => (
-  <button
-    type="button"
-    onPointerDown={(event) => event.stopPropagation()}
-    onClick={(event) => {
-      event.stopPropagation();
-      onClick();
-    }}
-    className="flex h-6 min-w-[38px] items-center justify-center gap-0.5 rounded border bg-[#0B0C10]/90 px-1 py-1 font-mono text-[8px] font-black tracking-[0.04em] backdrop-blur-sm transition-all hover:-translate-x-0.5 hover:brightness-125"
-    style={{
-      color: accent,
-      borderColor: `${accent}88`,
-      boxShadow: `0 0 10px ${accent}2b`,
-    }}
-  >
-    {icon}
-    {label}
-  </button>
-);

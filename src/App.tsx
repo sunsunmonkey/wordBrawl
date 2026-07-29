@@ -47,19 +47,8 @@ function RevealOverlay() {
   // 仅在词灵枢庭时，从队列取出下一个播放
   useEffect(() => {
     if (!isHub || currentReveal) return;
-    // 让生成态卡片先完成一次稳定绘制，再显示全屏揭示层。
-    // 否则角色数据、图片和覆盖层会在同一帧切换，低帧率设备会出现轻微跳动。
-    let secondFrame = 0;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        const next = consumeNextReveal();
-        if (next) setCurrentReveal(next);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-    };
+    const next = consumeNextReveal();
+    if (next) setCurrentReveal(next);
   }, [isHub, pendingRevealQueue, currentReveal, consumeNextReveal]);
 
   // 收入麾下：角色已在麾下，直接关闭播放下一张

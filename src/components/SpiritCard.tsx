@@ -37,7 +37,6 @@ const SIZE_CONFIG: Record<
     statText: string;
     powerText: string;
     cornerSize: number;
-    statsHeight: string;
   }
 > = {
   sm: {
@@ -53,7 +52,6 @@ const SIZE_CONFIG: Record<
     statText: "text-[8px]",
     powerText: "text-[7px]",
     cornerSize: 10,
-    statsHeight: "min-h-[35px]",
   },
   md: {
     width: "w-full",
@@ -68,7 +66,6 @@ const SIZE_CONFIG: Record<
     statText: "text-[9px]",
     powerText: "text-[8px]",
     cornerSize: 12,
-    statsHeight: "min-h-[42px]",
   },
   lg: {
     width: "w-full",
@@ -83,7 +80,6 @@ const SIZE_CONFIG: Record<
     statText: "text-[10px]",
     powerText: "text-[9px]",
     cornerSize: 14,
-    statsHeight: "min-h-[48px]",
   },
 };
 
@@ -705,7 +701,7 @@ export const SpiritCard: React.FC<SpiritCardProps> = ({
 
         {/* 卡片右侧操作插槽（如聊天/出战/删除按钮组） */}
         {actionSlot && !isGenerating && !isFailed && (
-          <div className="absolute right-1.5 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1.5 opacity-0 translate-x-2 pointer-events-none transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:translate-x-0 group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
+          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1">
             {actionSlot}
           </div>
         )}
@@ -731,7 +727,7 @@ export const SpiritCard: React.FC<SpiritCardProps> = ({
 
       {/* 底部信息区：属性 + 自定义 footer */}
       {showStats && (
-        <div className={`relative ${cfg.padding} ${cfg.statsHeight}`}>
+        <div className={`relative ${cfg.padding}`}>
           {/* 分隔线 */}
           <div
             className="absolute top-0 left-1 right-1 h-[1px]"
