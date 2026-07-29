@@ -701,7 +701,7 @@ export const SpiritCard: React.FC<SpiritCardProps> = ({
 
         {/* 卡片右侧操作插槽（如聊天/出战/删除按钮组） */}
         {actionSlot && !isGenerating && !isFailed && (
-          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1">
+          <div className="pointer-events-none absolute right-1.5 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
             {actionSlot}
           </div>
         )}

@@ -495,7 +495,7 @@ export const SpiritStoryScreen: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {displayRoster
-                  .slice(0, isRosterExpanded ? 24 : COLLAPSED_ROSTER_COUNT)
+                  .slice(0, isRosterExpanded ? undefined : COLLAPSED_ROSTER_COUNT)
                   .map((char) => {
                     const active = activeIds.includes(char.rosterId);
                     const isRecruiting = isRosterCharacterRecruitLocked(char);

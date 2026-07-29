@@ -336,11 +336,11 @@ export const ModeSelectScreen: React.FC = () => {
     setPhase("RECRUIT_CREATE");
   };
 
-  const startTower = () => {
-    if (!selectedRoster || selectedUnavailable) return;
+  const startTower = (target: RosterCharacter | null = selectedRoster) => {
+    if (!target || isRosterCharacterUnavailable(target)) return;
     setBattleMode("pve_tower");
-    setTowerRosterId(selectedRoster.rosterId);
-    setTowerLayer(selectedRoster.tower.nextLayer ?? 1);
+    setTowerRosterId(target.rosterId);
+    setTowerLayer(target.tower.nextLayer ?? 1);
     setPhase("TOWER_HUB");
   };
 
@@ -582,7 +582,7 @@ export const ModeSelectScreen: React.FC = () => {
       />
 
       {/* 主内容 */}
-      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-16 pb-16 max-w-[1400px] mx-auto">
+      <div className="relative z-10 min-h-screen px-6 md:px-10 lg:px-16 pt-8 pb-16 max-w-[1400px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -628,7 +628,7 @@ export const ModeSelectScreen: React.FC = () => {
               </div>
             </div>
             <div className="text-right text-[10px] font-mono tracking-widest text-white/30">
-              <div>ROSTER {String(rosterCount).padStart(2, "0")} / 24</div>
+              <div>ROSTER {String(rosterCount).padStart(2, "0")}</div>
               <div className="text-[#66FCF1]/70 mt-1">
                 {selectedRoster
                   ? `SELECTED · ${selectedRoster.name}`
@@ -814,85 +814,7 @@ export const ModeSelectScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* 社交&朋友入口：群聊 + 1v1 对战 */}
-            <motion.button
-              type="button"
-              onClick={startSocial}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.99 }}
-              transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              className="group relative w-full overflow-hidden border border-white/10 bg-black/30 backdrop-blur-sm px-5 py-4 text-left transition-all hover:border-[#A78BFA]/40"
-            >
-              <span
-                aria-hidden
-                className="absolute top-0 left-0 w-3 h-3 border-t border-l opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ borderColor: "#A78BFA" }}
-              />
-              <span
-                aria-hidden
-                className="absolute top-0 right-0 w-3 h-3 border-t border-r opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ borderColor: "#A78BFA" }}
-              />
-              <span
-                aria-hidden
-                className="absolute bottom-0 left-0 w-3 h-3 border-b border-l opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ borderColor: "#A78BFA" }}
-              />
-              <span
-                aria-hidden
-                className="absolute bottom-0 right-0 w-3 h-3 border-b border-r opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ borderColor: "#A78BFA" }}
-              />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -top-20 -right-10 h-44 w-44 rounded-full blur-3xl opacity-0 group-hover:opacity-30 transition-opacity duration-500"
-                style={{ background: "#A78BFA" }}
-              />
-              <div className="relative flex items-center gap-4">
-                <div
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2"
-                  style={{
-                    borderColor: "#A78BFA",
-                    color: "#A78BFA",
-                    boxShadow: "0 0 18px rgba(167,139,250,0.4)",
-                    background: "rgba(167,139,250,0.15)",
-                  }}
-                >
-                  <Users size={22} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-[9px] font-mono tracking-[0.4em] text-[#A78BFA]/85">
-                      SOCIAL · & · FRIENDS
-                    </span>
-                    <span className="text-[9px] font-mono text-[#FFD700] tracking-widest">
-                      · 房间码 / 群聊 / 1v1 对战
-                    </span>
-                  </div>
-                  <div
-                    className="font-black text-xl md:text-2xl tracking-tight"
-                    style={{
-                      color: "#A78BFA",
-                      textShadow: "0 0 14px rgba(167,139,250,0.4)",
-                      fontFamily:
-                        '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
-                    }}
-                  >
-                    社交&朋友
-                  </div>
-                  <div className="text-[11px] text-white/50 mt-1 leading-relaxed">
-                    带词灵开房间群聊 · @词灵 persona 回复 · 每人最多 5 位词灵 ·
-                    房内随时发起约战
-                  </div>
-                </div>
-                <ChevronRight
-                  size={18}
-                  className="shrink-0 text-[#A78BFA] transition-transform group-hover:translate-x-1"
-                />
-              </div>
-            </motion.button>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <ModeCard
                 onClick={startSpiritChat}
                 disabled={!selectedRoster || selectedUnavailable}
@@ -914,6 +836,15 @@ export const ModeSelectScreen: React.FC = () => {
                 subtitle="多灵同场 · 世界故事"
                 accent="#B78BFF"
                 description="召集多位词灵同框互动，让它们自己推进一段属于你的故事。"
+                highlight
+              />
+              <ModeCard
+                onClick={startSocial}
+                icon={<Users size={22} />}
+                title="社交&朋友"
+                subtitle="房间群聊 · 1v1 对战"
+                accent="#60A5FA"
+                description="带词灵加入房间群聊，召唤它们回应，并随时向房内好友发起约战。"
                 highlight
               />
               <ModeCard
@@ -965,7 +896,7 @@ export const ModeSelectScreen: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-[10px] font-mono text-white/30">
-                    {String(rosterCount).padStart(2, "0")} / 24
+                    {String(rosterCount).padStart(2, "0")}
                   </span>
                   {evolutionDebugAvailable && (
                     <button
@@ -1032,8 +963,7 @@ export const ModeSelectScreen: React.FC = () => {
                           title: `无尽塔最高 L${highestLayer}`,
                         },
                       ];
-                      const canOperate =
-                        isSelected && !evolutionLocked && !recruitLocked;
+                      const canOperate = !evolutionLocked && !recruitLocked;
                       const actionSlot = canOperate ? (
                         <>
                           <span
@@ -1065,13 +995,13 @@ export const ModeSelectScreen: React.FC = () => {
                             tabIndex={0}
                             onClick={(e) => {
                               e.stopPropagation();
-                              startTower();
+                              startTower(char);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                startTower();
+                                startTower(char);
                               }
                             }}
                             className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"

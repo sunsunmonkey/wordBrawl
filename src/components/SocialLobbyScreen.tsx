@@ -335,11 +335,16 @@ export const SocialLobbyScreen: React.FC = () => {
                     />
                   </button>
                 </div>
-                {selectedRosterList.length === 0 && (
-                  <div className="mt-2.5 text-[10px] text-[#FFD700]/70 font-mono tracking-wider">
-                    提示：至少携带 1 位词灵才能创建房间
-                  </div>
-                )}
+                <div
+                  aria-hidden={selectedRosterList.length > 0}
+                  className={`pointer-events-none absolute -bottom-4 left-5 text-[10px] text-[#FFD700]/70 font-mono tracking-wider transition-opacity duration-150 ${
+                    selectedRosterList.length === 0
+                      ? "opacity-100"
+                      : "opacity-0"
+                  }`}
+                >
+                  提示：至少携带 1 位词灵才能创建房间
+                </div>
               </section>
 
               {/* 加入房间 */}
@@ -523,9 +528,7 @@ export const SocialLobbyScreen: React.FC = () => {
                       })}
                     </div>
 
-                    {selectedRosterList.length > 0 && (
-                      <SelectedSpiritsPreview spirits={selectedRosterList} />
-                    )}
+                    <SelectedSpiritsPreview spirits={selectedRosterList} />
                   </>
                 )}
               </div>
@@ -552,42 +555,60 @@ export const SocialLobbyScreen: React.FC = () => {
 const SelectedSpiritsPreview: React.FC<{ spirits: RosterCharacter[] }> = ({
   spirits,
 }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 8 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="mt-4 rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3"
-  >
+  <div className="mt-4 h-[82px] shrink-0 overflow-hidden rounded-lg border border-[#FFD700]/35 bg-[#0B0C10]/70 p-3">
     <div className="mb-2 flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#FFD700]/80">
       <Sparkles size={11} />
       <span>READY · 第一位为出战词灵</span>
     </div>
-    <div className="flex flex-wrap gap-2">
-      {spirits.map((s, idx) => (
-        <div
-          key={s.rosterId}
-          className="flex items-center gap-2 rounded border border-[#FFD700]/30 bg-black/40 px-2 py-1"
+    <AnimatePresence mode="wait" initial={false}>
+      {spirits.length === 0 ? (
+        <motion.div
+          key="empty"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12 }}
+          className="flex h-9 items-center justify-center border border-dashed border-white/10 text-[10px] font-mono tracking-[0.2em] text-white/25"
         >
-          <div className="h-7 w-7 shrink-0 overflow-hidden rounded border border-[#FFD700]/40">
-            <CharacterAvatar
-              imageUrl={s.imageUrl}
-              name={s.name}
-              themeColor="#FFD700"
-              className="h-full w-full"
-              iconSize={14}
-            />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-[#FFD700] leading-none">
-              {idx === 0 ? "出战" : "携带"}
-            </span>
-            <span className="text-[10px] text-white/70 truncate max-w-[80px]">
-              {s.name}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  </motion.div>
+          等待选择词灵
+        </motion.div>
+      ) : (
+        <motion.div
+          key="selected"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12 }}
+          className="flex h-9 gap-2 overflow-x-auto scrollbar-thin"
+        >
+          {spirits.map((s, idx) => (
+            <div
+              key={s.rosterId}
+              className="flex shrink-0 items-center gap-2 rounded border border-[#FFD700]/30 bg-black/40 px-2 py-1"
+            >
+              <div className="h-7 w-7 shrink-0 overflow-hidden rounded border border-[#FFD700]/40">
+                <CharacterAvatar
+                  imageUrl={s.imageUrl}
+                  name={s.name}
+                  themeColor="#FFD700"
+                  className="h-full w-full"
+                  iconSize={14}
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-[#FFD700] leading-none">
+                  {idx === 0 ? "出战" : "携带"}
+                </span>
+                <span className="text-[10px] text-white/70 truncate max-w-[80px]">
+                  {s.name}
+                </span>
+              </div>
+            </div>
+          ))}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
 );
 
 const CornerAccents: React.FC<{ color: string }> = ({ color }) => (

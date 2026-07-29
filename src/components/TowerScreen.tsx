@@ -287,7 +287,7 @@ export const TowerScreen: React.FC = () => {
               </div>
             </div>
             <div className="text-right text-[10px] font-mono tracking-widest text-white/30">
-              <div>ROSTER {String(roster.length).padStart(2, "0")} / 24</div>
+              <div>ROSTER {String(roster.length).padStart(2, "0")}</div>
               <div className="text-[#FFD700]/70 mt-1">
                 {selectedChar
                   ? `SELECTED · ${selectedChar.name}`
@@ -329,7 +329,7 @@ export const TowerScreen: React.FC = () => {
                       N°01 · CHOOSE ROSTER
                     </span>
                     <span className="ml-auto text-[9px] font-mono tracking-widest text-white/30">
-                      {roster.length} / 24
+                      {roster.length}
                     </span>
                   </div>
                   <div className="max-h-[440px] overflow-y-auto -mx-2 px-2">

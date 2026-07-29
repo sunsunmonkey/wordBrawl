@@ -110,7 +110,7 @@ export const RosterScreen: React.FC = () => {
               我的词灵
             </h1>
             <span className="ml-auto text-xs text-[#8a8d91] tracking-widest">
-              {roster.length} / 24
+              {roster.length}
             </span>
           </div>
           <div className="text-[10px] text-[#8a8d91] tracking-[0.3em] mb-6">
