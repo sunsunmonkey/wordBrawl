@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpen,
+  Check,
   ChevronDown,
   ChevronUp,
   Clapperboard,
+  Copy,
+  FileText,
   Loader2,
   MessageSquareText,
   Plus,
@@ -35,9 +38,11 @@ import {
   getScenarioPreset,
   useSpiritStoryStore,
   type SpiritStoryMessage,
+  type SpiritStoryRoom,
 } from "../store/useSpiritStoryStore";
 import {
   requestSpiritStory,
+  requestSpiritStoryNovel,
   requestSpiritStorySuggestions,
   type SpiritStoryTurn,
 } from "../utils/spiritStory";
@@ -47,6 +52,7 @@ import { LOADING_STEPS } from "./loadingSteps";
 const MAX_STORY_PARTICIPANTS = 10;
 const COLLAPSED_ROSTER_COUNT = 8;
 const SUGGESTION_IDLE_DELAY_MS = 1800;
+const DEFAULT_CHAPTER_MESSAGE_COUNT = 16;
 
 interface StreamingStoryState {
   roomId: string;
@@ -65,6 +71,22 @@ const storyColor = (tension: number) => {
   if (tension >= 70) return "#FF003C";
   if (tension >= 40) return "#FFD700";
   return "#66FCF1";
+};
+
+const getPendingNovelMessages = (
+  room: SpiritStoryRoom,
+): SpiritStoryMessage[] => {
+  const lastChapter = room.novelChapters.at(-1);
+  if (!lastChapter) return room.messages;
+  const lastMessageIndex = room.messages.findIndex(
+    (message) => message.id === lastChapter.sourceLastMessageId,
+  );
+  if (lastMessageIndex >= 0) {
+    return room.messages.slice(lastMessageIndex + 1);
+  }
+  return room.messages.filter(
+    (message) => message.createdAt > lastChapter.sourceThroughCreatedAt,
+  );
 };
 
 const getInitialStoryPrompts = (quickScenes: string[]): string[] => {
@@ -99,6 +121,7 @@ export const SpiritStoryScreen: React.FC = () => {
   const setPlayerMode = useSpiritStoryStore((s) => s.setPlayerMode);
   const appendMessage = useSpiritStoryStore((s) => s.appendMessage);
   const applyStoryTurn = useSpiritStoryStore((s) => s.applyStoryTurn);
+  const appendNovelChapter = useSpiritStoryStore((s) => s.appendNovelChapter);
   const clearRoom = useSpiritStoryStore((s) => s.clearRoom);
   const deleteRoom = useSpiritStoryStore((s) => s.deleteRoom);
 
@@ -118,6 +141,7 @@ export const SpiritStoryScreen: React.FC = () => {
     useState<StreamingStoryState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestStoryRequestIdRef = useRef("");
+  const latestNovelRequestIdRef = useRef("");
   const activeForegroundRequestIdRef = useRef("");
   const latestMetadataRequestIdByRoomIdRef = useRef<Record<string, string>>({});
   const pendingStreamingTurnsRef = useRef<StreamingStoryState | null>(null);
@@ -129,6 +153,10 @@ export const SpiritStoryScreen: React.FC = () => {
   const [suggestedPromptsByRoomId, setSuggestedPromptsByRoomId] = useState<
     Record<string, string[]>
   >({});
+  const [isNovelOpen, setIsNovelOpen] = useState(false);
+  const [isNovelGenerating, setIsNovelGenerating] = useState(false);
+  const [novelStreamingContent, setNovelStreamingContent] = useState("");
+  const [novelError, setNovelError] = useState("");
 
   // Draft state (新建故事时使用)
   const [draftIds, setDraftIds] = useState<string[]>([]);
@@ -137,6 +165,9 @@ export const SpiritStoryScreen: React.FC = () => {
   );
 
   const activeRoom = activeRoomId ? rooms[activeRoomId] : null;
+  const pendingNovelMessages = activeRoom
+    ? getPendingNovelMessages(activeRoom)
+    : [];
   const isComposing = !activeRoom;
   const activeStreamingStory =
     streamingStory?.roomId === activeRoom?.id ? streamingStory : null;
@@ -496,6 +527,71 @@ export const SpiritStoryScreen: React.FC = () => {
         ? "请根据当前场景自然推进下一幕。优先让最该行动或说话的词灵推动剧情，不需要全员发言。"
         : "契约者暂时沉默观察。请根据当前场景自然推进下一幕，让最该行动或说话的词灵回应局势。";
     void sendMessage(prompt);
+  };
+
+  const generateNovel = async (room: SpiritStoryRoom) => {
+    const sourceMessages = getPendingNovelMessages(room).slice(
+      0,
+      DEFAULT_CHAPTER_MESSAGE_COUNT,
+    );
+    if (isNovelGenerating || sourceMessages.length === 0) return;
+    if (!isReady) {
+      setNovelError("请先在首页选择免费体验或填写 custom API。");
+      return;
+    }
+
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    latestNovelRequestIdRef.current = requestId;
+    setNovelError("");
+    setNovelStreamingContent("");
+    setIsNovelGenerating(true);
+
+    try {
+      const previousChapter = room.novelChapters.at(-1);
+      const content = await requestSpiritStoryNovel(
+        cfg,
+        participants,
+        room,
+        sourceMessages,
+        room.novelChapters.length + 1,
+        previousChapter?.content || "",
+        {
+          onContentChunk: (nextContent) => {
+            if (latestNovelRequestIdRef.current === requestId) {
+              setNovelStreamingContent(nextContent);
+            }
+          },
+        },
+      );
+      if (latestNovelRequestIdRef.current !== requestId) return;
+      const lastSourceMessage = sourceMessages.at(-1);
+      appendNovelChapter(room.id, {
+        id: `chapter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        content,
+        sourceMessageCount: sourceMessages.length,
+        sourceLastMessageId: lastSourceMessage?.id || "",
+        sourceThroughCreatedAt: lastSourceMessage?.createdAt || Date.now(),
+        generatedAt: Date.now(),
+      });
+      setNovelStreamingContent("");
+    } catch (err) {
+      if (latestNovelRequestIdRef.current === requestId) {
+        setNovelError(
+          err instanceof Error ? err.message : "小说编排暂时没有回应。",
+        );
+      }
+    } finally {
+      if (latestNovelRequestIdRef.current === requestId) {
+        setIsNovelGenerating(false);
+      }
+    }
+  };
+
+  const openNovelDraft = () => {
+    if (!activeRoom || activeRoom.messages.length === 0) return;
+    setNovelError("");
+    setNovelStreamingContent("");
+    setIsNovelOpen(true);
   };
 
   const roomList = Object.values(rooms).sort(
@@ -936,6 +1032,33 @@ export const SpiritStoryScreen: React.FC = () => {
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  onClick={openNovelDraft}
+                  disabled={!activeRoom || activeRoom.messages.length === 0}
+                  className="group flex items-center gap-1.5 rounded-lg border border-[#FFD700]/50 bg-[#FFD700]/10 px-3 py-1.5 text-[10px] font-black tracking-widest text-[#FFD700] transition-all hover:border-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-35 disabled:hover:bg-[#FFD700]/10 disabled:hover:text-[#FFD700]"
+                >
+                  {isNovelGenerating ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <FileText
+                      size={12}
+                      className="transition-transform group-hover:-translate-y-0.5"
+                    />
+                  )}
+                  小说章节
+                  {Boolean(activeRoom?.novelChapters.length) && (
+                    <span className="text-[8px]">
+                      {activeRoom?.novelChapters.length} 章
+                    </span>
+                  )}
+                  {pendingNovelMessages.length >=
+                    DEFAULT_CHAPTER_MESSAGE_COUNT && (
+                    <span className="rounded border border-[#FFD700]/50 bg-black/20 px-1 py-0.5 text-[8px]">
+                      可成章
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     if (
                       activeRoom &&
@@ -1164,7 +1287,305 @@ export const SpiritStoryScreen: React.FC = () => {
           </main>
         </div>
       </div>
+      <AnimatePresence>
+        {isNovelOpen && activeRoom && (
+          <NovelDraftModal
+            key={activeRoom.id}
+            room={activeRoom}
+            streamingContent={novelStreamingContent}
+            pendingMessageCount={pendingNovelMessages.length}
+            isGenerating={isNovelGenerating}
+            error={novelError}
+            themeColor={themeColor}
+            onClose={() => setIsNovelOpen(false)}
+            onGenerateNext={() => void generateNovel(activeRoom)}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  );
+};
+
+const formatChapterNumber = (value: number): string => {
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  if (value <= 10) return value === 10 ? "十" : digits[value];
+  if (value < 20) return `十${digits[value % 10]}`;
+  const tens = Math.floor(value / 10);
+  const ones = value % 10;
+  return `${digits[tens]}十${ones ? digits[ones] : ""}`;
+};
+
+const NovelDraftModal: React.FC<{
+  room: SpiritStoryRoom;
+  streamingContent: string;
+  pendingMessageCount: number;
+  isGenerating: boolean;
+  error: string;
+  themeColor: string;
+  onClose: () => void;
+  onGenerateNext: () => void;
+}> = ({
+  room,
+  streamingContent,
+  pendingMessageCount,
+  isGenerating,
+  error,
+  themeColor,
+  onClose,
+  onGenerateNext,
+}) => {
+  const chapters = room.novelChapters;
+  const [selectedChapterIndex, setSelectedChapterIndex] = useState(
+    Math.max(0, chapters.length - 1),
+  );
+  const [copied, setCopied] = useState(false);
+  const isStreamingChapter =
+    isGenerating && selectedChapterIndex === chapters.length;
+  const selectedChapter = chapters[selectedChapterIndex];
+  const content = isStreamingChapter
+    ? streamingContent
+    : selectedChapter?.content || "";
+  const currentChapterNumber = selectedChapterIndex + 1;
+  const nextChapterNumber = chapters.length + 1;
+  const wordCount = content.replace(/\s/g, "").length;
+  const recommendedReady = pendingMessageCount >= DEFAULT_CHAPTER_MESSAGE_COUNT;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isGenerating) {
+      setSelectedChapterIndex(chapters.length);
+    } else if (chapters.length > 0) {
+      setSelectedChapterIndex(chapters.length - 1);
+    }
+  }, [chapters.length, isGenerating]);
+
+  const copyContent = async () => {
+    const completedBook = chapters
+      .map(
+        (chapter, index) =>
+          `第${formatChapterNumber(index + 1)}章\n\n${chapter.content}`,
+      )
+      .join("\n\n");
+    const copyText =
+      isGenerating && streamingContent
+        ? `${completedBook}${completedBook ? "\n\n" : ""}第${formatChapterNumber(nextChapterNumber)}章\n\n${streamingContent}`
+        : completedBook;
+    if (!copyText) return;
+    try {
+      await navigator.clipboard.writeText(`《${room.title}》\n\n${copyText}`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // 浏览器拒绝剪贴板权限时保留正文，用户仍可手动选取。
+    }
+  };
+
+  return (
+    <motion.div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${room.title}小说成稿`}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#030508]/90 p-3 backdrop-blur-md md:p-6"
+    >
+      <motion.section
+        initial={{ opacity: 0, y: 16, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 10, scale: 0.99 }}
+        transition={{ duration: 0.2 }}
+        className="relative flex h-[min(88vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#FFD700]/30 bg-[#0B0C10] shadow-[0_24px_90px_rgba(0,0,0,0.72)]"
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-px"
+          style={{
+            background: `linear-gradient(90deg, transparent, ${themeColor}, #FFD700, transparent)`,
+          }}
+        />
+
+        <header className="relative z-10 flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-[#11151c]/92 px-4 py-3 md:px-6">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[9px] font-black tracking-[0.3em] text-[#FFD700]">
+              <FileText size={13} />
+              NOVEL COMPOSER
+            </div>
+            <h2 className="mt-1 truncate text-lg font-black tracking-wider text-[#E7E8EA] md:text-xl">
+              《{room.title}》
+            </h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={copyContent}
+              disabled={chapters.length === 0 && !streamingContent}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#66FCF1]/35 bg-[#66FCF1]/5 px-3 text-[10px] font-black tracking-wider text-[#66FCF1] transition-colors hover:bg-[#66FCF1]/15 disabled:opacity-35"
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? "已复制" : "复制全文"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭小说成稿"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-[#8a8d91] transition-colors hover:border-white/25 hover:bg-white/5 hover:text-white"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </header>
+
+        <div className="relative flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,rgba(255,215,0,0.045),transparent_42%)] md:flex-row">
+          <aside className="flex shrink-0 gap-2 overflow-x-auto border-b border-white/10 bg-[#080A0E]/75 p-3 scrollbar-hide md:w-52 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r">
+            {chapters.map((chapter, index) => {
+              const active =
+                !isStreamingChapter && selectedChapterIndex === index;
+              return (
+                <button
+                  key={chapter.id}
+                  type="button"
+                  onClick={() => setSelectedChapterIndex(index)}
+                  className="min-w-32 rounded-lg border px-3 py-2.5 text-left transition-colors md:min-w-0"
+                  style={{
+                    borderColor: active
+                      ? "#FFD70088"
+                      : "rgba(255,255,255,0.09)",
+                    background: active
+                      ? "rgba(255,215,0,0.09)"
+                      : "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <div
+                    className="text-[10px] font-black tracking-[0.16em]"
+                    style={{ color: active ? "#FFD700" : "#C5C6C7" }}
+                  >
+                    第{formatChapterNumber(index + 1)}章
+                  </div>
+                  <div className="mt-1 text-[8px] tracking-wider text-[#8a8d91]">
+                    {chapter.sourceMessageCount} 段 ·{" "}
+                    {chapter.content.replace(/\s/g, "").length} 字
+                  </div>
+                </button>
+              );
+            })}
+            {isGenerating && (
+              <button
+                type="button"
+                onClick={() => setSelectedChapterIndex(chapters.length)}
+                className="min-w-32 rounded-lg border border-[#FFD700]/45 bg-[#FFD700]/10 px-3 py-2.5 text-left md:min-w-0"
+              >
+                <div className="flex items-center gap-2 text-[10px] font-black tracking-[0.16em] text-[#FFD700]">
+                  <Loader2 size={11} className="animate-spin" />第
+                  {formatChapterNumber(nextChapterNumber)}章
+                </div>
+                <div className="mt-1 text-[8px] tracking-wider text-[#FFD700]/65">
+                  正在编排
+                </div>
+              </button>
+            )}
+          </aside>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-7 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[#FFD700]/25 md:px-12 md:py-10">
+            {content ? (
+              <article className="mx-auto max-w-3xl">
+                <div className="mb-8 text-center">
+                  <div className="text-[10px] font-black tracking-[0.34em] text-[#FFD700]">
+                    CHAPTER {currentChapterNumber.toString().padStart(2, "0")}
+                  </div>
+                  <h3 className="mt-2 text-xl font-black tracking-[0.2em] text-[#E7E8EA]">
+                    第{formatChapterNumber(currentChapterNumber)}章
+                  </h3>
+                </div>
+                <div className="whitespace-pre-wrap font-serif text-[15px] leading-[2.05] tracking-[0.035em] text-[#D6D3CC] md:text-[16px]">
+                  {content}
+                  {isStreamingChapter && (
+                    <span className="ml-1 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-[#FFD700]" />
+                  )}
+                </div>
+              </article>
+            ) : isGenerating ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="relative flex h-16 w-16 items-center justify-center">
+                  <div className="absolute inset-0 animate-ping rounded-full border border-[#FFD700]/25" />
+                  <FileText size={26} className="text-[#FFD700]" />
+                </div>
+                <div className="mt-5 text-xs font-black tracking-[0.24em] text-[#FFD700]">
+                  正在编排第{formatChapterNumber(nextChapterNumber)}章
+                </div>
+                <div className="mt-2 text-[11px] text-[#8a8d91]">
+                  整理场景、对白与人物视角...
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <BookOpen size={38} className="text-[#FFD700]/70" />
+                <div className="mt-4 text-sm font-black tracking-wider text-[#D6D3CC]">
+                  故事尚未成章
+                </div>
+                <div className="mt-2 max-w-sm text-[11px] leading-relaxed text-[#8a8d91]">
+                  当前有 {pendingMessageCount} 段剧情待整理。建议累积{" "}
+                  {DEFAULT_CHAPTER_MESSAGE_COUNT} 段后生成，章节节奏会更完整。
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <footer className="relative z-10 flex shrink-0 flex-col gap-3 border-t border-white/10 bg-[#080A0E]/95 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[9px] tracking-[0.16em] text-[#8a8d91]">
+            {content && <span>本章 {wordCount.toLocaleString()} 字</span>}
+            <span className={recommendedReady ? "text-[#FFD700]" : ""}>
+              待编排 {pendingMessageCount}/{DEFAULT_CHAPTER_MESSAGE_COUNT} 段
+            </span>
+            {!recommendedReady && pendingMessageCount > 0 && !isGenerating && (
+              <span>可提前成章，满 16 段节奏更完整</span>
+            )}
+            {recommendedReady && !isGenerating && (
+              <span className="text-[#FFD700]">已达到建议篇幅</span>
+            )}
+            {isGenerating && (
+              <span className="flex items-center gap-1.5 text-[#FFD700]">
+                <Loader2 size={10} className="animate-spin" />
+                生成中
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {error && (
+              <span className="max-w-xs truncate text-[10px] text-[#FF6B9D]">
+                {error}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onGenerateNext}
+              disabled={isGenerating || pendingMessageCount === 0}
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[#FFD700]/45 bg-[#FFD700]/10 px-4 text-[10px] font-black tracking-wider text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-40 disabled:hover:bg-[#FFD700]/10 disabled:hover:text-[#FFD700]"
+            >
+              {isGenerating ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Sparkles size={12} />
+              )}
+              {isGenerating
+                ? `正在编排第${formatChapterNumber(nextChapterNumber)}章`
+                : `生成第${formatChapterNumber(nextChapterNumber)}章`}
+            </button>
+          </div>
+        </footer>
+      </motion.section>
+    </motion.div>
   );
 };
 

@@ -91,6 +91,10 @@ const RARITY_TIER: Record<Rarity, number> = {
   UR: 4,
 };
 
+const RECRUIT_PROGRESS_FLOORS = [2, 18, 34, 50, 90] as const;
+const RECRUIT_PROGRESS_CEILINGS = [18, 34, 50, 94, 99] as const;
+const RECRUIT_PROGRESS_RATES = [0.95, 0.85, 0.75, 0.055, 0.04] as const;
+
 /** 拐角描边装饰，参考设计图四角刻痕 */
 const CornerCut: React.FC<{
   color: string;
@@ -130,35 +134,43 @@ const GeneratingOverlay: React.FC<{
 }> = ({ stage, themeColor, size }) => {
   const totalStages = RECRUIT_STAGE_COUNT;
   const clamped = Math.max(0, Math.min(totalStages - 1, stage));
-  const lastStage = totalStages - 1;
   const CurrentIcon = LOADING_STEPS[clamped]?.icon;
   const stepText = LOADING_STEPS[clamped]?.text ?? "生成中";
   const compact = size === "sm";
+  const progressFloor =
+    RECRUIT_PROGRESS_FLOORS[clamped] ??
+    RECRUIT_PROGRESS_FLOORS[RECRUIT_PROGRESS_FLOORS.length - 1];
+  const progressCeiling =
+    RECRUIT_PROGRESS_CEILINGS[clamped] ??
+    RECRUIT_PROGRESS_CEILINGS[RECRUIT_PROGRESS_CEILINGS.length - 1];
+  const progressRate =
+    RECRUIT_PROGRESS_RATES[clamped] ??
+    RECRUIT_PROGRESS_RATES[RECRUIT_PROGRESS_RATES.length - 1];
 
-  // 每个阶段的进度“天花板”：文本阶段（0..lastStage-1）平滑铺到 ~76%，
-  // 图像阶段（lastStage）逼近 96%；真正的 100% 交给揭示动画接管。
-  const ceilingFor = React.useCallback(
-    (s: number) =>
-      s >= lastStage ? 96 : 8 + Math.round(((s + 1) / lastStage) * 68),
-    [lastStage],
-  );
-
-  // 显示进度对当前阶段天花板做缓动逼近：越接近越慢，因此即使文本阶段
-  // 长时间停在同一 stage，进度条也始终在“微微前进”，不会看起来卡死。
-  const [display, setDisplay] = React.useState(0);
+  // 前三段快速衔接，耗时最长的文本与图像阶段持续渐近软上限。
+  // 使用浮点宽度保留每一帧的细微推进，避免整数百分比造成阶梯感。
+  const [display, setDisplay] = React.useState<number>(progressFloor);
   React.useEffect(() => {
+    let lastTick = performance.now();
     const id = window.setInterval(() => {
-      setDisplay((prev) => {
-        const target = ceilingFor(clamped);
-        if (prev >= target) return prev;
-        const next = prev + Math.max((target - prev) * 0.06, 0.25);
-        return Math.min(next, target);
-      });
-    }, 60);
-    return () => window.clearInterval(id);
-  }, [clamped, ceilingFor]);
+      const now = performance.now();
+      const elapsedSeconds = Math.min((now - lastTick) / 1000, 0.25);
+      lastTick = now;
 
-  const percent = Math.round(display);
+      setDisplay((prev) => {
+        const target = prev < progressFloor ? progressFloor : progressCeiling;
+        const rate = prev < progressFloor ? 5 : progressRate;
+        const easing = 1 - Math.exp(-rate * elapsedSeconds);
+        return Math.min(
+          progressCeiling,
+          Math.max(prev, prev + (target - prev) * easing),
+        );
+      });
+    }, 80);
+    return () => window.clearInterval(id);
+  }, [progressCeiling, progressFloor, progressRate]);
+
+  const percent = Math.min(99, Math.floor(display));
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col overflow-hidden">
@@ -248,17 +260,37 @@ const GeneratingOverlay: React.FC<{
           {stepText}
         </div>
         <div
-          className="h-1 rounded-full overflow-hidden"
+          role="progressbar"
+          aria-label={stepText}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          className="relative h-1 overflow-hidden rounded-full"
           style={{ background: `${themeColor}22` }}
         >
           <div
-            className="h-full rounded-full transition-[width] duration-150 ease-linear"
+            className="relative h-full overflow-hidden rounded-full transition-[width] duration-200 ease-linear"
             style={{
-              width: `${percent}%`,
+              width: `${display.toFixed(3)}%`,
               background: `linear-gradient(90deg, ${themeColor}88, ${themeColor})`,
               boxShadow: `0 0 8px ${themeColor}`,
             }}
-          />
+          >
+            <motion.span
+              aria-hidden
+              className="absolute inset-y-0 w-1/3"
+              style={{
+                background:
+                  "linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)",
+              }}
+              animate={{ left: ["-40%", "110%"] }}
+              transition={{
+                duration: 1.35,
+                repeat: Infinity,
+                ease: "linear",
+              }}
+            />
+          </div>
         </div>
         <div
           className="flex items-center justify-between font-mono tracking-wider"

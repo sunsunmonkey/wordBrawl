@@ -338,9 +338,26 @@ const SUGGESTION_SYSTEM_PROMPT = `根据多人故事的剧本、当前人物和�
   "suggestedPrompts": ["玩家可直接发送的剧情推进指令"]
 }`;
 
+const NOVEL_SYSTEM_PROMPT = `你是《词灵世界》的小说编辑。请把输入中的多人故事记录编排成一篇可直接阅读的中文小说正文。
+
+编排要求：
+- payload.chapter.number 是当前章序号；只编排 payload.storyMessages 中的新增剧情，payload.chapter.previousEnding 仅用于衔接语气，不得复述进本章。
+- 严格保留事件顺序、角色关系、已揭示事实、行动结果和未解伏笔，不擅自续写后续剧情，不补造结局。
+- 把 narrator 内容自然融入叙事，把 spirit 台词改成带动作、神态和场景衔接的小说对话。
+- observer 模式下，player 的背景指令只转化为故事中实际发生的环境或事件，不出现“玩家、指令、输入”等界面概念。
+- participant 模式下，player 代表“契约者”，将其台词和行动自然写进正文。
+- 保持每名词灵原有的人格、口吻与立场，不把不同角色的行为混在一起。
+- 删除重复寒暄、操作提示和回合制痕迹；允许调整段落与句序以提升节奏，但不能改变原意。
+- 使用第三人称有限视角，语言有画面感但克制，避免堆砌辞藻。
+- 使用中文引号和自然段。只输出小说正文，不要标题、章节号、Markdown、JSON、创作说明或总结。`;
+
 export interface SpiritStoryStreamHandlers {
   onTurnsChunk?: (turns: SpiritStoryTurn[]) => void;
   onTurnsComplete?: (turns: SpiritStoryTurn[]) => void;
+}
+
+export interface SpiritStoryNovelStreamHandlers {
+  onContentChunk?: (content: string) => void;
 }
 
 const extractPartialTurns = (
@@ -561,6 +578,153 @@ export async function requestSpiritStorySuggestions(
   } catch {
     return [];
   }
+}
+
+export async function requestSpiritStoryNovel(
+  cfg: AIConfig,
+  participants: RosterCharacter[],
+  room: SpiritStoryRoom,
+  sourceMessages: SpiritStoryMessage[],
+  chapterNumber: number,
+  previousChapterEnding: string,
+  handlers?: SpiritStoryNovelStreamHandlers,
+): Promise<string> {
+  const scenarioPreset = getScenarioPreset(room.scenarioId);
+  const payload = {
+    requestType: "novel",
+    scenario: {
+      id: room.scenarioId,
+      label: scenarioPreset.label,
+      summary: scenarioPreset.summary,
+      brief: room.scenarioBrief || scenarioPreset.brief,
+    },
+    participants: participants.map((char) => sanitizeCharacter(char, room)),
+    room: {
+      title: room.title,
+      playerMode: room.playerMode,
+      storySummary: room.storySummary,
+      scenarioId: room.scenarioId,
+      scenarioBrief: room.scenarioBrief || scenarioPreset.brief,
+      participantStates: room.participantStates,
+    },
+    chapter: {
+      number: chapterNumber,
+      previousEnding: previousChapterEnding.slice(-1200),
+    },
+    storyMessages: sourceMessages.map((message) => ({
+      role: message.role,
+      speakerRosterId: message.speakerRosterId,
+      speakerName: message.speakerName,
+      content: message.content,
+    })),
+  };
+
+  if ((cfg.apiMode || "custom") === "free") {
+    return requestSpiritStoryNovelFreeTrial(payload, handlers);
+  }
+
+  if (!cfg.apiKey) throw new Error("请先填写 API Key");
+  if (!cfg.baseUrl) throw new Error("请先填写 Base URL");
+  if (!cfg.model) throw new Error("请先填写 Model");
+
+  const client = new OpenAI({
+    apiKey: cfg.apiKey,
+    baseURL: cfg.baseUrl,
+    dangerouslyAllowBrowser: true,
+  });
+  const stream = await client.chat.completions.create({
+    model: cfg.model,
+    messages: [
+      { role: "system", content: NOVEL_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(payload) },
+    ],
+    temperature: 0.72,
+    stream: true,
+  });
+
+  let content = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (!delta) continue;
+    content += delta;
+    handlers?.onContentChunk?.(content);
+  }
+
+  const normalized = content.trim();
+  if (!normalized) throw new Error("小说编排没有返回正文，请稍后再试。");
+  return normalized;
+}
+
+async function requestSpiritStoryNovelFreeTrial(
+  payload: Record<string, unknown>,
+  handlers?: SpiritStoryNovelStreamHandlers,
+): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch("/api/spirit-story", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error("小说编排接口暂时不可用，请稍后再试。");
+  }
+
+  if (!response.ok) {
+    const data = asRecord(await response.json().catch(() => ({})));
+    throw new Error(String(data.error || "小说编排暂时不可用"));
+  }
+
+  if (
+    response.body &&
+    (response.headers.get("content-type") || "").includes(
+      "application/x-ndjson",
+    )
+  ) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let finalError = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        let event: Record<string, unknown>;
+        try {
+          event = asRecord(JSON.parse(line));
+        } catch {
+          continue;
+        }
+        if (event.type === "novel_chunk") {
+          content += String(event.delta || "");
+          handlers?.onContentChunk?.(content);
+        } else if (event.type === "error") {
+          finalError = String(event.error || "小说编排失败");
+        }
+      }
+    }
+
+    if (finalError) throw new Error(finalError);
+    const normalized = content.trim();
+    if (!normalized) throw new Error("小说编排没有返回正文，请稍后再试。");
+    return normalized;
+  }
+
+  const data = asRecord(await response.json().catch(() => ({})));
+  const content = String(data.novelContent || "").trim();
+  if (!content) throw new Error("小说编排没有返回正文，请稍后再试。");
+  handlers?.onContentChunk?.(content);
+  return content;
 }
 
 async function requestSpiritStoryFreeTrial(

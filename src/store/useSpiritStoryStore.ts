@@ -219,6 +219,15 @@ export interface SpiritStoryRosterEvent {
   reason?: string;
 }
 
+export interface SpiritStoryNovelChapter {
+  id: string;
+  content: string;
+  sourceMessageCount: number;
+  sourceLastMessageId: string;
+  sourceThroughCreatedAt: number;
+  generatedAt: number;
+}
+
 export interface SpiritStoryRoom {
   id: string;
   title: string;
@@ -231,6 +240,7 @@ export interface SpiritStoryRoom {
   scene: string;
   tension: number;
   participantStates: Record<string, SpiritStoryParticipantState>;
+  novelChapters: SpiritStoryNovelChapter[];
   createdAt: number;
   updatedAt: number;
 }
@@ -283,6 +293,10 @@ interface SpiritStoryStore {
         "title" | "storySummary" | "scene" | "tension" | "participantStates"
       >
     > & { rosterEvents?: SpiritStoryRosterEvent[] },
+  ) => void;
+  appendNovelChapter: (
+    roomId: string,
+    chapter: SpiritStoryNovelChapter,
   ) => void;
   clearRoom: (roomId: string) => void;
   deleteRoom: (roomId: string) => void;
@@ -426,6 +440,7 @@ const createDefaultRoom = (
         ];
       }),
     ),
+    novelChapters: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -492,6 +507,89 @@ const normalizeRoom = (
   });
   const scenarioId = normalizeScenarioId(value.scenarioId);
   const preset = getScenarioPreset(scenarioId);
+  const messages = Array.isArray(value.messages)
+    ? value.messages
+        .map((message) => normalizeMessage(message))
+        .filter((message): message is SpiritStoryMessage => Boolean(message))
+        .slice(-MAX_MESSAGES)
+    : [];
+  const legacyNovelDraft = (
+    value as Partial<SpiritStoryRoom> & {
+      novelDraft?: {
+        content?: unknown;
+        sourceMessageCount?: unknown;
+        generatedAt?: unknown;
+      };
+    }
+  ).novelDraft;
+  const normalizedChapters = Array.isArray(value.novelChapters)
+    ? value.novelChapters
+        .map((chapter, index): SpiritStoryNovelChapter | null => {
+          const content = String(chapter?.content || "").trim();
+          if (!content) return null;
+          const fallbackMessage = messages.at(
+            Math.min(
+              messages.length,
+              clampInt(
+                chapter.sourceMessageCount,
+                0,
+                MAX_MESSAGES,
+                messages.length,
+              ),
+            ) - 1,
+          );
+          return {
+            id: String(chapter.id || `chapter-${index + 1}-${Date.now()}`),
+            content: content.slice(0, 60000),
+            sourceMessageCount: clampInt(
+              chapter.sourceMessageCount,
+              0,
+              MAX_MESSAGES,
+              0,
+            ),
+            sourceLastMessageId: String(
+              chapter.sourceLastMessageId || fallbackMessage?.id || "",
+            ),
+            sourceThroughCreatedAt:
+              typeof chapter.sourceThroughCreatedAt === "number"
+                ? chapter.sourceThroughCreatedAt
+                : fallbackMessage?.createdAt || 0,
+            generatedAt:
+              typeof chapter.generatedAt === "number"
+                ? chapter.generatedAt
+                : Date.now(),
+          };
+        })
+        .filter((chapter): chapter is SpiritStoryNovelChapter =>
+          Boolean(chapter),
+        )
+        .slice(-40)
+    : [];
+  if (
+    normalizedChapters.length === 0 &&
+    legacyNovelDraft &&
+    typeof legacyNovelDraft.content === "string" &&
+    legacyNovelDraft.content.trim()
+  ) {
+    const sourceMessageCount = clampInt(
+      legacyNovelDraft.sourceMessageCount,
+      0,
+      MAX_MESSAGES,
+      messages.length,
+    );
+    const lastSourceMessage = messages.at(sourceMessageCount - 1);
+    normalizedChapters.push({
+      id: `chapter-1-${Date.now()}`,
+      content: legacyNovelDraft.content.trim().slice(0, 60000),
+      sourceMessageCount,
+      sourceLastMessageId: lastSourceMessage?.id || "",
+      sourceThroughCreatedAt: lastSourceMessage?.createdAt || 0,
+      generatedAt:
+        typeof legacyNovelDraft.generatedAt === "number"
+          ? legacyNovelDraft.generatedAt
+          : Date.now(),
+    });
+  }
 
   return {
     id: roomId,
@@ -503,16 +601,12 @@ const normalizeRoom = (
         : "observer",
     scenarioId,
     scenarioBrief: String(value.scenarioBrief || preset.brief).slice(0, 300),
-    messages: Array.isArray(value.messages)
-      ? value.messages
-          .map((message) => normalizeMessage(message))
-          .filter((message): message is SpiritStoryMessage => Boolean(message))
-          .slice(-MAX_MESSAGES)
-      : [],
+    messages,
     storySummary: String(value.storySummary || "").slice(0, 900),
     scene: String(value.scene || preset.label).slice(0, 80),
     tension: clampInt(value.tension, 0, 100, preset.suggestedTension),
     participantStates,
+    novelChapters: normalizedChapters,
     createdAt:
       typeof value.createdAt === "number" ? value.createdAt : Date.now(),
     updatedAt:
@@ -752,6 +846,34 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
           };
         });
       },
+      appendNovelChapter: (roomId, chapter) =>
+        set((state) => {
+          const current = normalizeRoom(roomId, state.rooms[roomId]);
+          const content = chapter.content.trim();
+          if (!content) return state;
+          return {
+            rooms: {
+              ...state.rooms,
+              [roomId]: {
+                ...current,
+                novelChapters: [
+                  ...current.novelChapters,
+                  {
+                    ...chapter,
+                    content: content.slice(0, 60000),
+                    sourceMessageCount: clampInt(
+                      chapter.sourceMessageCount,
+                      1,
+                      MAX_MESSAGES,
+                      current.messages.length,
+                    ),
+                  },
+                ].slice(-40),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        }),
       clearRoom: (roomId) =>
         set((state) => {
           const current = normalizeRoom(roomId, state.rooms[roomId]);
@@ -790,7 +912,7 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
     }),
     {
       name: "word-brawl-spirit-story",
-      version: 5,
+      version: 6,
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== "object") {
           return { rooms: {}, activeRoomId: null };

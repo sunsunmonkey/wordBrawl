@@ -86,6 +86,19 @@ const SUGGESTION_SYSTEM_PROMPT = `根据多人故事的剧本、当前人物和�
   "suggestedPrompts": ["玩家可直接发送的剧情推进指令"]
 }`;
 
+const NOVEL_SYSTEM_PROMPT = `你是《词灵世界》的小说编辑。请把输入中的多人故事记录编排成一篇可直接阅读的中文小说正文。
+
+编排要求：
+- payload.chapter.number 是当前章序号；只编排 payload.storyMessages 中的新增剧情，payload.chapter.previousEnding 仅用于衔接语气，不得复述进本章。
+- 严格保留事件顺序、角色关系、已揭示事实、行动结果和未解伏笔，不擅自续写后续剧情，不补造结局。
+- 把 narrator 内容自然融入叙事，把 spirit 台词改成带动作、神态和场景衔接的小说对话。
+- observer 模式下，player 的背景指令只转化为故事中实际发生的环境或事件，不出现“玩家、指令、输入”等界面概念。
+- participant 模式下，player 代表“契约者”，将其台词和行动自然写进正文。
+- 保持每名词灵原有的人格、口吻与立场，不把不同角色的行为混在一起。
+- 删除重复寒暄、操作提示和回合制痕迹；允许调整段落与句序以提升节奏，但不能改变原意。
+- 使用第三人称有限视角，语言有画面感但克制，避免堆砌辞藻。
+- 使用中文引号和自然段。只输出小说正文，不要标题、章节号、Markdown、JSON、创作说明或总结。`;
+
 const normalizeText = (
   value: unknown,
   fallback: string,
@@ -288,6 +301,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const body = readBody(req);
   const isSuggestionRequest = body.requestType === "suggestions";
+  const isNovelRequest = body.requestType === "novel";
   const usage = await getUsageStatus(req);
   if (!isSuggestionRequest && !usage.unlimited && usage.remaining === 0) {
     sendJson(res, 429, {
@@ -319,12 +333,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     sendJson(res, 400, { error: "缺少角色数据" });
     return;
   }
-  if (!isSuggestionRequest && !userMessage) {
+  if (!isSuggestionRequest && !isNovelRequest && !userMessage) {
     sendJson(res, 400, { error: "请先输入要推进的故事" });
     return;
   }
-  if (!isSuggestionRequest && userMessage.length > 2400) {
+  if (!isSuggestionRequest && !isNovelRequest && userMessage.length > 2400) {
     sendJson(res, 400, { error: "消息太长了，请控制在 2400 字以内" });
+    return;
+  }
+  const storyMessages = Array.isArray(body.storyMessages)
+    ? body.storyMessages.map(asRecord).slice(-80)
+    : [];
+  if (isNovelRequest && storyMessages.length === 0) {
+    sendJson(res, 400, { error: "还没有可编排的故事内容" });
     return;
   }
 
@@ -332,10 +353,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     scenario: asRecord(body.scenario),
     participants,
     room: asRecord(body.room),
-    recentMessages: Array.isArray(body.recentMessages)
-      ? body.recentMessages.slice(-20)
-      : [],
-    ...(isSuggestionRequest ? {} : { userMessage }),
+    ...(isNovelRequest
+      ? { chapter: asRecord(body.chapter), storyMessages }
+      : {
+          recentMessages: Array.isArray(body.recentMessages)
+            ? body.recentMessages.slice(-20)
+            : [],
+        }),
+    ...(!isSuggestionRequest && !isNovelRequest ? { userMessage } : {}),
   };
 
   const chargedUsage = isSuggestionRequest ? usage : await consumeUsage(req);
@@ -360,11 +385,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             role: "system",
             content: isSuggestionRequest
               ? SUGGESTION_SYSTEM_PROMPT
-              : SYSTEM_PROMPT,
+              : isNovelRequest
+                ? NOVEL_SYSTEM_PROMPT
+                : SYSTEM_PROMPT,
           },
           { role: "user", content: JSON.stringify(payload) },
         ],
-        temperature: 0.92,
+        temperature: isNovelRequest ? 0.72 : 0.92,
         ...(wantsStream ? { stream: true } : {}),
       }),
     });
@@ -384,6 +411,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (wantsStream && upstreamResponse.body) {
+      if (isNovelRequest) {
+        await streamNovelUpstream(upstreamResponse, res, chargedUsage);
+        return;
+      }
       await streamSpiritStoryUpstream(
         upstreamResponse,
         res,
@@ -398,6 +429,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const rawContent = upstreamPayload?.choices?.[0]?.message?.content;
     if (!rawContent) {
       sendJson(res, 502, { error: "大模型返回内容为空", usage: chargedUsage });
+      return;
+    }
+    if (isNovelRequest) {
+      sendJson(res, 200, {
+        ok: true,
+        novelContent: String(rawContent).trim(),
+        usage: chargedUsage,
+      });
       return;
     }
 
@@ -438,20 +477,82 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   } catch (error) {
     console.error("spirit-story failed", error);
+    const errorMessage = isNovelRequest
+      ? "小说编排失败，请稍后再试"
+      : "多人故事推进失败，请稍后再试";
     if (wantsStream) {
       beginNdjsonStream(res, 500);
       sendNdjsonLine(res, {
         type: "error",
-        error: "多人故事推进失败，请稍后再试",
+        error: errorMessage,
         usage: chargedUsage,
       });
       res.end();
       return;
     }
     sendJson(res, 500, {
-      error: "多人故事推进失败，请稍后再试",
+      error: errorMessage,
       usage: chargedUsage,
     });
+  }
+}
+
+async function streamNovelUpstream(
+  upstreamResponse: Response,
+  res: ApiResponse,
+  chargedUsage: unknown,
+): Promise<void> {
+  beginNdjsonStream(res, 200);
+
+  const reader = upstreamResponse.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let hasContent = false;
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      while (true) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex < 0) break;
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed?.choices?.[0]?.delta?.content;
+          if (!delta) continue;
+          hasContent = true;
+          sendNdjsonLine(res, { type: "novel_chunk", delta });
+        } catch {
+          // 忽略无法解析的 SSE 数据行
+        }
+      }
+    }
+
+    if (!hasContent) {
+      sendNdjsonLine(res, {
+        type: "error",
+        error: "小说编排没有返回正文",
+        usage: chargedUsage,
+      });
+    } else {
+      sendNdjsonLine(res, { type: "novel_done", usage: chargedUsage });
+    }
+    res.end();
+  } catch (error) {
+    console.error("spirit-story novel stream failed", error);
+    sendNdjsonLine(res, {
+      type: "error",
+      error: "小说编排流式响应失败",
+      usage: chargedUsage,
+    });
+    res.end();
   }
 }
 

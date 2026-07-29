@@ -23,6 +23,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
   const [flipped, setFlipped] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [showSlogan, setShowSlogan] = useState(false);
+  const [isCardHovered, setIsCardHovered] = useState(false);
 
   const rarity: Rarity = character.rarity || "R";
   const config = RARITY_CONFIGS[rarity];
@@ -48,6 +49,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
     setFlipped(false);
     setRevealed(false);
     setShowSlogan(false);
+    setIsCardHovered(false);
     const t = setTimeout(() => setFlipped(true), 800);
     return () => clearTimeout(t);
   }, [character.name]);
@@ -126,7 +128,18 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
               animate={{ rotateY: flipped && !showSlogan ? 0 : 180 }}
               transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
               onAnimationComplete={() => {
-                if (flipped && !showSlogan) setRevealed(true);
+                if (!revealed && flipped && !showSlogan) {
+                  setRevealed(true);
+                  if (isCardHovered) setShowSlogan(true);
+                }
+              }}
+              onHoverStart={() => {
+                setIsCardHovered(true);
+                if (revealed) setShowSlogan(true);
+              }}
+              onHoverEnd={() => {
+                setIsCardHovered(false);
+                if (revealed) setShowSlogan(false);
               }}
               onClick={(event) => {
                 if (!revealed) return;
@@ -144,7 +157,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
                 />
               </div>
 
-              {/* 卡背：初始先展示专属 Slogan，揭示后仍可点击翻回查看。 */}
+              {/* 卡背：初始展示 Slogan，揭示后悬停翻面，点击可再次切换。 */}
               <div
                 className="absolute inset-0 overflow-hidden rounded-2xl"
                 style={{
@@ -284,7 +297,7 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
             animate={{ opacity: revealed ? 1 : 0 }}
             transition={{ duration: 0.35, delay: revealed ? 0.5 : 0 }}
           >
-            点击卡片查看 Slogan · 点击外侧收入麾下
+            悬停卡片查看 Slogan · 悬停时点击切换正背面 · 点击外侧收入麾下
           </motion.div>
         </div>
       </div>
