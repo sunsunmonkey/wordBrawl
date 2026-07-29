@@ -13,6 +13,7 @@ import {
 import {
   extractPartialArrayObjects,
   extractPartialStringField,
+  isJsonArrayFieldComplete,
 } from "./jsonStream";
 import { getSafeAiField } from "./aiResponse";
 
@@ -300,6 +301,15 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
 
 必须返回合法 JSON，不能包含 markdown、注释或额外文字：
 {
+  "turns": [
+    { "role": "narrator", "content": "旁白，0-2 段，可省略" },
+    {
+      "role": "spirit",
+      "speakerRosterId": "必须是 participants 里的 rosterId",
+      "speakerName": "角色名",
+      "content": "该角色台词或行动，中文，1-5 句"
+    }
+  ],
   "title": "本房间故事标题，不超过12字",
   "scene": "当前场景状态，不超过30字",
   "tension": 0,
@@ -313,16 +323,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
       "stance": "protagonist | antagonist | rival | neutral | wildcard | mystery（除非剧情有真实转折，通常保持输入里给定的 stance）",
       "roleBrief": "该角色在本剧本里的定位（可保留或微调，不超过40字）"
     }
-  },
-  "turns": [
-    { "role": "narrator", "content": "旁白，0-2 段，可省略" },
-    {
-      "role": "spirit",
-      "speakerRosterId": "必须是 participants 里的 rosterId",
-      "speakerName": "角色名",
-      "content": "该角色台词或行动，中文，1-5 句"
-    }
-  ]
+  }
 }
 tension 是故事张力 0-100。普通闲聊 10-30，明显冲突 40-70，危机/背叛/审讯 70-95。`;
 
@@ -339,6 +340,7 @@ const SUGGESTION_SYSTEM_PROMPT = `根据多人故事的剧本、当前人物和�
 
 export interface SpiritStoryStreamHandlers {
   onTurnsChunk?: (turns: SpiritStoryTurn[]) => void;
+  onTurnsComplete?: (turns: SpiritStoryTurn[]) => void;
 }
 
 const extractPartialTurns = (
@@ -431,12 +433,7 @@ export async function requestSpiritStory(
 
   const apiMode = cfg.apiMode || "custom";
   if (apiMode === "free") {
-    return requestSpiritStoryFreeTrial(
-      payload,
-      room,
-      userMessage,
-      handlers?.onTurnsChunk,
-    );
+    return requestSpiritStoryFreeTrial(payload, room, userMessage, handlers);
   }
 
   if (!cfg.apiKey) throw new Error("请先填写 API Key");
@@ -461,20 +458,30 @@ export async function requestSpiritStory(
 
   let rawContent = "";
   let lastEmittedKey = "";
+  let turnsCompleted = false;
   const onTurnsChunk = handlers?.onTurnsChunk;
+  const onTurnsComplete = handlers?.onTurnsComplete;
   const participantIds = new Set(room.participantRosterIds);
 
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content;
     if (!delta) continue;
     rawContent += delta;
-    if (!onTurnsChunk) continue;
+    if (!onTurnsChunk && !onTurnsComplete) continue;
 
     const partialTurns = extractPartialTurns(rawContent, participantIds);
     const key = JSON.stringify(partialTurns);
-    if (key !== lastEmittedKey) {
+    if (onTurnsChunk && key !== lastEmittedKey) {
       lastEmittedKey = key;
       onTurnsChunk(partialTurns);
+    }
+    if (
+      !turnsCompleted &&
+      partialTurns.some((turn) => turn.content) &&
+      isJsonArrayFieldComplete(rawContent, "turns")
+    ) {
+      turnsCompleted = true;
+      onTurnsComplete?.(partialTurns);
     }
   }
 
@@ -560,7 +567,7 @@ async function requestSpiritStoryFreeTrial(
   payload: Record<string, unknown>,
   room: SpiritStoryRoom,
   userMessage: string,
-  onTurnsChunk?: (turns: SpiritStoryTurn[]) => void,
+  handlers?: SpiritStoryStreamHandlers,
 ): Promise<SpiritStoryResult> {
   let response: Response;
   try {
@@ -583,7 +590,7 @@ async function requestSpiritStoryFreeTrial(
       "application/x-ndjson",
     )
   ) {
-    return consumeSpiritStoryStream(response, room, onTurnsChunk);
+    return consumeSpiritStoryStream(response, room, handlers);
   }
 
   const raw = await response.json().catch(() => ({}));
@@ -610,7 +617,7 @@ async function requestSpiritStoryFreeTrial(
 async function consumeSpiritStoryStream(
   response: Response,
   room: SpiritStoryRoom,
-  onTurnsChunk?: (turns: SpiritStoryTurn[]) => void,
+  handlers?: SpiritStoryStreamHandlers,
 ): Promise<SpiritStoryResult> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
@@ -643,13 +650,15 @@ async function consumeSpiritStoryStream(
       if (
         event.type === "chunk" &&
         Array.isArray(event.turns) &&
-        onTurnsChunk
+        handlers?.onTurnsChunk
       ) {
         const key = JSON.stringify(event.turns);
         if (key !== lastEmittedKey) {
           lastEmittedKey = key;
-          onTurnsChunk(event.turns);
+          handlers.onTurnsChunk(event.turns);
         }
+      } else if (event.type === "turns_done" && Array.isArray(event.turns)) {
+        handlers?.onTurnsComplete?.(event.turns);
       } else if (event.type === "done" && event.result) {
         finalResult = normalizeResult(event.result, room);
       } else if (event.type === "error") {

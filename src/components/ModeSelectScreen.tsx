@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Castle,
   UsersRound,
@@ -15,7 +15,7 @@ import {
   Timer,
   Users,
 } from "lucide-react";
-import { useGameStore } from "../store/useGameStore";
+import { RARITY_CONFIGS, useGameStore } from "../store/useGameStore";
 import {
   isRosterCharacterEvolutionLocked,
   isRosterCharacterRecruitLocked,
@@ -42,6 +42,7 @@ import { getScaledTowerBoss } from "../data/towerBosses";
 import type { BattleSummary } from "../utils/towerAnalysis";
 import { runBackgroundRecruit } from "../utils/recruitPipeline";
 import { SpiritCard } from "./SpiritCard";
+import { HeroCard } from "./HeroCard";
 
 const RECRUIT_COOLDOWN_MS = 60_000;
 const RECRUIT_COOLDOWN_KEY = "word-brawl-recruit-last-generated-at";
@@ -157,6 +158,126 @@ const isEvolutionDebugAvailable = () => {
   );
 };
 
+const HeroCardPreviewModal: React.FC<{
+  character: RosterCharacter;
+  onClose: () => void;
+}> = ({ character, onClose }) => {
+  const [flipped, setFlipped] = useState(false);
+  const rarityConfig = RARITY_CONFIGS[character.rarity ?? "R"];
+  const signatureSkill =
+    character.skills.find(
+      (skill) => skill.isUltimate || skill.type === "ultimate",
+    )?.name ??
+    character.skills[0]?.name ??
+    character.name;
+  const battleCry =
+    character.spiritProfile?.battleCry?.trim() === "此刻，词意成真。"
+      ? ""
+      : character.spiritProfile?.battleCry?.trim();
+  const slogan =
+    character.spiritProfile?.slogan?.trim() ||
+    battleCry ||
+    character.spiritProfile?.catchphrases?.[0]?.trim() ||
+    `${character.name}，以${signatureSkill}为誓。`;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${character.name} 英雄卡`}
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="my-auto flex flex-col items-center"
+        initial={{ opacity: 0, scale: 0.92, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 12 }}
+        transition={{ type: "spring", stiffness: 320, damping: 28 }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div
+          className="relative w-72 cursor-pointer select-none"
+          style={{ perspective: 1600 }}
+          onMouseEnter={() => setFlipped(true)}
+          onMouseLeave={() => setFlipped(false)}
+          onClick={() => setFlipped((current) => !current)}
+        >
+          <motion.div
+            className="relative w-full"
+            style={{ transformStyle: "preserve-3d", willChange: "transform" }}
+            animate={{ rotateY: flipped ? 180 : 0 }}
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div style={{ backfaceVisibility: "hidden" }}>
+              <HeroCard
+                character={character}
+                size="lg"
+                showStats
+                showQuote={false}
+                ultraHoverEffect
+              />
+            </div>
+            <div
+              className="absolute inset-0 overflow-hidden rounded-2xl border"
+              style={{
+                backfaceVisibility: "hidden",
+                transform: "rotateY(180deg)",
+                background: "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
+                borderColor: `${rarityConfig.primaryColor}88`,
+                boxShadow: `0 0 36px ${rarityConfig.glowColor}, inset 0 0 28px rgba(${rarityConfig.rgb}, 0.16)`,
+              }}
+            >
+              <div
+                className="pointer-events-none absolute inset-0 opacity-60"
+                style={{
+                  background: `radial-gradient(circle at 18% 18%, rgba(${rarityConfig.rgb}, 0.2), transparent 30%), linear-gradient(135deg, transparent 49.8%, rgba(${rarityConfig.rgb}, 0.12) 50%, transparent 50.2%)`,
+                }}
+              />
+              <div
+                className="pointer-events-none absolute inset-3 rounded-xl border border-dashed"
+                style={{
+                  borderColor: `rgba(${rarityConfig.rgb}, 0.28)`,
+                }}
+              />
+              <div className="relative flex h-full items-center px-7 py-8">
+                <p
+                  className="w-full text-center font-display text-[22px] font-semibold leading-[1.75] text-white"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 5,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    textShadow: `0 0 20px rgba(${rarityConfig.rgb}, 0.35)`,
+                  }}
+                >
+                  <span style={{ color: rarityConfig.primaryColor }}>“</span>
+                  {slogan}
+                  <span style={{ color: rarityConfig.primaryColor }}>”</span>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+        <div className="mt-4 text-[10px] font-mono tracking-[0.24em] text-white/40">
+          悬停翻面 · 点击空白关闭
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 export const ModeSelectScreen: React.FC = () => {
   const {
     apiKey,
@@ -192,16 +313,15 @@ export const ModeSelectScreen: React.FC = () => {
     roster.find((char) => char.recruitLock?.status !== "generating") ?? null;
   const rosterPreview = roster.slice(0, 24);
   const hiddenRosterCount = Math.max(0, rosterCount - rosterPreview.length);
-  const [selectedRosterId, setSelectedRosterId] = useState<string | null>(
-    firstNonGeneratingRoster?.rosterId ?? null,
-  );
+  const [previewRosterId, setPreviewRosterId] = useState<string | null>(null);
   const [regeneratingRosterId, setRegeneratingRosterId] = useState<
     string | null
   >(null);
   const [regenerateError, setRegenerateError] = useState("");
-  const selectedRoster =
-    roster.find((char) => char.rosterId === selectedRosterId) ??
-    firstNonGeneratingRoster;
+  const previewRoster = previewRosterId
+    ? (roster.find((char) => char.rosterId === previewRosterId) ?? null)
+    : null;
+  const selectedRoster = firstNonGeneratingRoster;
   const selectedFallbackForm = getLatestFallbackEvolutionForm(selectedRoster);
   const debugNextStage = getNextDebugEvolutionStage(selectedRoster);
   const selectedEvolutionLocked =
@@ -222,11 +342,13 @@ export const ModeSelectScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    const selected = roster.find((char) => char.rosterId === selectedRosterId);
-    if (!selected || selected.recruitLock?.status === "generating") {
-      setSelectedRosterId(firstNonGeneratingRoster?.rosterId ?? null);
+    if (
+      previewRosterId &&
+      !roster.some((char) => char.rosterId === previewRosterId)
+    ) {
+      setPreviewRosterId(null);
     }
-  }, [firstNonGeneratingRoster, roster, selectedRosterId]);
+  }, [previewRosterId, roster]);
 
   // 召唤词灵：内嵌输入框
   const [summonInput, setSummonInput] = useState("");
@@ -321,8 +443,8 @@ export const ModeSelectScreen: React.FC = () => {
   const dropRecruit = (target: RosterCharacter) => {
     if (!window.confirm("确认放弃这次召唤？")) return;
     removeCharacter(target.rosterId);
-    if (selectedRosterId === target.rosterId) {
-      setSelectedRosterId(null);
+    if (previewRosterId === target.rosterId) {
+      setPreviewRosterId(null);
     }
   };
 
@@ -629,11 +751,7 @@ export const ModeSelectScreen: React.FC = () => {
             </div>
             <div className="text-right text-[10px] font-mono tracking-widest text-white/30">
               <div>ROSTER {String(rosterCount).padStart(2, "0")}</div>
-              <div className="text-[#66FCF1]/70 mt-1">
-                {selectedRoster
-                  ? `SELECTED · ${selectedRoster.name}`
-                  : "NO SELECTION"}
-              </div>
+              <div className="text-[#66FCF1]/70 mt-1">CARD PREVIEW · READY</div>
             </div>
           </div>
 
@@ -819,10 +937,10 @@ export const ModeSelectScreen: React.FC = () => {
                 onClick={startSpiritChat}
                 disabled={!selectedRoster || selectedUnavailable}
                 icon={<MessageCircle size={22} />}
-                title="灵契会客室"
+                title="词灵会客厅"
                 subtitle="独立记忆 · 深度陪伴"
                 accent="#66FCF1"
-                description="和选中词灵一对一对话，它会记住你们之间的每一次交流。"
+                description="进入会客室选择词灵一对一对话，它会记住你们之间的每一次交流。"
                 highlight
               />
               <ModeCard
@@ -848,7 +966,7 @@ export const ModeSelectScreen: React.FC = () => {
                 highlight
               />
               <ModeCard
-                onClick={startTower}
+                onClick={() => startTower()}
                 disabled={!selectedRoster || selectedUnavailable}
                 icon={<Castle size={22} />}
                 title="九层塔"
@@ -857,7 +975,7 @@ export const ModeSelectScreen: React.FC = () => {
                     ? selectedUnavailable
                       ? `${selectedRoster.name} · 暂不可用`
                       : `${selectedRoster.name} · 第${selectedRoster.tower.nextLayer ?? 1}层`
-                    : "选一位词灵出战"
+                    : "进入后选择词灵"
                 }
                 accent="#FF6B9D"
                 description="登塔积累修炼 XP，突破关卡后触发进化，解锁全新形态与技能。"
@@ -923,8 +1041,6 @@ export const ModeSelectScreen: React.FC = () => {
                 <div className="flex flex-1 flex-col gap-4">
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
                     {rosterPreview.map((char) => {
-                      const isSelected =
-                        char.rosterId === selectedRoster?.rosterId;
                       const evolutionLocked =
                         isRosterCharacterEvolutionLocked(char);
                       const recruitLocked =
@@ -964,6 +1080,7 @@ export const ModeSelectScreen: React.FC = () => {
                         },
                       ];
                       const canOperate = !evolutionLocked && !recruitLocked;
+                      const canPreview = !recruitLocked;
                       const actionSlot = canOperate ? (
                         <>
                           <span
@@ -1019,8 +1136,8 @@ export const ModeSelectScreen: React.FC = () => {
                               e.stopPropagation();
                               if (window.confirm("确认删除该词灵？")) {
                                 removeCharacter(char.rosterId);
-                                if (selectedRosterId === char.rosterId) {
-                                  setSelectedRosterId(null);
+                                if (previewRosterId === char.rosterId) {
+                                  setPreviewRosterId(null);
                                 }
                               }
                             }}
@@ -1030,8 +1147,8 @@ export const ModeSelectScreen: React.FC = () => {
                                 e.stopPropagation();
                                 if (window.confirm("确认删除该词灵？")) {
                                   removeCharacter(char.rosterId);
-                                  if (selectedRosterId === char.rosterId) {
-                                    setSelectedRosterId(null);
+                                  if (previewRosterId === char.rosterId) {
+                                    setPreviewRosterId(null);
                                   }
                                 }
                               }
@@ -1069,15 +1186,19 @@ export const ModeSelectScreen: React.FC = () => {
                           key={char.rosterId}
                           character={char}
                           size="sm"
-                          selected={isSelected}
                           topRightBadges={badges}
                           actionSlot={actionSlot}
                           footerSlot={footerSlot}
-                          onClick={() => setSelectedRosterId(char.rosterId)}
+                          onClick={
+                            canPreview
+                              ? () => setPreviewRosterId(char.rosterId)
+                              : undefined
+                          }
                           onKeyDown={(e) => {
+                            if (!canPreview) return;
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              setSelectedRosterId(char.rosterId);
+                              setPreviewRosterId(char.rosterId);
                             }
                           }}
                           onRetryRecruit={(e) => {
@@ -1189,9 +1310,7 @@ export const ModeSelectScreen: React.FC = () => {
 
                   <div className="mt-auto flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-[10px] leading-relaxed text-[#8a8d91]">
-                      {selectedRoster && !selectedUnavailable
-                        ? `已选中 ${selectedRoster.name}，上方三大核心入口将对其生效。`
-                        : "选择一名词灵作为出战核心。"}
+                      点击词灵查看完整英雄卡，悬停可使用快捷操作。
                     </div>
                     <button
                       type="button"
@@ -1232,6 +1351,15 @@ export const ModeSelectScreen: React.FC = () => {
           <span className="hidden md:inline">召唤 · 陪伴 · 共叙 · 进化</span>
         </div>
       </div>
+      <AnimatePresence>
+        {previewRoster && (
+          <HeroCardPreviewModal
+            key={previewRoster.rosterId}
+            character={previewRoster}
+            onClose={() => setPreviewRosterId(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

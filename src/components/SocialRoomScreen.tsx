@@ -44,10 +44,21 @@ type MentionCandidate = {
   id: string;
   kind: "player" | "spirit";
   name: string;
+  mentionText: string;
   label: string;
   color: string;
   imageUrl?: string;
   isOnline?: boolean;
+};
+
+type MentionableSpirit = SerializedSpirit & {
+  roomSpiritId: string;
+  ownerPlayerId: string;
+  ownerName: string;
+  ownerColor: string;
+  isMine: boolean;
+  mentionText: string;
+  displayName: string;
 };
 
 type StreamingSpiritMessage = Pick<SocialChatMessage, "id" | "timestamp">;
@@ -68,6 +79,12 @@ const formatTime = (ts: number): string => {
 
 const stripAtPrefix = (text: string): string =>
   text.replace(/^@\S+\s*/, "").trim();
+
+const getRoomSpiritId = (ownerPlayerId: string, rosterId: string): string =>
+  `${ownerPlayerId}:${rosterId}`;
+
+const getMentionOwnerLabel = (nickname: string): string =>
+  nickname.replace(/[\s@（）()]/g, "") || "契约者";
 
 const getActiveMention = (
   value: string,
@@ -211,40 +228,74 @@ export const SocialRoomScreen: React.FC = () => {
     }
   };
 
-  // 房间内可被 @ 的词灵列表（汇总所有玩家携带的词灵，自己的排后面）
-  const mentionableSpirits = useMemo<SerializedSpirit[]>(() => {
+  // 房间内词灵必须带宿主身份；不同玩家可能携带相同 rosterId，不能只按角色存档 ID 去重。
+  const mentionableSpirits = useMemo<MentionableSpirit[]>(() => {
     if (!currentRoom) return [];
-    const others: SerializedSpirit[] = [];
-    const mine: SerializedSpirit[] = [];
+    const entries: Omit<MentionableSpirit, "mentionText" | "displayName">[] =
+      [];
+    const seen = new Set<string>();
     currentRoom.players.forEach((p) => {
-      const target = p.playerId === playerId ? mine : others;
-      p.carriedSpirits?.forEach((s) => {
-        if (!target.find((x) => x.rosterId === s.rosterId)) {
-          target.push(s);
-        }
+      const carried = p.carriedSpirits?.length
+        ? p.carriedSpirits
+        : p.activeSpirit
+          ? [p.activeSpirit]
+          : [];
+      carried.forEach((spirit) => {
+        const roomSpiritId = getRoomSpiritId(p.playerId, spirit.rosterId);
+        if (seen.has(roomSpiritId)) return;
+        seen.add(roomSpiritId);
+        entries.push({
+          ...spirit,
+          roomSpiritId,
+          ownerPlayerId: p.playerId,
+          ownerName: p.nickname,
+          ownerColor: p.avatarColor,
+          isMine: p.playerId === playerId,
+        });
       });
-      // 兼容旧数据：若 carriedSpirits 缺失但 activeSpirit 存在
-      if (!p.carriedSpirits && p.activeSpirit) {
-        target.push(p.activeSpirit);
+    });
+
+    const nameCounts = new Map<string, number>();
+    entries.forEach((spirit) => {
+      nameCounts.set(spirit.name, (nameCounts.get(spirit.name) ?? 0) + 1);
+    });
+    return entries
+      .map((spirit) => ({
+        ...spirit,
+        mentionText:
+          (nameCounts.get(spirit.name) ?? 0) > 1
+            ? `${spirit.name}·${getMentionOwnerLabel(spirit.ownerName)}`
+            : spirit.name,
+        displayName:
+          (nameCounts.get(spirit.name) ?? 0) > 1
+            ? `${spirit.name} · ${spirit.ownerName}`
+            : spirit.name,
+      }))
+      .sort((a, b) => {
+        if (a.isMine === b.isMine) return 0;
+        return a.isMine ? 1 : -1;
+      });
+  }, [currentRoom, playerId]);
+
+  const spiritByMentionText = useMemo(() => {
+    const byMentionText = new Map<string, MentionableSpirit>();
+    const nameCounts = new Map<string, number>();
+    mentionableSpirits.forEach((spirit) => {
+      nameCounts.set(spirit.name, (nameCounts.get(spirit.name) ?? 0) + 1);
+    });
+    mentionableSpirits.forEach((spirit) => {
+      byMentionText.set(spirit.mentionText, spirit);
+      if (nameCounts.get(spirit.name) === 1) {
+        byMentionText.set(spirit.name, spirit);
       }
     });
-    return [...others, ...mine];
-  }, [currentRoom, playerId]);
+    return byMentionText;
+  }, [mentionableSpirits]);
 
   const mySpirit = useMemo<SerializedSpirit | null>(() => {
     if (!currentRoom) return null;
     const me = currentRoom.players.find((p) => p.playerId === playerId);
     return me?.activeSpirit ?? me?.carriedSpirits?.[0] ?? null;
-  }, [currentRoom, playerId]);
-
-  // 我方词灵的 rosterId 集合：用于在 @词灵 快捷条里区分自己/对方
-  const mySpiritIds = useMemo<Set<string>>(() => {
-    if (!currentRoom) return new Set();
-    const me = currentRoom.players.find((p) => p.playerId === playerId);
-    const ids = new Set<string>();
-    me?.carriedSpirits?.forEach((s) => ids.add(s.rosterId));
-    if (me?.activeSpirit) ids.add(me.activeSpirit.rosterId);
-    return ids;
   }, [currentRoom, playerId]);
 
   // 房间内可被 @ 的其他玩家（自己不出现在快捷条里）
@@ -264,26 +315,27 @@ export const SocialRoomScreen: React.FC = () => {
       id: p.playerId,
       kind: "player" as const,
       name: p.nickname,
+      mentionText: p.nickname,
       label: p.isOnline ? "契约者在线" : "契约者离线",
       color: p.avatarColor,
       isOnline: p.isOnline,
     }));
 
     const spirits = mentionableSpirits.map((s) => {
-      const isMine = mySpiritIds.has(s.rosterId);
-      const color = isMine ? "#FFD700" : "#66FCF1";
+      const color = s.isMine ? "#FFD700" : "#66FCF1";
       return {
-        id: s.rosterId,
+        id: s.roomSpiritId,
         kind: "spirit" as const,
         name: s.name,
-        label: isMine ? "我方词灵" : "对方词灵",
+        mentionText: s.mentionText,
+        label: `${s.isMine ? "我方词灵" : "对方词灵"} · 契约者 ${s.ownerName}`,
         color,
         imageUrl: s.imageUrl,
       };
     });
 
     return [...players, ...spirits];
-  }, [mentionablePlayers, mentionableSpirits, mySpiritIds]);
+  }, [mentionablePlayers, mentionableSpirits]);
 
   const activeMention = useMemo(
     () => getActiveMention(input, inputCaretIndex),
@@ -295,7 +347,7 @@ export const SocialRoomScreen: React.FC = () => {
     const query = activeMention.query.trim().toLowerCase();
     const matches = query
       ? mentionCandidates.filter((candidate) =>
-          candidate.name.toLowerCase().includes(query),
+          candidate.mentionText.toLowerCase().includes(query),
         )
       : mentionCandidates;
     return matches.slice(0, MAX_MENTION_SUGGESTIONS);
@@ -333,6 +385,22 @@ export const SocialRoomScreen: React.FC = () => {
   const isCustomReady = apiMode === "custom" && apiKey && baseUrl && model;
   const isFreeMode = apiMode === "free";
   const isAiReady = isFreeMode || isCustomReady;
+  const resolveMessageIdentity = (
+    message: SocialChatMessage,
+  ): SocialChatMessage => {
+    if (message.type !== "spirit") return message;
+    const exactSpirit = mentionableSpirits.find(
+      (spirit) => spirit.roomSpiritId === message.senderId,
+    );
+    const legacyMatches = mentionableSpirits.filter(
+      (spirit) => spirit.rosterId === message.spiritRosterId,
+    );
+    const spirit =
+      exactSpirit ?? (legacyMatches.length === 1 ? legacyMatches[0] : null);
+    return spirit && message.senderName !== spirit.displayName
+      ? { ...message, senderName: spirit.displayName }
+      : message;
+  };
 
   /** 处理发消息：解析 @词灵，发送玩家消息，必要时触发词灵回复 */
   const sendMessage = async (rawText: string) => {
@@ -350,10 +418,25 @@ export const SocialRoomScreen: React.FC = () => {
       mentionedNames.push(match[1]);
     }
 
-    const mentionedSpirits = mentionedNames.reduce<SerializedSpirit[]>(
+    const ambiguousSpiritName = mentionedNames.find(
+      (name) =>
+        !spiritByMentionText.has(name) &&
+        mentionableSpirits.filter((spirit) => spirit.name === name).length > 1,
+    );
+    if (ambiguousSpiritName) {
+      showError(
+        `房间内有多个 ${ambiguousSpiritName}，请从 @ 候选中选择带契约者标识的词灵`,
+      );
+      return;
+    }
+
+    const mentionedSpirits = mentionedNames.reduce<MentionableSpirit[]>(
       (spirits, name) => {
-        const spirit = mentionableSpirits.find((s) => s.name === name);
-        if (spirit && !spirits.some((s) => s.rosterId === spirit.rosterId)) {
+        const spirit = spiritByMentionText.get(name);
+        if (
+          spirit &&
+          !spirits.some((s) => s.roomSpiritId === spirit.roomSpiritId)
+        ) {
           spirits.push(spirit);
         }
         return spirits;
@@ -377,7 +460,7 @@ export const SocialRoomScreen: React.FC = () => {
 
     // 发送玩家消息
     sendPlayerMessage(text, [
-      ...mentionedSpirits.map((s) => s.rosterId),
+      ...mentionedSpirits.map((s) => s.roomSpiritId),
       ...mentionedPlayerIds,
     ]);
 
@@ -388,29 +471,45 @@ export const SocialRoomScreen: React.FC = () => {
     }
 
     const now = Date.now();
+    const getLastReplyAt = (spirit: MentionableSpirit): number => {
+      const sameRosterCount = mentionableSpirits.filter(
+        (candidate) => candidate.rosterId === spirit.rosterId,
+      ).length;
+      const syncedReplyAt = currentRoom.messages.reduce((latest, message) => {
+        if (message.type !== "spirit") return latest;
+        const isCurrentIdentity = message.senderId === spirit.roomSpiritId;
+        const isUnambiguousLegacyIdentity =
+          sameRosterCount === 1 && message.senderId === spirit.rosterId;
+        return isCurrentIdentity || isUnambiguousLegacyIdentity
+          ? Math.max(latest, message.timestamp)
+          : latest;
+      }, 0);
+      return Math.max(
+        syncedReplyAt,
+        lastSpiritReplyAtRef.current[spirit.roomSpiritId] ?? 0,
+      );
+    };
     const readySpirits = mentionedSpirits.filter((spirit) => {
-      const lastReplyAt = lastSpiritReplyAtRef.current[spirit.rosterId] ?? 0;
+      const lastReplyAt = getLastReplyAt(spirit);
       return now - lastReplyAt >= SPIRIT_REPLY_COOLDOWN_MS;
     });
     const coolingSpirits = mentionedSpirits.filter(
-      (spirit) => !readySpirits.some((s) => s.rosterId === spirit.rosterId),
+      (spirit) =>
+        !readySpirits.some((s) => s.roomSpiritId === spirit.roomSpiritId),
     );
 
     if (coolingSpirits.length > 0) {
-      const waitSeconds = Math.max(
-        ...coolingSpirits.map((spirit) =>
-          Math.ceil(
-            (SPIRIT_REPLY_COOLDOWN_MS -
-              (now - (lastSpiritReplyAtRef.current[spirit.rosterId] ?? now))) /
-              1000,
-          ),
-        ),
-      );
+      const cooldownNotices = coolingSpirits.map((spirit) => {
+        const lastReplyAt = getLastReplyAt(spirit);
+        const waitSeconds = Math.max(
+          1,
+          Math.ceil((SPIRIT_REPLY_COOLDOWN_MS - (now - lastReplyAt)) / 1000),
+        );
+        return `${spirit.name}累了，稍微歇 ${waitSeconds} 秒再 @ 它吧`;
+      });
       useSocialStore
         .getState()
-        .sendSystemMessage(
-          `${coolingSpirits.map((spirit) => spirit.name).join("、")} 刚刚说过话了，稍等 ${waitSeconds} 秒再 @ 它吧。`,
-        );
+        .sendSystemMessage(cooldownNotices.join("；"), true);
     }
 
     if (readySpirits.length === 0) return;
@@ -419,7 +518,7 @@ export const SocialRoomScreen: React.FC = () => {
     const triggerText = stripAtPrefix(text);
     const cfg = { apiKey, baseUrl, model, apiMode };
     const recentMessages: SocialChatMessage[] = [
-      ...currentRoom.messages,
+      ...currentRoom.messages.map(resolveMessageIdentity),
       {
         id: "pending-player-message",
         type: "player",
@@ -433,7 +532,7 @@ export const SocialRoomScreen: React.FC = () => {
     const failedSpirits: string[] = [];
     const streamingMessages = Object.fromEntries(
       readySpirits.map((spirit, index) => [
-        spirit.rosterId,
+        spirit.roomSpiritId,
         {
           id: generateMessageId(),
           // 保持多词灵回复的 @ 顺序，同时使流式和最终消息拥有完全一致的时间行。
@@ -442,22 +541,20 @@ export const SocialRoomScreen: React.FC = () => {
       ]),
     ) as Record<string, StreamingSpiritMessage>;
 
-    setStreamingSpiritIds(readySpirits.map((spirit) => spirit.rosterId));
+    setStreamingSpiritIds(readySpirits.map((spirit) => spirit.roomSpiritId));
     setStreamingSpiritMessages(streamingMessages);
     setPendingSpiritReplies(
-      Object.fromEntries(readySpirits.map((spirit) => [spirit.rosterId, ""])),
+      Object.fromEntries(
+        readySpirits.map((spirit) => [spirit.roomSpiritId, ""]),
+      ),
     );
 
     try {
       const replyTasks = readySpirits.map(async (targetSpirit) => {
-        lastSpiritReplyAtRef.current[targetSpirit.rosterId] = Date.now();
+        lastSpiritReplyAtRef.current[targetSpirit.roomSpiritId] = Date.now();
         const hostPlayer =
           currentRoom.players.find(
-            (p) =>
-              p.activeSpirit?.rosterId === targetSpirit.rosterId ||
-              p.carriedSpirits?.some(
-                (spirit) => spirit.rosterId === targetSpirit.rosterId,
-              ),
+            (p) => p.playerId === targetSpirit.ownerPlayerId,
           ) ?? currentRoom.players[0];
 
         try {
@@ -469,13 +566,26 @@ export const SocialRoomScreen: React.FC = () => {
               roomCode: currentRoom.roomCode,
               playerCount: currentRoom.players.length,
               spiritsInRoom: mentionableSpirits.map((s) => s.name),
+              owner: {
+                playerId: targetSpirit.ownerPlayerId,
+                nickname: targetSpirit.ownerName,
+              },
+              speaker: {
+                playerId,
+                nickname,
+                isOwner: playerId === targetSpirit.ownerPlayerId,
+              },
+              playersInRoom: currentRoom.players.map((roomPlayer) => ({
+                playerId: roomPlayer.playerId,
+                nickname: roomPlayer.nickname,
+              })),
               recentMessages,
             },
             {
               onReplyChunk: (partial) => {
                 setPendingSpiritReplies((prev) => ({
                   ...prev,
-                  [targetSpirit.rosterId]: partial,
+                  [targetSpirit.roomSpiritId]: partial,
                 }));
               },
             },
@@ -494,7 +604,7 @@ export const SocialRoomScreen: React.FC = () => {
             result.targetSpirit,
             result.hostPlayer,
             result.finalReply,
-            streamingMessages[result.targetSpirit.rosterId],
+            streamingMessages[result.targetSpirit.roomSpiritId],
           );
         } else {
           failedSpirits.push(result.targetSpirit.name);
@@ -503,15 +613,15 @@ export const SocialRoomScreen: React.FC = () => {
         if (targetSpirit) {
           setPendingSpiritReplies((prev) => {
             const next = { ...prev };
-            delete next[targetSpirit.rosterId];
+            delete next[targetSpirit.roomSpiritId];
             return next;
           });
           setStreamingSpiritIds((ids) =>
-            ids.filter((id) => id !== targetSpirit.rosterId),
+            ids.filter((id) => id !== targetSpirit.roomSpiritId),
           );
           setStreamingSpiritMessages((messages) => {
             const next = { ...messages };
-            delete next[targetSpirit.rosterId];
+            delete next[targetSpirit.roomSpiritId];
             return next;
           });
         }
@@ -543,7 +653,7 @@ export const SocialRoomScreen: React.FC = () => {
 
     const before = input.slice(0, mention.start);
     const after = input.slice(mention.end).replace(/^\s*/, "");
-    const insertion = `@${candidate.name} `;
+    const insertion = `@${candidate.mentionText} `;
     const nextInput = `${before}${insertion}${after}`.slice(0, MAX_INPUT);
     const nextCaret = Math.min(
       before.length + insertion.length,
@@ -613,10 +723,10 @@ export const SocialRoomScreen: React.FC = () => {
     }
   };
 
-  const handleQuickMention = (spirit: SerializedSpirit) => {
+  const handleQuickMention = (spirit: MentionableSpirit) => {
     setInput((prev) => {
       const prefix = prev && !prev.endsWith(" ") ? `${prev} ` : prev;
-      return `${prefix}@${spirit.name} `;
+      return `${prefix}@${spirit.mentionText} `;
     });
     inputRef.current?.focus();
   };
@@ -653,19 +763,22 @@ export const SocialRoomScreen: React.FC = () => {
     currentRoom.messages.map((message) => message.id),
   );
   const displayedChatItems: DisplayedChatItem[] = [
-    ...currentRoom.messages.map((message, index) => ({
-      key: message.id,
-      message,
-      isMe: message.senderId === playerId,
-      isContinuation: isMessageContinuation(
+    ...currentRoom.messages.map((rawMessage, index) => {
+      const message = resolveMessageIdentity(rawMessage);
+      return {
+        key: message.id,
         message,
-        currentRoom.messages[index - 1],
-      ),
-      streaming: false,
-    })),
+        isMe: message.senderId === playerId,
+        isContinuation: isMessageContinuation(
+          message,
+          currentRoom.messages[index - 1],
+        ),
+        streaming: false,
+      };
+    }),
     ...streamingSpiritIds.flatMap((streamingSpiritId) => {
       const spirit = mentionableSpirits.find(
-        (candidate) => candidate.rosterId === streamingSpiritId,
+        (candidate) => candidate.roomSpiritId === streamingSpiritId,
       );
       const streamingMessage = streamingSpiritMessages[streamingSpiritId];
       if (
@@ -675,15 +788,7 @@ export const SocialRoomScreen: React.FC = () => {
       ) {
         return [];
       }
-      const hostPlayer =
-        currentRoom.players.find(
-          (player) =>
-            player.activeSpirit?.rosterId === spirit.rosterId ||
-            player.carriedSpirits?.some(
-              (carried) => carried.rosterId === spirit.rosterId,
-            ),
-        ) ?? currentRoom.players[0];
-      const accentColor = hostPlayer?.avatarColor ?? "#FFD700";
+      const accentColor = spirit.ownerColor;
       const partial = pendingSpiritReplies[streamingSpiritId];
       return [
         {
@@ -691,8 +796,8 @@ export const SocialRoomScreen: React.FC = () => {
           message: {
             ...streamingMessage,
             type: "spirit" as const,
-            senderId: spirit.rosterId,
-            senderName: spirit.name,
+            senderId: spirit.roomSpiritId,
+            senderName: spirit.displayName,
             senderColor: accentColor,
             senderAvatar: spirit.imageUrl,
             spiritRosterId: spirit.rosterId,
@@ -882,9 +987,7 @@ export const SocialRoomScreen: React.FC = () => {
               ] as const
             ).map(({ side, label, accent }) => {
               const rowSpirits = mentionableSpirits.filter((s) =>
-                side === "mine"
-                  ? mySpiritIds.has(s.rosterId)
-                  : !mySpiritIds.has(s.rosterId),
+                side === "mine" ? s.isMine : !s.isMine,
               );
               if (rowSpirits.length === 0) return null;
               return (
@@ -904,7 +1007,7 @@ export const SocialRoomScreen: React.FC = () => {
                   </span>
                   {rowSpirits.map((s) => (
                     <button
-                      key={s.rosterId}
+                      key={s.roomSpiritId}
                       type="button"
                       onClick={() => handleQuickMention(s)}
                       disabled={isSending}
@@ -929,7 +1032,7 @@ export const SocialRoomScreen: React.FC = () => {
                           {s.name.slice(0, 1)}
                         </span>
                       )}
-                      {s.name}
+                      {s.mentionText}
                     </button>
                   ))}
                 </div>
@@ -1002,7 +1105,7 @@ export const SocialRoomScreen: React.FC = () => {
                               className="block truncate text-sm font-bold"
                               style={{ color: candidate.color }}
                             >
-                              @{candidate.name}
+                              @{candidate.mentionText}
                             </span>
                             <span className="block truncate text-[13px] font-mono tracking-wide text-white/45">
                               {candidate.label}

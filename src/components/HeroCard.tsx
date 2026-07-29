@@ -9,8 +9,23 @@ import {
 } from "../store/useGameStore";
 import { CharacterAvatar } from "./CharacterAvatar";
 
+export type HeroCardCharacter = Pick<
+  CharacterData,
+  | "name"
+  | "hp"
+  | "maxHp"
+  | "attack"
+  | "defense"
+  | "speed"
+  | "skills"
+  | "imageUrl"
+  | "spiritProfile"
+  | "rarity"
+  | "level"
+>;
+
 interface HeroCardProps {
-  character: CharacterData;
+  character: HeroCardCharacter;
   size?: "sm" | "md" | "lg";
   showStats?: boolean;
   showQuote?: boolean;

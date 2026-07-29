@@ -8,6 +8,7 @@ import {
   getAiCredentials,
   getSafeAiField,
   getUsageStatus,
+  isJsonArrayFieldComplete,
   parseJsonLoose,
   readBody,
   sendJson,
@@ -48,6 +49,15 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
 
 必须返回合法 JSON，不能包含 markdown、注释或额外文字：
 {
+  "turns": [
+    { "role": "narrator", "content": "旁白，0-2 段，可省略" },
+    {
+      "role": "spirit",
+      "speakerRosterId": "必须是 participants 里的 rosterId",
+      "speakerName": "角色名",
+      "content": "该角色台词或行动，中文，1-5 句"
+    }
+  ],
   "title": "本房间故事标题，不超过12字",
   "scene": "当前场景状态，不超过30字",
   "tension": 0,
@@ -61,16 +71,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
       "stance": "protagonist | antagonist | rival | neutral | wildcard | mystery（除非剧情有真实转折，通常保持输入里给定的 stance）",
       "roleBrief": "该角色在本剧本里的定位（可保留或微调，不超过40字）"
     }
-  },
-  "turns": [
-    { "role": "narrator", "content": "旁白，0-2 段，可省略" },
-    {
-      "role": "spirit",
-      "speakerRosterId": "必须是 participants 里的 rosterId",
-      "speakerName": "角色名",
-      "content": "该角色台词或行动，中文，1-5 句"
-    }
-  ]
+  }
 }
 tension 是故事张力 0-100。普通闲聊 10-30，明显冲突 40-70，危机/背叛/审讯 70-95。`;
 
@@ -533,6 +534,7 @@ async function streamSpiritStoryUpstream(
   let buffer = "";
   let rawContent = "";
   let lastEmittedKey = "";
+  let turnsCompleted = false;
 
   try {
     while (true) {
@@ -563,6 +565,17 @@ async function streamSpiritStoryUpstream(
           if (key !== lastEmittedKey) {
             lastEmittedKey = key;
             sendNdjsonLine(res, { type: "chunk", turns: partialTurns });
+          }
+          if (
+            !turnsCompleted &&
+            partialTurns.some((turn) => turn.content) &&
+            isJsonArrayFieldComplete(rawContent, "turns")
+          ) {
+            turnsCompleted = true;
+            sendNdjsonLine(res, {
+              type: "turns_done",
+              turns: partialTurns,
+            });
           }
         } catch {
           // 忽略无法解析的 SSE 数据行

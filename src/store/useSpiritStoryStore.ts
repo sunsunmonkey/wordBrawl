@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { getSafeAiField } from "../utils/aiResponse";
+import {
+  getSafeAiField,
+  isAiProtocolFragment,
+  sanitizeAiDialogueText,
+} from "../utils/aiResponse";
 
 export type SpiritStoryRole = "player" | "narrator" | "spirit";
 export type SpiritStoryPlayerMode = "participant" | "observer";
@@ -432,14 +436,19 @@ const normalizeMessage = (
 ): SpiritStoryMessage | null => {
   const role = message.role;
   const rawContent = String(message.content || "").trim();
+  if (role !== "player" && isAiProtocolFragment(rawContent)) {
+    return null;
+  }
   const content =
     role === "player"
       ? rawContent
-      : getSafeAiField(
-          rawContent,
-          "content",
-          "故事的词意暂时紊乱，片刻后再继续推进吧。",
-          1200,
+      : sanitizeAiDialogueText(
+          getSafeAiField(
+            rawContent,
+            "content",
+            "故事的词意暂时紊乱，片刻后再继续推进吧。",
+            1200,
+          ),
         );
   if (
     (role !== "player" && role !== "narrator" && role !== "spirit") ||
@@ -781,7 +790,7 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
     }),
     {
       name: "word-brawl-spirit-story",
-      version: 3,
+      version: 5,
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== "object") {
           return { rooms: {}, activeRoomId: null };

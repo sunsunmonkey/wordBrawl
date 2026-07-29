@@ -39,6 +39,7 @@ import {
 import {
   requestSpiritStory,
   requestSpiritStorySuggestions,
+  type SpiritStoryTurn,
 } from "../utils/spiritStory";
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
 import { LOADING_STEPS } from "./loadingSteps";
@@ -46,6 +47,13 @@ import { LOADING_STEPS } from "./loadingSteps";
 const MAX_STORY_PARTICIPANTS = 10;
 const COLLAPSED_ROSTER_COUNT = 8;
 const SUGGESTION_IDLE_DELAY_MS = 1800;
+
+interface StreamingStoryState {
+  roomId: string;
+  requestId: string;
+  startedAt: number;
+  turns: SpiritStoryTurn[];
+}
 
 const formatTime = (ts: number) => {
   const d = new Date(ts);
@@ -106,7 +114,14 @@ export const SpiritStoryScreen: React.FC = () => {
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
+  const [streamingStory, setStreamingStory] =
+    useState<StreamingStoryState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const latestStoryRequestIdRef = useRef("");
+  const activeForegroundRequestIdRef = useRef("");
+  const latestMetadataRequestIdByRoomIdRef = useRef<Record<string, string>>({});
+  const pendingStreamingTurnsRef = useRef<StreamingStoryState | null>(null);
+  const streamingFrameRef = useRef<number | null>(null);
   const initialPromptsByKeyRef = useRef<Record<string, string[]>>({});
   const suggestionRequestRoomIdsRef = useRef(new Set<string>());
   const suggestedForMessageIdByRoomIdRef = useRef<Record<string, string>>({});
@@ -123,6 +138,18 @@ export const SpiritStoryScreen: React.FC = () => {
 
   const activeRoom = activeRoomId ? rooms[activeRoomId] : null;
   const isComposing = !activeRoom;
+  const activeStreamingStory =
+    streamingStory?.roomId === activeRoom?.id ? streamingStory : null;
+  const activeStreamingContentLength =
+    activeStreamingStory?.turns.reduce(
+      (total, turn) => total + turn.content.length,
+      0,
+    ) ?? 0;
+  const activeStreamingTurnIndex =
+    activeStreamingStory?.turns.reduce(
+      (lastIndex, turn, index) => (turn.content ? index : lastIndex),
+      -1,
+    ) ?? -1;
 
   const activeIds = activeRoom ? activeRoom.participantRosterIds : draftIds;
   const participants = useMemo(
@@ -234,6 +261,48 @@ export const SpiritStoryScreen: React.FC = () => {
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [activeRoom?.messages.length, isSending]);
 
+  useEffect(() => {
+    if (!activeStreamingContentLength) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [activeStreamingContentLength]);
+
+  useEffect(
+    () => () => {
+      if (streamingFrameRef.current !== null) {
+        cancelAnimationFrame(streamingFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  const clearPendingStreamingTurns = () => {
+    if (streamingFrameRef.current !== null) {
+      cancelAnimationFrame(streamingFrameRef.current);
+      streamingFrameRef.current = null;
+    }
+    pendingStreamingTurnsRef.current = null;
+  };
+
+  const scheduleStreamingTurns = (next: StreamingStoryState) => {
+    if (latestStoryRequestIdRef.current !== next.requestId) return;
+    pendingStreamingTurnsRef.current = next;
+    if (streamingFrameRef.current !== null) return;
+    streamingFrameRef.current = requestAnimationFrame(() => {
+      streamingFrameRef.current = null;
+      const pending = pendingStreamingTurnsRef.current;
+      pendingStreamingTurnsRef.current = null;
+      if (pending && latestStoryRequestIdRef.current === pending.requestId) {
+        setStreamingStory(pending);
+      }
+    });
+  };
+
+  const invalidatePendingMetadata = (roomId: string) => {
+    latestMetadataRequestIdByRoomIdRef.current[roomId] = "";
+  };
+
   const startNewComposing = () => {
     setActiveRoomId(null);
     setError("");
@@ -262,6 +331,7 @@ export const SpiritStoryScreen: React.FC = () => {
     const current = activeRoom.participantRosterIds;
     if (current.includes(rosterId)) {
       if (current.length <= 2) return;
+      invalidatePendingMetadata(activeRoom.id);
       setRoomParticipants(
         activeRoom.id,
         current.filter((id) => id !== rosterId),
@@ -272,11 +342,14 @@ export const SpiritStoryScreen: React.FC = () => {
       setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
       return;
     }
+    invalidatePendingMetadata(activeRoom.id);
     setRoomParticipants(activeRoom.id, [...current, rosterId]);
   };
 
   const updateScenarioId = (id: string) => {
     if (activeRoom) {
+      if (id === activeRoom.scenarioId) return;
+      invalidatePendingMetadata(activeRoom.id);
       updateRoomScenario(activeRoom.id, { scenarioId: id });
       return;
     }
@@ -318,35 +391,96 @@ export const SpiritStoryScreen: React.FC = () => {
     });
     const latestRoom =
       useSpiritStoryStore.getState().rooms[currentRoom.id] ?? currentRoom;
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const startedAt = Date.now();
+    latestStoryRequestIdRef.current = requestId;
+    activeForegroundRequestIdRef.current = requestId;
+    latestMetadataRequestIdByRoomIdRef.current[currentRoom.id] = requestId;
+    clearPendingStreamingTurns();
+    setStreamingStory({
+      roomId: currentRoom.id,
+      requestId,
+      startedAt,
+      turns: [],
+    });
 
     setIsSending(true);
+    let turnsCommitted = false;
+    const commitTurns = (turns: SpiritStoryTurn[]) => {
+      if (turnsCommitted || !turns.some((turn) => turn.content)) return;
+      turnsCommitted = true;
+      clearPendingStreamingTurns();
+      applyStoryTurn(
+        currentRoom.id,
+        turns.map((turn, index) => ({
+          id: `story-stream-${requestId}-${index}`,
+          createdAt: startedAt + index,
+          role: turn.role,
+          content: turn.content,
+          speakerRosterId: turn.speakerRosterId,
+          speakerName: turn.speakerName,
+        })),
+        {},
+      );
+      if (latestStoryRequestIdRef.current === requestId) {
+        setStreamingStory(null);
+      }
+      if (activeForegroundRequestIdRef.current === requestId) {
+        activeForegroundRequestIdRef.current = "";
+        setIsSending(false);
+      }
+    };
+
     try {
       const result = await requestSpiritStory(
         cfg,
         participants,
         latestRoom,
         playerMessage.content,
-      );
-      applyStoryTurn(
-        currentRoom.id,
-        result.turns.map((turn) => ({
-          role: turn.role,
-          content: turn.content,
-          speakerRosterId: turn.speakerRosterId,
-          speakerName: turn.speakerName,
-        })),
         {
+          onTurnsChunk: (turns) => {
+            if (!turns.some((turn) => turn.content)) return;
+            scheduleStreamingTurns({
+              roomId: currentRoom.id,
+              requestId,
+              startedAt,
+              turns,
+            });
+          },
+          onTurnsComplete: commitTurns,
+        },
+      );
+      clearPendingStreamingTurns();
+      if (!turnsCommitted) {
+        commitTurns(result.turns);
+      }
+      if (
+        latestMetadataRequestIdByRoomIdRef.current[currentRoom.id] === requestId
+      ) {
+        applyStoryTurn(currentRoom.id, [], {
           title: result.title,
           scene: result.scene,
           tension: result.tension,
           storySummary: result.storySummary,
           participantStates: result.participantStates,
-        },
-      );
+        });
+      }
+      if (latestStoryRequestIdRef.current === requestId) {
+        setStreamingStory(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "多人故事暂时没有回应。");
+      clearPendingStreamingTurns();
+      if (latestStoryRequestIdRef.current === requestId) {
+        setStreamingStory(null);
+      }
+      if (!turnsCommitted) {
+        setError(err instanceof Error ? err.message : "多人故事暂时没有回应。");
+      }
     } finally {
-      setIsSending(false);
+      if (activeForegroundRequestIdRef.current === requestId) {
+        activeForegroundRequestIdRef.current = "";
+        setIsSending(false);
+      }
     }
   };
 
@@ -465,6 +599,7 @@ export const SpiritStoryScreen: React.FC = () => {
                       onClick={(event) => {
                         event.stopPropagation();
                         if (window.confirm(`删除故事《${entry.title}》？`)) {
+                          invalidatePendingMetadata(entry.id);
                           deleteRoom(entry.id);
                         }
                       }}
@@ -495,7 +630,10 @@ export const SpiritStoryScreen: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {displayRoster
-                  .slice(0, isRosterExpanded ? undefined : COLLAPSED_ROSTER_COUNT)
+                  .slice(
+                    0,
+                    isRosterExpanded ? undefined : COLLAPSED_ROSTER_COUNT,
+                  )
                   .map((char) => {
                     const active = activeIds.includes(char.rosterId);
                     const isRecruiting = isRosterCharacterRecruitLocked(char);
@@ -805,6 +943,7 @@ export const SpiritStoryScreen: React.FC = () => {
                         `清空《${activeRoom.title}》的故事记忆吗？`,
                       )
                     ) {
+                      invalidatePendingMetadata(activeRoom.id);
                       clearRoom(activeRoom.id);
                       delete initialPromptsByKeyRef.current[
                         `room:${activeRoom.id}:${activeRoom.scenarioId}`
@@ -853,22 +992,45 @@ export const SpiritStoryScreen: React.FC = () => {
                         themeColor={themeColor}
                       />
                     ))}
-                    {isSending && (
-                      <motion.div
-                        key="typing"
-                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="flex items-center gap-3 text-[11px] tracking-widest text-[#8a8d91]"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border border-[#8a8d91]/20">
-                          <Loader2 size={14} className="animate-spin" />
-                        </div>
-                        <span className="animate-pulse">
-                          多名词灵正在把故事接下去...
-                        </span>
-                      </motion.div>
+                    {activeStreamingStory?.turns.map((turn, index) =>
+                      turn.content ? (
+                        <StoryBubble
+                          key={`story-stream-${activeStreamingStory.requestId}-${index}`}
+                          message={{
+                            id: `story-stream-${activeStreamingStory.requestId}-${index}`,
+                            role: turn.role,
+                            content: turn.content,
+                            createdAt: activeStreamingStory.startedAt + index,
+                            speakerRosterId: turn.speakerRosterId,
+                            speakerName: turn.speakerName,
+                          }}
+                          allRoster={roster}
+                          activeRosterIds={activeRosterIdSet}
+                          themeColor={themeColor}
+                          streaming={index === activeStreamingTurnIndex}
+                        />
+                      ) : null,
                     )}
+                    {isSending &&
+                      activeStreamingStory &&
+                      !activeStreamingStory.turns.some(
+                        (turn) => turn.content,
+                      ) && (
+                        <motion.div
+                          key="typing"
+                          initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="flex items-center gap-3 text-[11px] tracking-widest text-[#8a8d91]"
+                        >
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border border-[#8a8d91]/20">
+                            <Loader2 size={14} className="animate-spin" />
+                          </div>
+                          <span className="animate-pulse">
+                            多名词灵正在把故事接下去...
+                          </span>
+                        </motion.div>
+                      )}
                   </AnimatePresence>
                 </div>
               )}

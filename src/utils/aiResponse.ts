@@ -3,10 +3,23 @@ import { extractPartialStringFieldWithStatus } from "./jsonStream";
 const stripLeadingJsonFence = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?\s*/i, "");
 
+export const isAiProtocolFragment = (raw: string): boolean => {
+  const trimmed = raw.trim();
+  return trimmed.length > 0 && /^[\s{}[\],:"'`]+$/.test(trimmed);
+};
+
+export const sanitizeAiDialogueText = (raw: string): string =>
+  raw
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*/i, "")
+    .replace(/\s*(?:"\s*)?(?:}|[}\]][}\],\s]*})\s*,?\s*$/g, "")
+    .trim();
+
 export const looksLikeStructuredAiOutput = (raw: string): boolean => {
   const trimmed = raw.trim();
   const unfenced = stripLeadingJsonFence(raw);
   return (
+    isAiProtocolFragment(unfenced) ||
     /^```(?:json)?/i.test(trimmed) ||
     /^[{[]/.test(unfenced) ||
     /[{[]\s*(?:"|$)/.test(unfenced) ||
@@ -18,10 +31,7 @@ export const looksLikeStructuredAiOutput = (raw: string): boolean => {
 };
 
 const cleanDialogueText = (raw: string, maxLength: number): string =>
-  raw
-    .trim()
-    .replace(/^```(?:text|markdown)?\s*/i, "")
-    .slice(0, maxLength);
+  sanitizeAiDialogueText(raw).slice(0, maxLength);
 
 /**
  * 只从模型的结构化响应中取指定文本字段；协议本身绝不作为聊天内容显示。

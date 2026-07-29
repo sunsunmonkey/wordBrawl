@@ -767,7 +767,7 @@ export const SpiritChatScreen: React.FC = () => {
                 <div className="mb-2 flex items-center justify-between text-[10px] tracking-[0.24em] text-[#8a8d91]">
                   <div className="flex items-center gap-1.5">
                     <Heart size={12} style={{ color: themeColor }} />
-                    灵契羁绊
+                    词灵羁绊
                   </div>
                   <span
                     style={{
@@ -1049,7 +1049,7 @@ export const SpiritChatScreen: React.FC = () => {
                     className="text-xl font-black tracking-wider"
                     style={{ color: themeColor }}
                   >
-                    第一次灵契通讯
+                    第一次词灵通讯
                   </div>
                   <div className="mt-3 max-w-sm text-xs leading-relaxed text-[#8a8d91]">
                     这里会保存 {selected.name}{" "}

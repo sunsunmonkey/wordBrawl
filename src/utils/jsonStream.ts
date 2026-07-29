@@ -170,6 +170,44 @@ export const extractPartialArrayObjects = <T>(
   return items;
 };
 
+export const isJsonArrayFieldComplete = (
+  raw: string,
+  fieldName: string,
+): boolean => {
+  const re = new RegExp(`"${escapeFieldName(fieldName)}"\\s*:\\s*\\[`);
+  const startMatch = raw.match(re);
+  if (!startMatch || startMatch.index === undefined) return false;
+
+  let depth = 1;
+  let inString = false;
+  let escaped = false;
+  const arrayStart = startMatch.index + startMatch[0].length;
+
+  for (let index = arrayStart; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) return true;
+    }
+  }
+
+  return false;
+};
+
 /**
  * 判断流式累积的原始文本是否看起来像 JSON（而不是 AI 直接吐出的纯文本）。
  * 用于决定是按字段抽取还是直接当纯文本展示。

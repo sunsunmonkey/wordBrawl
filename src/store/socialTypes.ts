@@ -55,7 +55,7 @@ export type SocialChatMessageType =
 export interface SocialChatMessage {
   id: string;
   type: SocialChatMessageType;
-  /** 发送者 ID：玩家 playerId 或词灵 rosterId 或 "system" */
+  /** 发送者 ID：玩家 playerId、词灵 ownerPlayerId:rosterId 或 "system" */
   senderId: string;
   senderName: string;
   /** 发送者主题色（玩家头像色 / 词灵宿主色 / 系统灰） */
@@ -68,7 +68,7 @@ export interface SocialChatMessage {
   excludeFromAiContext?: boolean;
   /** 词灵消息附带的 rosterId */
   spiritRosterId?: string;
-  /** @ 的目标 ID 列表（玩家 ID 或词灵 rosterId） */
+  /** @ 的目标 ID 列表（玩家 ID 或词灵 ownerPlayerId:rosterId） */
   mentions?: string[];
 }
 

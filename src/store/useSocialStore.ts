@@ -52,7 +52,7 @@ interface SocialStore {
     messageMeta?: Pick<SocialChatMessage, "id" | "timestamp">,
   ) => void;
   /** 发送系统消息 */
-  sendSystemMessage: (content: string) => void;
+  sendSystemMessage: (content: string, excludeFromAiContext?: boolean) => void;
   /** 发送战报消息 */
   sendBattleReport: (report: SocialBattleReport, battleId: string) => void;
 
@@ -432,11 +432,24 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
     sendSpiritMessage: (spirit, hostPlayer, content, messageMeta) => {
       const room = get().currentRoom;
       if (!room) return;
+      const sameNameCount = room.players.reduce((count, player) => {
+        const carried = player.carriedSpirits?.length
+          ? player.carriedSpirits
+          : player.activeSpirit
+            ? [player.activeSpirit]
+            : [];
+        return (
+          count + carried.filter((item) => item.name === spirit.name).length
+        );
+      }, 0);
       const message: SocialChatMessage = {
         id: messageMeta?.id ?? generateMessageId(),
         type: "spirit",
-        senderId: spirit.rosterId,
-        senderName: spirit.name,
+        senderId: `${hostPlayer.playerId}:${spirit.rosterId}`,
+        senderName:
+          sameNameCount > 1
+            ? `${spirit.name} · ${hostPlayer.nickname}`
+            : spirit.name,
         senderColor: hostPlayer.avatarColor,
         senderAvatar: spirit.imageUrl,
         content,
@@ -458,10 +471,10 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       set({ currentRoom: updated });
     },
 
-    sendSystemMessage: (content) => {
+    sendSystemMessage: (content, excludeFromAiContext = false) => {
       const room = get().currentRoom;
       if (!room) return;
-      const message = buildSystemMessage(content);
+      const message = buildSystemMessage(content, excludeFromAiContext);
       const updated: SocialRoom = {
         ...room,
         messages: pruneMessages([...room.messages, message]),

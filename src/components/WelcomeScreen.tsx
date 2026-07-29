@@ -107,7 +107,9 @@ export const WelcomeScreen: React.FC = () => {
   );
   const firstAvailable = availableRoster[0] ?? null;
 
-  const goShortcut = (target: "summon" | "chat" | "story" | "tower") => {
+  const goShortcut = (
+    target: "summon" | "chat" | "story" | "social" | "tower",
+  ) => {
     if (apiMode === "custom" && !(apiKey && baseUrl && model)) {
       setApiMode("free");
     }
@@ -132,6 +134,10 @@ export const WelcomeScreen: React.FC = () => {
       }
       setOpenSpiritRosterId(firstAvailable.rosterId);
       setPhase("SPIRIT_CHAT");
+      return;
+    }
+    if (target === "social") {
+      setPhase("SOCIAL_LOBBY");
       return;
     }
     if (target === "tower") {
@@ -284,17 +290,11 @@ export const WelcomeScreen: React.FC = () => {
 
             {/* 描述 */}
             <p className="welcome-screen__description mt-8 max-w-xl text-base md:text-lg text-white/65 leading-relaxed font-light">
-              一句话，就能召唤一位属于你的
-              <span className="text-[#66FCF1]">词灵</span>
-              。与它促膝长谈，或让它们
-              <span className="text-[#B78BFF]">群像共叙</span>
-              一段故事；也能带它登上
-              <span className="text-[#FFD700]">九层塔</span>
-              ，在战斗中觉醒进化。
+              万千意志于此苏醒，而你的传奇，正待降临。
             </p>
 
-            {/* 四大特性 - 极简数字标签，可点击直接进入免费模式 */}
-            <div className="welcome-screen__features mt-10 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-5 max-w-2xl">
+            {/* 核心玩法 - 极简数字标签，可点击直接进入免费模式 */}
+            <div className="welcome-screen__features mt-10 grid grid-cols-2 md:grid-cols-3 gap-x-10 gap-y-6 max-w-2xl">
               <FeaturePill
                 index="01"
                 label="召唤词灵"
@@ -303,8 +303,8 @@ export const WelcomeScreen: React.FC = () => {
               />
               <FeaturePill
                 index="02"
-                label="灵契陪伴"
-                accent="#66FCF1"
+                label="词灵陪伴"
+                accent="#38BDF8"
                 onClick={() => goShortcut("chat")}
                 disabled={chatDisabled}
                 hint={chatDisabled ? "先召唤一位词灵" : undefined}
@@ -319,8 +319,14 @@ export const WelcomeScreen: React.FC = () => {
               />
               <FeaturePill
                 index="04"
+                label="社交&朋友"
+                accent="#FBBF24"
+                onClick={() => goShortcut("social")}
+              />
+              <FeaturePill
+                index="05"
                 label="九层进化"
-                accent="#FFD700"
+                accent="#FF6B9D"
                 onClick={() => goShortcut("tower")}
                 disabled={towerDisabled}
                 hint={towerDisabled ? "先召唤一位词灵" : undefined}

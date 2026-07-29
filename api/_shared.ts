@@ -454,15 +454,66 @@ export const extractPartialArrayObjects = <T>(
   return items;
 };
 
+export const isJsonArrayFieldComplete = (
+  raw: string,
+  fieldName: string,
+): boolean => {
+  const re = new RegExp(`"${escapeFieldName(fieldName)}"\\s*:\\s*\\[`);
+  const startMatch = raw.match(re);
+  if (!startMatch || startMatch.index === undefined) return false;
+
+  let depth = 1;
+  let inString = false;
+  let escaped = false;
+  const arrayStart = startMatch.index + startMatch[0].length;
+
+  for (let index = arrayStart; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) return true;
+    }
+  }
+
+  return false;
+};
+
 export const looksLikeJsonStart = (raw: string): boolean => {
   const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "");
   return trimmed.startsWith("{");
 };
 
+export const isAiProtocolFragment = (raw: string): boolean => {
+  const trimmed = raw.trim();
+  return trimmed.length > 0 && /^[\s{}[\],:"'`]+$/.test(trimmed);
+};
+
+export const sanitizeAiDialogueText = (raw: string): string =>
+  raw
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*/i, "")
+    .replace(/\s*(?:"\s*)?(?:}|[}\]][}\],\s]*})\s*,?\s*$/g, "")
+    .trim();
+
 export const looksLikeStructuredAiOutput = (raw: string): boolean => {
   const trimmed = raw.trim();
   const unfenced = trimmed.replace(/^```(?:json)?\s*/i, "");
   return (
+    isAiProtocolFragment(unfenced) ||
     /^```(?:json)?/i.test(trimmed) ||
     /^[{[]/.test(unfenced) ||
     /[{[]\s*(?:"|$)/.test(unfenced) ||
@@ -479,15 +530,14 @@ export const getSafeAiField = (
   fallback: string,
   maxLength: number,
 ): string => {
-  const fieldValue = extractPartialStringField(raw, fieldName).trim();
+  const fieldValue = sanitizeAiDialogueText(
+    extractPartialStringField(raw, fieldName),
+  );
   if (fieldValue && !looksLikeStructuredAiOutput(fieldValue)) {
     return fieldValue.slice(0, maxLength);
   }
 
-  const text = raw
-    .trim()
-    .replace(/^```(?:text|markdown)?\s*/i, "")
-    .slice(0, maxLength);
+  const text = sanitizeAiDialogueText(raw).slice(0, maxLength);
   return looksLikeStructuredAiOutput(text) ? fallback : text || fallback;
 };
 
@@ -496,11 +546,15 @@ export const getSafeAiStreamField = (
   fieldName: string,
   maxLength: number,
 ): string => {
-  const fieldValue = extractPartialStringField(raw, fieldName).trim();
+  const fieldValue = sanitizeAiDialogueText(
+    extractPartialStringField(raw, fieldName),
+  );
   if (fieldValue && !looksLikeStructuredAiOutput(fieldValue)) {
     return fieldValue.slice(0, maxLength);
   }
-  return looksLikeStructuredAiOutput(raw) ? "" : raw.trim().slice(0, maxLength);
+  return looksLikeStructuredAiOutput(raw)
+    ? ""
+    : sanitizeAiDialogueText(raw).slice(0, maxLength);
 };
 
 export const getAiCredentials = () => {
