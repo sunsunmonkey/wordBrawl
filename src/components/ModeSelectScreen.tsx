@@ -1098,7 +1098,7 @@ export const ModeSelectScreen: React.FC = () => {
                                 setPhase("SPIRIT_CHAT");
                               }
                             }}
-                            className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"
+                            className="cursor-pointer rounded px-2 py-1 text-center text-[9px] font-black text-[#0B0C10] transition-all hover:brightness-110"
                             style={{
                               background: "#66FCF1",
                               boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
@@ -1120,7 +1120,7 @@ export const ModeSelectScreen: React.FC = () => {
                                 startTower(char);
                               }
                             }}
-                            className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-[#0B0C10] transition-all hover:brightness-110"
+                            className="cursor-pointer rounded px-2 py-1 text-center text-[9px] font-black text-[#0B0C10] transition-all hover:brightness-110"
                             style={{
                               background: "#FBBF24",
                               boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
@@ -1152,7 +1152,7 @@ export const ModeSelectScreen: React.FC = () => {
                                 }
                               }
                             }}
-                            className="cursor-pointer rounded px-1.5 py-0.5 text-center text-[8px] font-black text-white transition-all hover:brightness-110"
+                            className="cursor-pointer rounded px-2 py-1 text-center text-[9px] font-black text-white transition-all hover:brightness-110"
                             style={{
                               background: "#EF4444",
                               boxShadow: "0 1px 4px rgba(0,0,0,0.3)",

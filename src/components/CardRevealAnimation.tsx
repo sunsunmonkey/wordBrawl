@@ -118,26 +118,14 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
             className="flex flex-col items-center"
             style={{ perspective: 1400 }}
           >
-            <motion.div
+            {/* 命中区不参与 3D 翻转，避免卡片转到侧面时反复触发 hover end。 */}
+            <div
               className={`relative shrink-0 ${revealed ? "cursor-pointer" : ""}`}
-              style={{
-                transformStyle: "preserve-3d",
-                willChange: "transform",
-              }}
-              initial={{ rotateY: 180 }}
-              animate={{ rotateY: flipped && !showSlogan ? 0 : 180 }}
-              transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-              onAnimationComplete={() => {
-                if (!revealed && flipped && !showSlogan) {
-                  setRevealed(true);
-                  if (isCardHovered) setShowSlogan(true);
-                }
-              }}
-              onHoverStart={() => {
+              onMouseEnter={() => {
                 setIsCardHovered(true);
                 if (revealed) setShowSlogan(true);
               }}
-              onHoverEnd={() => {
+              onMouseLeave={() => {
                 setIsCardHovered(false);
                 if (revealed) setShowSlogan(false);
               }}
@@ -147,59 +135,76 @@ export const CardRevealAnimation: React.FC<CardRevealAnimationProps> = ({
                 setShowSlogan((visible) => !visible);
               }}
             >
-              {/* 正面：角色卡（决定容器尺寸） */}
-              <div style={{ backfaceVisibility: "hidden" }}>
-                <HeroCard
-                  character={character}
-                  size="lg"
-                  showStats={true}
-                  showQuote={false}
-                />
-              </div>
-
-              {/* 卡背：初始展示 Slogan，揭示后悬停翻面，点击可再次切换。 */}
-              <div
-                className="absolute inset-0 overflow-hidden rounded-2xl"
+              <motion.div
+                className="pointer-events-none"
                 style={{
-                  backfaceVisibility: "hidden",
-                  transform: "rotateY(180deg)",
-                  background:
-                    "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
-                  border: `1px solid ${config.primaryColor}99`,
-                  boxShadow: `0 0 40px ${config.glowColor}, inset 0 0 32px rgba(${config.rgb}, 0.16)`,
+                  transformStyle: "preserve-3d",
+                  willChange: "transform",
+                }}
+                initial={{ rotateY: 180 }}
+                animate={{ rotateY: flipped && !showSlogan ? 0 : 180 }}
+                transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
+                onAnimationComplete={() => {
+                  if (!revealed && flipped && !showSlogan) {
+                    setRevealed(true);
+                    if (isCardHovered) setShowSlogan(true);
+                  }
                 }}
               >
-                <div
-                  className="pointer-events-none absolute inset-0 opacity-60"
-                  style={{
-                    background: `
-                  radial-gradient(circle at 18% 18%, rgba(${config.rgb}, 0.2), transparent 30%),
-                  linear-gradient(135deg, transparent 49.8%, rgba(${config.rgb}, 0.12) 50%, transparent 50.2%)
-                `,
-                  }}
-                />
-                <div
-                  className="pointer-events-none absolute inset-3 rounded-xl border border-dashed"
-                  style={{ borderColor: `rgba(${config.rgb}, 0.28)` }}
-                />
-                <div className="relative flex h-full items-center px-7 py-8">
-                  <p
-                    className="w-full text-center font-display text-[22px] font-semibold leading-[1.75] text-white"
-                    style={{
-                      display: "-webkit-box",
-                      WebkitLineClamp: 5,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                      textShadow: `0 0 20px rgba(${config.rgb}, 0.35)`,
-                    }}
-                  >
-                    <span style={{ color: config.primaryColor }}>“</span>
-                    {slogan}
-                    <span style={{ color: config.primaryColor }}>”</span>
-                  </p>
+                {/* 正面：角色卡（决定容器尺寸） */}
+                <div style={{ backfaceVisibility: "hidden" }}>
+                  <HeroCard
+                    character={character}
+                    size="lg"
+                    showStats={true}
+                    showQuote={false}
+                  />
                 </div>
-              </div>
-            </motion.div>
+
+                {/* 卡背：初始展示 Slogan，揭示后悬停翻面，点击可再次切换。 */}
+                <div
+                  className="absolute inset-0 overflow-hidden rounded-2xl"
+                  style={{
+                    backfaceVisibility: "hidden",
+                    transform: "rotateY(180deg)",
+                    background:
+                      "linear-gradient(145deg, #151725 0%, #0a0b12 100%)",
+                    border: `1px solid ${config.primaryColor}99`,
+                    boxShadow: `0 0 40px ${config.glowColor}, inset 0 0 32px rgba(${config.rgb}, 0.16)`,
+                  }}
+                >
+                  <div
+                    className="pointer-events-none absolute inset-0 opacity-60"
+                    style={{
+                      background: `
+                    radial-gradient(circle at 18% 18%, rgba(${config.rgb}, 0.2), transparent 30%),
+                    linear-gradient(135deg, transparent 49.8%, rgba(${config.rgb}, 0.12) 50%, transparent 50.2%)
+                  `,
+                    }}
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-3 rounded-xl border border-dashed"
+                    style={{ borderColor: `rgba(${config.rgb}, 0.28)` }}
+                  />
+                  <div className="relative flex h-full items-center px-7 py-8">
+                    <p
+                      className="w-full text-center font-display text-[22px] font-semibold leading-[1.75] text-white"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 5,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        textShadow: `0 0 20px rgba(${config.rgb}, 0.35)`,
+                      }}
+                    >
+                      <span style={{ color: config.primaryColor }}>“</span>
+                      {slogan}
+                      <span style={{ color: config.primaryColor }}>”</span>
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
 
             {/* 词灵原型 */}
             {character.spiritProfile?.archetype && (
