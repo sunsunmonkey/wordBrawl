@@ -4,6 +4,7 @@ import {
   readBody,
   sendJson,
   setCorsHeaders,
+  stripDataImageUrls,
   type ApiRequest,
   type ApiResponse,
 } from "./_shared.js";
@@ -84,19 +85,22 @@ const loadStored = async (code: string): Promise<StoredRoom | null> => {
   try {
     const cached = await cache().get(key);
     if (cached && typeof cached === "object") {
-      return cached as StoredRoom;
+      return stripDataImageUrls(cached as StoredRoom);
     }
-    return memoryStore.get(key) ?? null;
+    const fallback = memoryStore.get(key);
+    return fallback ? stripDataImageUrls(fallback) : null;
   } catch {
-    return memoryStore.get(key) ?? null;
+    const fallback = memoryStore.get(key);
+    return fallback ? stripDataImageUrls(fallback) : null;
   }
 };
 
 const saveStored = async (code: string, stored: StoredRoom): Promise<void> => {
   const key = roomKey(code);
-  memoryStore.set(key, stored);
+  const sanitized = stripDataImageUrls(stored);
+  memoryStore.set(key, sanitized);
   try {
-    await cache().set(key, stored, {
+    await cache().set(key, sanitized, {
       ttl: ROOM_TTL_SECONDS,
       tags: ["word-brawl-social"],
     });
@@ -343,7 +347,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     case "put": {
-      const incoming = asRecord(body.room) as LooseRoom;
+      const incoming = stripDataImageUrls(
+        asRecord(body.room) as LooseRoom,
+      );
       const code = String(incoming.roomCode || roomCodeRaw)
         .trim()
         .toUpperCase();
@@ -384,9 +390,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
       const seq = stored.eventSeq + 1;
       stored.eventSeq = seq;
-      stored.events = [...stored.events, { seq, event: body.event }].slice(
-        -MAX_EVENTS,
-      );
+      stored.events = [
+        ...stored.events,
+        { seq, event: stripDataImageUrls(body.event) },
+      ].slice(-MAX_EVENTS);
       await saveStored(roomCodeRaw, stored);
       sendJson(res, 200, { ok: true, seq });
       return;

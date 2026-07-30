@@ -4,7 +4,7 @@ import type {
   RosterCharacter,
 } from "../store/useRosterStore";
 import { generateEvolutionImage, probeImage, type AIConfig } from "./ai";
-import { cacheImageUrlAsDataUrl } from "./localImage";
+import { persistGeneratedImage } from "./localImage";
 import { type BattleSummary, type EvolveResult } from "./towerAnalysis";
 import { applyXp, xpForLayer } from "./towerProgress";
 import { getPresetEvolutionLocalPath } from "../data/presetCharacters";
@@ -212,12 +212,10 @@ const enqueuePrefetch = <T>(runner: () => Promise<T>): Promise<T> => {
 
 const cacheGeneratedImage = async (
   buildUrl: () => Promise<string>,
-  maxSize: number,
 ): Promise<string | undefined> => {
   const remote = await buildUrl();
   if (!remote) return undefined;
-  const cached = await cacheImageUrlAsDataUrl(remote, { maxSize });
-  return cached || remote;
+  return (await persistGeneratedImage(remote)) || remote;
 };
 
 /**
@@ -244,6 +242,5 @@ const resolveEvolutionAvatar = async (
         seedSalt: `${request.rosterId}:${request.stage}`,
         cfg,
       }),
-    384,
   );
 };

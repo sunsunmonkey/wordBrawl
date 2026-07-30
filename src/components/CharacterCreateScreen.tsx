@@ -13,7 +13,7 @@ import {
   preloadImage,
   AIConfig,
 } from "../utils/ai";
-import { cacheImageUrlAsDataUrl } from "../utils/localImage";
+import { persistGeneratedImage } from "../utils/localImage";
 import { presetCharacters } from "../data/presetCharacters";
 import { runBackgroundRecruit } from "../utils/recruitPipeline";
 import { motion, AnimatePresence } from "framer-motion";
@@ -183,7 +183,7 @@ export const CharacterCreateScreen: React.FC = () => {
       );
 
       charData.imageUrl = avatar.ready
-        ? await cacheImageUrlAsDataUrl(avatar.url, { maxSize: 512 })
+        ? await persistGeneratedImage(avatar.url)
         : avatar.url;
       charData.sourceDescription = sourceDescription;
 

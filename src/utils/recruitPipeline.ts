@@ -1,9 +1,5 @@
-import {
-  generateCharacter,
-  generateCharacterImage,
-  type AIConfig,
-} from "./ai";
-import { cacheImageUrlAsDataUrl } from "./localImage";
+import { generateCharacter, generateCharacterImage, type AIConfig } from "./ai";
+import { persistGeneratedImage } from "./localImage";
 import { startEvolutionAssetPrefetch } from "./evolutionPrefetch";
 import { buildLocalEvolution } from "./towerProgress";
 import { useRosterStore, RECRUIT_STAGE_COUNT } from "../store/useRosterStore";
@@ -42,11 +38,8 @@ export const runBackgroundRecruit = (
   cfg: AIConfig,
 ) => {
   void (async () => {
-    const {
-      completePendingRecruit,
-      failPendingRecruit,
-      updateRecruitStage,
-    } = useRosterStore.getState();
+    const { completePendingRecruit, failPendingRecruit, updateRecruitStage } =
+      useRosterStore.getState();
     const stopTextProgress = startFakeTextProgress(rosterId);
     try {
       const charData = await generateCharacter(cfg, sourceDescription);
@@ -61,9 +54,7 @@ export const runBackgroundRecruit = (
           1,
         ),
       );
-      charData.imageUrl =
-        (await cacheImageUrlAsDataUrl(avatarUrl, { maxSize: 512 })) ||
-        avatarUrl;
+      charData.imageUrl = (await persistGeneratedImage(avatarUrl)) || avatarUrl;
       charData.sourceDescription = sourceDescription;
 
       const recruited = completePendingRecruit(
