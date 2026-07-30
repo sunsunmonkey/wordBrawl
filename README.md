@@ -25,23 +25,6 @@ FREE_USAGE_TIMEZONE=Asia/Shanghai
 
 `FREE_DAILY_LIMIT` 默认为 `20`，改成其它数字即可调整每天体验次数；设为 `0` 表示不限制。只有通过校验并发起大模型调用的请求会计入次数。
 
-## 动态图片存储
-
-角色与进化时由 Pollinations 生成的图片会优先保存到 Vercel Blob。保存失败或达到限额时，客户端保留原始图片 URL，不会阻断生成流程；`public/presets/` 中的预置图片继续作为静态资源部署。
-
-1. 在 Vercel 项目的 Storage 中创建并连接一个 Blob store，确认部署环境存在 `BLOB_READ_WRITE_TOKEN`。
-2. 在 Environment Variables 设置：
-
-```bash
-BLOB_READ_WRITE_TOKEN=vercel_blob_rw_your-token
-IMAGE_DAILY_LIMIT=20
-IMAGE_USAGE_TIMEZONE=Asia/Shanghai
-IMAGE_USAGE_HASH_SALT=replace-with-random-string
-CRON_SECRET=replace-with-a-long-random-string
-```
-
-`IMAGE_DAILY_LIMIT` 按客户端 IP 限制每天保存的图片次数，默认为 `20`，设为 `0` 表示不限制。`vercel.json` 已配置每日 Cron：它只会删除 `generated-images/` 中路径日期超过 30 天的 Blob。Vercel Cron 调用会使用 `CRON_SECRET`，因此该变量必须设置。
-
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

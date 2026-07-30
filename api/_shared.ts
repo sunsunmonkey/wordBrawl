@@ -33,28 +33,6 @@ export const asRecord = (value: unknown): Record<string, unknown> => {
     : {};
 };
 
-/**
- * 社交房间数据会写入 Cache 并跨设备传输，不能允许本地 data 图片膨胀快照。
- * 仅移除 data:image 值；普通聊天文本和其他字段保持原样。
- */
-export const stripDataImageUrls = <T>(value: T): T => {
-  if (Array.isArray(value)) {
-    return value.map(stripDataImageUrls) as T;
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const next: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof child === "string" && /^data:image\//i.test(child)) {
-      continue;
-    }
-    next[key] = stripDataImageUrls(child);
-  }
-  return next as T;
-};
-
 export const stripJsonFences = (raw: string): string => {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);

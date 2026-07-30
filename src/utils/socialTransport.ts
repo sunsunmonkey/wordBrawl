@@ -28,23 +28,6 @@ type RoomGetResponse = {
   events?: { seq: number; event: SocialTransportEvent }[];
 };
 
-/** 社交快照要在跨 Tab、localStorage 和 HTTP 前清除历史 data:image 值。 */
-const stripDataImageUrls = <T>(value: T): T => {
-  if (Array.isArray(value)) {
-    return value.map(stripDataImageUrls) as T;
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const next: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof child === "string" && /^data:image\//i.test(child)) continue;
-    next[key] = stripDataImageUrls(child);
-  }
-  return next as T;
-};
-
 class SocialTransport {
   private channel: BroadcastChannel | null = null;
   private listeners = new Set<EventHandler>();
@@ -64,7 +47,7 @@ class SocialTransport {
     if (typeof BroadcastChannel !== "undefined") {
       this.channel = new BroadcastChannel(CHANNEL_NAME);
       this.channel.onmessage = (e: MessageEvent<SocialTransportEvent>) => {
-        this.dispatch(stripDataImageUrls(e.data));
+        this.dispatch(e.data);
       };
     }
   }
@@ -91,24 +74,23 @@ class SocialTransport {
   /** 广播事件：本地 Tab 即时互通 + 需要跨设备的事件推到后端 */
   broadcast(event: SocialTransportEvent): void {
     this.init();
-    const safeEvent = stripDataImageUrls(event);
     if (this.channel) {
       try {
-        this.channel.postMessage(safeEvent);
+        this.channel.postMessage(event);
       } catch (err) {
         console.error("[socialTransport] broadcast failed", err);
       }
     }
-    switch (safeEvent.kind) {
+    switch (event.kind) {
       case "room-state":
         // 房间状态：提交后端 + 本地快照兜底。
         // 聊天 / 约战 / 对战状态都并入房间状态，靠轮询 get 同步，无需单独推事件。
-        this.persistRoom(safeEvent.room);
-        void this.putRoom(safeEvent.room);
+        this.persistRoom(event.room);
+        void this.putRoom(event.room);
         break;
       case "battle-action":
         // 瞬时对战操作：不落房间状态，必须走事件队列跨设备送达
-        void this.postEvent(safeEvent.roomCode, safeEvent);
+        void this.postEvent(event.roomCode, event);
         break;
       default:
         break;
@@ -157,7 +139,7 @@ class SocialTransport {
       if (resp.ok) {
         const data = (await resp.json()) as RoomGetResponse;
         if (data.exists && data.room) {
-          const room = migrateRoom(stripDataImageUrls(data.room));
+          const room = migrateRoom(data.room);
           this.lastEventSeq = data.eventSeq ?? 0;
           this.persistRoom(room);
           return room;
@@ -213,14 +195,14 @@ class SocialTransport {
         this.dispatch({ kind: "room-closed", roomCode: this.pollingRoom });
         return;
       }
-      const room = migrateRoom(stripDataImageUrls(data.room));
+      const room = migrateRoom(data.room);
       this.persistRoom(room);
       this.dispatch({ kind: "room-state", room });
       // 增量瞬时事件（battle-action 等）
       if (Array.isArray(data.events) && data.events.length) {
         for (const e of data.events) {
           if (e.seq > this.lastEventSeq) this.lastEventSeq = e.seq;
-          this.dispatch(stripDataImageUrls(e.event));
+          this.dispatch(e.event);
         }
       } else if (typeof data.eventSeq === "number") {
         this.lastEventSeq = Math.max(this.lastEventSeq, data.eventSeq);
@@ -251,10 +233,7 @@ class SocialTransport {
     if (typeof window === "undefined") return;
     try {
       const key = ROOM_STORAGE_PREFIX + room.roomCode;
-      window.localStorage.setItem(
-        key,
-        JSON.stringify(stripDataImageUrls(room)),
-      );
+      window.localStorage.setItem(key, JSON.stringify(room));
     } catch (err) {
       console.error("[socialTransport] persistRoom failed", err);
     }
@@ -267,7 +246,7 @@ class SocialTransport {
       const key = ROOM_STORAGE_PREFIX + roomCode.toUpperCase();
       const raw = window.localStorage.getItem(key);
       if (!raw) return null;
-      return migrateRoom(stripDataImageUrls(JSON.parse(raw) as SocialRoom));
+      return migrateRoom(JSON.parse(raw) as SocialRoom);
     } catch {
       return null;
     }

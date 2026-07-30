@@ -37,7 +37,7 @@ import {
 } from "../utils/towerProgress";
 import { BackButton } from "./BackButton";
 import { generateEvolutionImage, type AIConfig } from "../utils/ai";
-import { persistGeneratedImage } from "../utils/localImage";
+import { cacheImageUrlAsDataUrl } from "../utils/localImage";
 import { getScaledTowerBoss } from "../data/towerBosses";
 import type { BattleSummary } from "../utils/towerAnalysis";
 import { runBackgroundRecruit } from "../utils/recruitPipeline";
@@ -510,7 +510,8 @@ export const ModeSelectScreen: React.FC = () => {
         cfg,
       });
       if (!remote) throw new Error("进化图生成失败，请稍后重试。");
-      const imageUrl = (await persistGeneratedImage(remote)) || remote;
+      const imageUrl =
+        (await cacheImageUrlAsDataUrl(remote, { maxSize: 384 })) || remote;
 
       updateCharacter(selectedRoster.rosterId, (current) => {
         const targetIndex = current.formHistory

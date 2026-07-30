@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cleanup-generated-images",
-      "schedule": "0 3 * * *"
-    }
-  ]
-}
