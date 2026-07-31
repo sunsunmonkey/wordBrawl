@@ -7,6 +7,7 @@ import {
   Loader2,
   LogOut,
   Send,
+  Share2,
   Shield,
   Sparkles,
   Swords,
@@ -149,7 +150,8 @@ export const SocialRoomScreen: React.FC = () => {
   const [inputCaretIndex, setInputCaretIndex] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [error, setErrorLocal] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [pendingSpiritReplies, setPendingSpiritReplies] = useState<
@@ -216,11 +218,12 @@ export const SocialRoomScreen: React.FC = () => {
     setPhase("MODE_SELECT");
   };
 
-  const handleCopyRoom = async () => {
+  const handleCopyRoom = async (source: "invite" | "share") => {
     if (!currentRoom) return;
     const link = `${window.location.origin}${window.location.pathname}#room=${currentRoom.roomCode}`;
     try {
       await navigator.clipboard.writeText(link);
+      const setCopied = source === "invite" ? setCopiedInvite : setCopiedShare;
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -829,12 +832,12 @@ export const SocialRoomScreen: React.FC = () => {
               </span>
               <button
                 type="button"
-                onClick={handleCopyRoom}
+                onClick={() => void handleCopyRoom("invite")}
                 className="flex items-center gap-1.5 rounded-md border border-[#A78BFA]/40 px-2.5 py-1 text-xs font-mono tracking-wide text-[#A78BFA] hover:bg-[#A78BFA]/15 transition-all"
                 title="复制房间码与链接"
               >
-                {copied ? <Check size={13} /> : <Copy size={13} />}
-                {copied ? "已复制" : "复制邀请"}
+                {copiedInvite ? <Check size={13} /> : <Copy size={13} />}
+                {copiedInvite ? "已复制" : "复制邀请"}
               </button>
             </div>
             <div className="text-xs font-mono tracking-wide text-white/45 mt-1">
@@ -843,26 +846,37 @@ export const SocialRoomScreen: React.FC = () => {
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleLeave}
-          className="flex items-center gap-1.5 rounded-md border border-[#FF6B9D]/40 px-3.5 py-1.5 text-xs font-mono tracking-wide text-[#FF6B9D] hover:bg-[#FF6B9D]/15 transition-all"
-        >
-          <LogOut size={14} />
-          离开
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleCopyRoom("share")}
+            className="flex items-center gap-1.5 rounded-md border border-[#A78BFA]/40 px-3.5 py-1.5 text-xs font-mono tracking-wide text-[#A78BFA] hover:bg-[#A78BFA]/15 transition-all"
+            title="复制邀请链接"
+          >
+            {copiedShare ? <Check size={14} /> : <Share2 size={14} />}
+            {copiedShare ? "已复制" : "分享"}
+          </button>
+          <button
+            type="button"
+            onClick={handleLeave}
+            className="flex items-center gap-1.5 rounded-md border border-[#FF6B9D]/40 px-3.5 py-1.5 text-xs font-mono tracking-wide text-[#FF6B9D] hover:bg-[#FF6B9D]/15 transition-all"
+          >
+            <LogOut size={14} />
+            离开
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-0">
         {/* 左侧：玩家列表 */}
         <aside className="hidden lg:flex flex-col border-r border-[#A78BFA]/15 bg-[#0B0C10]/60 backdrop-blur-sm overflow-hidden">
           <div className="shrink-0 px-4 py-3.5 border-b border-white/5 flex items-center gap-2">
-            <Users size={15} className="text-[#A78BFA]" />
+            <Users size={16} className="text-[#A78BFA]" />
             <span className="text-xs font-mono tracking-[0.28em] text-white/65">
               PLAYERS
             </span>
           </div>
-          <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-2">
+          <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-2.5">
             {currentRoom.players.map((p) => (
               <PlayerCard
                 key={p.playerId}
@@ -1235,7 +1249,7 @@ const PlayerCard: React.FC<{
   return (
     <motion.div
       layout
-      className={`relative rounded-lg border p-2.5 transition-all ${
+      className={`relative rounded-lg border p-3 transition-all ${
         isMe
           ? "border-[#66FCF1]/50 bg-[#66FCF1]/8"
           : "border-white/10 bg-black/30"
@@ -1243,7 +1257,7 @@ const PlayerCard: React.FC<{
     >
       <div className="flex items-center gap-2.5">
         <div
-          className="relative h-9 w-9 shrink-0 rounded-full border-2 flex items-center justify-center text-xs font-black"
+          className="relative h-10 w-10 shrink-0 rounded-full border-2 flex items-center justify-center text-sm font-black"
           style={{
             borderColor: player.avatarColor,
             color: player.avatarColor,
@@ -1262,16 +1276,16 @@ const PlayerCard: React.FC<{
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-sm font-bold text-white truncate">
+            <span className="text-[15px] font-bold text-white truncate">
               {player.nickname}
             </span>
             {isMe && (
-              <span className="text-[10px] font-mono text-[#66FCF1]/90 border border-[#66FCF1]/30 px-1 rounded">
+              <span className="rounded border border-[#66FCF1]/30 px-1.5 py-px text-[11px] font-mono text-[#66FCF1]/90">
                 YOU
               </span>
             )}
           </div>
-          <div className="text-xs text-white/50 truncate mt-0.5">
+          <div className="mt-0.5 text-xs text-white/50 truncate">
             {active ? `出战 · ${active.name}` : "未携带词灵"}
           </div>
         </div>
@@ -1279,7 +1293,7 @@ const PlayerCard: React.FC<{
 
       {/* 词灵卡墙：紧凑立绘缩略，点击查看大卡；自己的非出战词灵可一键切换 */}
       {carried.length > 0 && (
-        <div className="mt-2.5 grid grid-cols-3 gap-2">
+        <div className="mt-2 grid grid-cols-3 gap-2">
           {carried.map((s) => {
             const isActive = active?.rosterId === s.rosterId;
             const canSwitch = isMe && onSetBattleSpirit && !isActive;
@@ -1335,7 +1349,7 @@ const PlayerCard: React.FC<{
         <button
           type="button"
           onClick={onChallenge}
-          className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded border border-[#FF003C]/50 py-2 text-xs font-black tracking-widest text-[#FF003C] hover:bg-[#FF003C] hover:text-white transition-all"
+          className="mt-3 w-full flex items-center justify-center gap-1.5 rounded border border-[#FF003C]/50 py-2 text-xs font-black tracking-widest text-[#FF003C] hover:bg-[#FF003C] hover:text-white transition-all"
         >
           <Swords size={13} />
           约战
@@ -1404,7 +1418,7 @@ const ChatMessageBubble: React.FC<{
         }
       >
         <div
-          className="rounded-lg border bg-[#0B0C10]/70 px-3 py-2 text-sm leading-relaxed text-[#E5E7EB] backdrop-blur-sm"
+          className="rounded-lg border bg-[#0B0C10]/70 px-3.5 py-2.5 text-[15px] leading-relaxed text-[#E5E7EB] backdrop-blur-sm"
           style={{ borderColor: `${message.senderColor}66` }}
         >
           {isWaitingForFirstChunk ? (
@@ -1448,12 +1462,12 @@ const ChatMessageBubble: React.FC<{
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`flex items-start gap-2.5 ${isContinuation ? "mt-1" : "mt-4"}`}
+      className={`flex items-start gap-3 ${isContinuation ? "mt-1.5" : "mt-5"}`}
     >
-      <div className="w-8 shrink-0 pt-0.5">
+      <div className="w-10 shrink-0 pt-0.5">
         {showIdentity && (
           <div
-            className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
+            className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-[#0B0C10]"
             style={{ borderColor: `${accentColor}66` }}
           >
             {message.senderAvatar ? (
@@ -1464,7 +1478,7 @@ const ChatMessageBubble: React.FC<{
               />
             ) : (
               <div
-                className="h-full w-full flex items-center justify-center text-xs font-black"
+                className="h-full w-full flex items-center justify-center text-sm font-black"
                 style={{ color: accentColor }}
               >
                 {message.senderName.slice(0, 1).toUpperCase()}
@@ -1475,9 +1489,9 @@ const ChatMessageBubble: React.FC<{
       </div>
       <div className="max-w-[85%] text-left md:max-w-[78%]">
         {showIdentity && (
-          <div className="mb-1 flex items-center gap-1.5">
+          <div className="mb-1.5 flex items-center gap-2">
             <span
-              className="rounded border px-1.5 py-px text-[10px] font-mono tracking-widest"
+              className="rounded border px-2 py-0.5 text-[11px] font-mono tracking-widest"
               style={{
                 borderColor: `${accentColor}4d`,
                 background: `${accentColor}12`,
@@ -1487,18 +1501,18 @@ const ChatMessageBubble: React.FC<{
               {identityLabel}
             </span>
             <span
-              className="text-xs font-bold tracking-wide"
+              className="text-sm font-bold tracking-wide"
               style={{ color: accentColor }}
             >
               {isMe ? "你" : message.senderName}
             </span>
-            <span className="text-[11px] text-white/35">
+            <span className="text-xs text-white/35">
               {formatTime(message.timestamp)}
             </span>
           </div>
         )}
         <div
-          className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-sm"
+          className="rounded-lg border px-3.5 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm"
           style={{
             borderColor: isMe ? "rgba(167,139,250,0.45)" : `${accentColor}66`,
             background: bubbleBackground,
@@ -1579,17 +1593,17 @@ const SpiritMessageShell: React.FC<{
   <motion.div
     initial={animateOnMount ? { opacity: 0, y: 6 } : false}
     animate={{ opacity: 1, y: 0 }}
-    className="mt-4 flex gap-2.5 justify-start"
+    className="mt-5 flex gap-3 justify-start"
   >
     <div
-      className="h-8 w-8 shrink-0 overflow-hidden rounded border bg-[#0B0C10]"
+      className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-[#0B0C10]"
       style={{ borderColor: `${accentColor}66` }}
     >
       {avatar ? (
         <img src={avatar} alt={name} className="h-full w-full object-cover" />
       ) : (
         <div
-          className="h-full w-full flex items-center justify-center text-xs font-black"
+          className="h-full w-full flex items-center justify-center text-sm font-black"
           style={{ color: accentColor }}
         >
           {name.slice(0, 1)}
@@ -1597,21 +1611,19 @@ const SpiritMessageShell: React.FC<{
       )}
     </div>
     <div className="max-w-[75%] text-left">
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-[10px] font-mono tracking-widest text-[#FFD700]/80 border border-[#FFD700]/30 px-1.5 rounded">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="rounded border border-[#FFD700]/30 px-2 py-0.5 text-[11px] font-mono tracking-widest text-[#FFD700]/80">
           SPIRIT
         </span>
         <span
-          className="text-xs font-bold tracking-wide"
+          className="text-sm font-bold tracking-wide"
           style={{ color: accentColor }}
         >
           {name}
         </span>
         {trailing}
         {timestamp !== undefined && (
-          <span className="text-[11px] text-white/35">
-            {formatTime(timestamp)}
-          </span>
+          <span className="text-xs text-white/35">{formatTime(timestamp)}</span>
         )}
       </div>
       {children}
@@ -1936,7 +1948,7 @@ const SpiritDetailModal: React.FC<{
     persona.catchphrases?.[0]?.trim() ||
     `${spirit.name}，以${signatureSkill}为誓。`;
 
-  // 3D 翻面：点击卡片切换正反面
+  // 3D 翻面：悬停展示背面，点击可切回正面。
   const [flipped, setFlipped] = useState(false);
 
   // 关闭：点击遮罩 / ESC
@@ -2003,6 +2015,8 @@ const SpiritDetailModal: React.FC<{
           <div
             className="relative w-72"
             style={{ perspective: 1600 }}
+            onMouseEnter={() => setFlipped(true)}
+            onMouseLeave={() => setFlipped(false)}
             onClick={() => setFlipped((f) => !f)}
           >
             <motion.div
@@ -2065,7 +2079,7 @@ const SpiritDetailModal: React.FC<{
 
           {/* 翻面提示 */}
           <div className="mt-3 text-xs tracking-wider text-white/45">
-            {flipped ? "点击卡片翻回正面" : "点击卡片查看详情"}
+            {flipped ? "点击卡片翻回正面" : "悬停卡片查看词灵宣言"}
           </div>
 
           {/* 自己的非出战词灵：切换出战按钮 */}
