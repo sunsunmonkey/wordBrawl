@@ -3,6 +3,7 @@ import {
   beginNdjsonStream,
   clamp,
   consumeUsage,
+  fetchAiCompletionWithRetry,
   getAiCredentials,
   getSafeAiField,
   getSafeAiStreamField,
@@ -184,29 +185,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const wantsStream = acceptHeader.includes("application/x-ndjson");
 
   try {
-    const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const upstreamResponse = await fetchAiCompletionWithRetry(
+      `${baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: GROUP_SYSTEM_PROMPT },
+            {
+              role: "system",
+              content: buildIdentityLock(
+                String(spirit.name),
+                relationshipContext,
+              ),
+            },
+            { role: "user", content: JSON.stringify(payload) },
+          ],
+          temperature: 0.72,
+          ...(wantsStream ? { stream: true } : {}),
+        }),
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: GROUP_SYSTEM_PROMPT },
-          {
-            role: "system",
-            content: buildIdentityLock(
-              String(spirit.name),
-              relationshipContext,
-            ),
-          },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-        temperature: 0.72,
-        ...(wantsStream ? { stream: true } : {}),
-      }),
-    });
+    );
 
     if (!upstreamResponse.ok) {
       const upstreamPayload = await upstreamResponse.json().catch(() => ({}));

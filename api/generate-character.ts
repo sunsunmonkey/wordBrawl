@@ -3,6 +3,7 @@ import {
   clamp,
   clampNumber,
   consumeUsage,
+  fetchAiCompletionWithRetry,
   getAiCredentials,
   getUsageStatus,
   parseJsonLoose,
@@ -300,24 +301,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       attempt <= MAX_JSON_GENERATION_ATTEMPTS;
       attempt += 1
     ) {
-      const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+      const upstreamResponse = await fetchAiCompletionWithRetry(
+        `${baseUrl}/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: `${systemPrompt}\n\n${buildRarityInstruction(rarity)}`,
+              },
+              { role: "user", content: description },
+            ],
+            temperature: 0.95,
+          }),
         },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "system",
-              content: `${systemPrompt}\n\n${buildRarityInstruction(rarity)}`,
-            },
-            { role: "user", content: description },
-          ],
-          temperature: 0.95,
-        }),
-      });
+      );
 
       const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
       if (!upstreamResponse.ok) {

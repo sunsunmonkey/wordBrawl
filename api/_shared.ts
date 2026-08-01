@@ -568,3 +568,74 @@ export const getAiCredentials = () => {
     process.env.AI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
   return { apiKey, baseUrl, model };
 };
+
+const AI_UPSTREAM_MAX_ATTEMPTS = 3;
+const AI_UPSTREAM_RETRY_BASE_MS = 800;
+const AI_UPSTREAM_RETRY_MAX_MS = 8_000;
+
+const getRetryAfterMs = (response: Response): number | undefined => {
+  const value = response.headers.get("retry-after");
+  if (!value) return undefined;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1_000;
+  }
+
+  const retryAt = Date.parse(value);
+  if (!Number.isNaN(retryAt)) {
+    return Math.max(0, retryAt - Date.now());
+  }
+
+  return undefined;
+};
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * 仅重试上游临时故障。调用方仍负责读取最终 Response 的正文并决定错误提示。
+ * 请求已在路由层计费，因此不会因重试重复消耗免费额度。
+ */
+export const fetchAiCompletionWithRetry = async (
+  url: string,
+  init: RequestInit,
+): Promise<Response> => {
+  let lastNetworkError: unknown;
+
+  for (let attempt = 1; attempt <= AI_UPSTREAM_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      const retryable = response.status === 429 || response.status >= 500;
+
+      if (!retryable || attempt === AI_UPSTREAM_MAX_ATTEMPTS) {
+        return response;
+      }
+
+      const retryAfterMs = getRetryAfterMs(response);
+      const delay = Math.min(
+        retryAfterMs ?? AI_UPSTREAM_RETRY_BASE_MS * 2 ** (attempt - 1),
+        AI_UPSTREAM_RETRY_MAX_MS,
+      );
+      console.warn(
+        `AI upstream returned ${response.status}; retrying ${attempt}/${AI_UPSTREAM_MAX_ATTEMPTS} after ${delay}ms`,
+      );
+      await wait(delay);
+    } catch (error) {
+      lastNetworkError = error;
+      if (attempt === AI_UPSTREAM_MAX_ATTEMPTS) break;
+
+      const delay = Math.min(
+        AI_UPSTREAM_RETRY_BASE_MS * 2 ** (attempt - 1),
+        AI_UPSTREAM_RETRY_MAX_MS,
+      );
+      console.warn(
+        `AI upstream network error; retrying ${attempt}/${AI_UPSTREAM_MAX_ATTEMPTS} after ${delay}ms`,
+        error,
+      );
+      await wait(delay);
+    }
+  }
+
+  throw lastNetworkError || new Error("AI upstream request failed");
+};

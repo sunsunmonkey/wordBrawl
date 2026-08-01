@@ -4,6 +4,7 @@ import {
   clamp,
   consumeUsage,
   extractPartialStringFieldWithStatus,
+  fetchAiCompletionWithRetry,
   getAiCredentials,
   getSafeAiField,
   getSafeAiStreamField,
@@ -274,29 +275,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     !isAuxiliaryRequest && acceptHeader.includes("application/x-ndjson");
 
   try {
-    const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const upstreamResponse = await fetchAiCompletionWithRetry(
+      `${baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: isSuggestionRequest
+                ? SUGGESTION_SYSTEM_PROMPT
+                : isMemoryRequest
+                  ? MEMORY_SYSTEM_PROMPT
+                  : SYSTEM_PROMPT,
+            },
+            { role: "user", content: JSON.stringify(payload) },
+          ],
+          temperature: isMemoryRequest ? 0.3 : 0.88,
+          ...(wantsStream ? { stream: true } : {}),
+        }),
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: isSuggestionRequest
-              ? SUGGESTION_SYSTEM_PROMPT
-              : isMemoryRequest
-                ? MEMORY_SYSTEM_PROMPT
-                : SYSTEM_PROMPT,
-          },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-        temperature: isMemoryRequest ? 0.3 : 0.88,
-        ...(wantsStream ? { stream: true } : {}),
-      }),
-    });
+    );
 
     if (!upstreamResponse.ok) {
       const upstreamPayload = await upstreamResponse.json().catch(() => ({}));

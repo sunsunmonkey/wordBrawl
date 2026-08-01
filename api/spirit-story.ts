@@ -5,6 +5,7 @@ import {
   consumeUsage,
   extractPartialArrayObjects,
   extractPartialStringField,
+  fetchAiCompletionWithRetry,
   getAiCredentials,
   getSafeAiField,
   getUsageStatus,
@@ -372,29 +373,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     !isSuggestionRequest && acceptHeader.includes("application/x-ndjson");
 
   try {
-    const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const upstreamResponse = await fetchAiCompletionWithRetry(
+      `${baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: isSuggestionRequest
+                ? SUGGESTION_SYSTEM_PROMPT
+                : isNovelRequest
+                  ? NOVEL_SYSTEM_PROMPT
+                  : SYSTEM_PROMPT,
+            },
+            { role: "user", content: JSON.stringify(payload) },
+          ],
+          temperature: isNovelRequest ? 0.72 : 0.92,
+          ...(wantsStream ? { stream: true } : {}),
+        }),
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: isSuggestionRequest
-              ? SUGGESTION_SYSTEM_PROMPT
-              : isNovelRequest
-                ? NOVEL_SYSTEM_PROMPT
-                : SYSTEM_PROMPT,
-          },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-        temperature: isNovelRequest ? 0.72 : 0.92,
-        ...(wantsStream ? { stream: true } : {}),
-      }),
-    });
+    );
 
     if (!upstreamResponse.ok) {
       const upstreamPayload = await upstreamResponse.json().catch(() => ({}));

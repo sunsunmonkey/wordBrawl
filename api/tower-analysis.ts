@@ -3,6 +3,7 @@ import {
   clamp,
   clampNumber,
   consumeUsage,
+  fetchAiCompletionWithRetry,
   getAiCredentials,
   getUsageStatus,
   readBody,
@@ -184,21 +185,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const chargedUsage = await consumeUsage(req);
 
   try {
-    const upstreamResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+    const upstreamResponse = await fetchAiCompletionWithRetry(
+      `${baseUrl}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.85,
+        }),
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.85,
-      }),
-    });
+    );
 
     const upstreamPayload = await upstreamResponse.json().catch(() => ({}));
     if (!upstreamResponse.ok) {
