@@ -616,7 +616,7 @@ const generateValidatedImage = (
 
 /**
  * 生成角色头像
- * 使用当前可用且更快的 sana 模型；seed 按 prompt/player 固定，便于缓存复用。
+ * 使用 flux-anime 模型；seed 按 prompt/player 固定，便于缓存复用。
  * 整个生成在串行队列内完成实际下载校验，返回校验通过的 URL。
  */
 export const generateCharacterImage = async (
@@ -630,7 +630,7 @@ export const generateCharacterImage = async (
   const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, dramatic neon rim light, cinematic dark background, sharp focus, polished anime RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
 
   const baseModel =
-    modelOverride === "" ? undefined : (modelOverride ?? "flux");
+    modelOverride === "" ? undefined : (modelOverride ?? "flux-anime");
   const attempts: PollinationsAttempt[] = [
     { model: baseModel, seedKey: `${player}:${cleaned}` },
   ];
@@ -639,7 +639,7 @@ export const generateCharacterImage = async (
 
 /**
  * 进化形象专用：匿名 Pollinations 稳定性优先。
- * - 进化头像是关键资源，只尝试 flux，避免为一个形态打出多次高风险请求。
+ * - 进化头像是关键资源，只尝试 flux-anime，避免为一个形态打出多次高风险请求。
  * - 整个尝试循环在同一串行队列槽位内完成探测校验，确保返回的 URL 是真实可用的图片。
  * - 全部失败返回空串，调用方进入“待重试”状态或使用本地兜底图。
  */
@@ -665,7 +665,7 @@ export const generateEvolutionImage = async (
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const attempts: PollinationsAttempt[] = [
-    { model: "flux", seedKey: `${seedSalt}:s1` },
+    { model: "flux-anime", seedKey: `${seedSalt}:s1` },
   ];
   return generateValidatedImage(
     enriched,
@@ -700,7 +700,7 @@ export const generateEvolutionUltimateImage = async (
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const attempts: PollinationsAttempt[] = [
-    { model: "flux", seedKey: `${seedSalt}:u1` },
+    { model: "flux-anime", seedKey: `${seedSalt}:u1` },
   ];
   return generateValidatedImage(
     enriched,
