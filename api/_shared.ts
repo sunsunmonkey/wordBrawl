@@ -557,23 +557,64 @@ export const getSafeAiStreamField = (
     : sanitizeAiDialogueText(raw).slice(0, maxLength);
 };
 
-export const getAiCredentials = () => {
-  const baseUrl = (
+export type AiProviderCredentials = {
+  apiKey?: string;
+  baseUrl: string;
+  model: string;
+};
+
+export type AiCredentials = AiProviderCredentials & {
+  fallback?: AiProviderCredentials;
+};
+
+export type AiProvider = "siliconflow" | "deepseek";
+
+const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
+
+export const getAiCredentials = (
+  preferredProvider: AiProvider = "siliconflow",
+): AiCredentials => {
+  const configuredBaseUrl = normalizeBaseUrl(
     process.env.AI_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
-    "https://api.openai.com/v1"
-  ).replace(/\/+$/, "");
-  const isSiliconFlow = baseUrl.includes("api.siliconflow.cn");
-  const apiKey = isSiliconFlow
-    ? process.env.SILICONFLOW_API_KEY ||
-      process.env.AI_API_KEY ||
-      process.env.OPENAI_API_KEY
-    : process.env.AI_API_KEY ||
-      process.env.OPENAI_API_KEY ||
-      process.env.SILICONFLOW_API_KEY;
-  const model =
+      process.env.OPENAI_BASE_URL ||
+      "https://api.siliconflow.cn/v1",
+  );
+  const configuredModel =
     process.env.AI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
-  return { apiKey, baseUrl, model };
+  const configuredSiliconFlow =
+    configuredBaseUrl.includes("api.siliconflow.cn");
+  const siliconFlow: AiProviderCredentials = {
+    apiKey:
+      process.env.SILICONFLOW_API_KEY ||
+      (configuredSiliconFlow
+        ? process.env.AI_API_KEY || process.env.OPENAI_API_KEY
+        : undefined),
+    baseUrl: configuredSiliconFlow
+      ? configuredBaseUrl
+      : normalizeBaseUrl(
+          process.env.SILICONFLOW_BASE_URL || "https://api.siliconflow.cn/v1",
+        ),
+    model: configuredSiliconFlow
+      ? configuredModel
+      : process.env.SILICONFLOW_MODEL || "deepseek-ai/DeepSeek-V3.2",
+  };
+  const deepSeek: AiProviderCredentials = {
+    apiKey:
+      process.env.DEEPSEEK_API_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.OPENAI_API_KEY,
+    baseUrl: normalizeBaseUrl(
+      process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
+    ),
+    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+  };
+  const primary = preferredProvider === "deepseek" ? deepSeek : siliconFlow;
+  const fallback = preferredProvider === "deepseek" ? siliconFlow : deepSeek;
+
+  return {
+    ...primary,
+    ...(fallback.apiKey ? { fallback } : {}),
+  };
 };
 
 const AI_UPSTREAM_MAX_ATTEMPTS = 3;
@@ -645,4 +686,58 @@ export const fetchAiCompletionWithRetry = async (
   }
 
   throw lastNetworkError || new Error("AI upstream request failed");
+};
+
+const canFallbackFromResponse = (response: Response): boolean =>
+  response.status === 429 || response.status >= 500;
+
+const buildFallbackRequest = (
+  init: RequestInit,
+  fallback: AiProviderCredentials,
+): RequestInit => {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${fallback.apiKey}`);
+
+  let body = init.body;
+  if (typeof body === "string") {
+    try {
+      const payload = asRecord(JSON.parse(body));
+      body = JSON.stringify({ ...payload, model: fallback.model });
+    } catch {
+      // All completion callers send JSON. Preserve the original body if malformed.
+    }
+  }
+
+  return { ...init, headers, body };
+};
+
+/**
+ * 主 Provider 在限流、服务端错误或网络异常后，切换到配置的备援 Provider。
+ * 鉴权与请求参数错误直接返回，避免用备援掩盖配置问题。
+ */
+export const fetchAiCompletionWithFallback = async (
+  url: string,
+  init: RequestInit,
+  fallback?: AiProviderCredentials,
+): Promise<Response> => {
+  try {
+    const primaryResponse = await fetchAiCompletionWithRetry(url, init);
+    if (!fallback || !canFallbackFromResponse(primaryResponse)) {
+      return primaryResponse;
+    }
+    console.warn(
+      `Primary AI upstream returned ${primaryResponse.status}; using fallback provider`,
+    );
+  } catch (error) {
+    if (!fallback) throw error;
+    console.warn("Primary AI upstream failed; using fallback provider", error);
+  }
+
+  if (!fallback?.apiKey) {
+    throw new Error("Fallback AI API key is not configured");
+  }
+  return fetchAiCompletionWithRetry(
+    `${fallback.baseUrl}/chat/completions`,
+    buildFallbackRequest(init, fallback),
+  );
 };

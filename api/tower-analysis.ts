@@ -3,7 +3,7 @@ import {
   clamp,
   clampNumber,
   consumeUsage,
-  fetchAiCompletionWithRetry,
+  fetchAiCompletionWithFallback,
   getAiCredentials,
   getUsageStatus,
   readBody,
@@ -151,7 +151,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { apiKey, baseUrl, model } = getAiCredentials();
+  const { apiKey, baseUrl, model, fallback } = getAiCredentials();
   if (!apiKey) {
     sendJson(res, 500, { error: '服务端还没有配置 AI_API_KEY / OPENAI_API_KEY' });
     return;
@@ -185,7 +185,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const chargedUsage = await consumeUsage(req);
 
   try {
-    const upstreamResponse = await fetchAiCompletionWithRetry(
+    const upstreamResponse = await fetchAiCompletionWithFallback(
       `${baseUrl}/chat/completions`,
       {
         method: 'POST',
@@ -202,6 +202,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           temperature: 0.85,
         }),
       },
+      fallback,
     );
 
     const upstreamPayload = await upstreamResponse.json().catch(() => ({}));

@@ -20,9 +20,13 @@ AI_API_KEY=sk-your-server-key
 SILICONFLOW_API_KEY=sk-your-siliconflow-key
 AI_BASE_URL=https://api.siliconflow.cn/v1
 AI_MODEL=deepseek-ai/DeepSeek-V3.2
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
 FREE_DAILY_LIMIT=20
 FREE_USAGE_TIMEZONE=Asia/Shanghai
 ```
+
+免费模式下，单聊与社交群聊优先使用 DeepSeek，群像共叙优先使用硅基流动；任一主路由遇到网络错误、429 或 5xx 时自动切换到另一方。
 
 `FREE_DAILY_LIMIT` 默认为 `20`，改成其它数字即可调整每天体验次数；设为 `0` 表示不限制。只有通过校验并发起大模型调用的请求会计入次数。
 

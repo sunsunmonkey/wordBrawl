@@ -3,7 +3,7 @@ import {
   clamp,
   clampNumber,
   consumeUsage,
-  fetchAiCompletionWithRetry,
+  fetchAiCompletionWithFallback,
   getAiCredentials,
   getUsageStatus,
   parseJsonLoose,
@@ -248,7 +248,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   if (req.method === "GET") {
-    const credentials = getAiCredentials();
+    const credentials = getAiCredentials("siliconflow");
     sendJson(res, 200, {
       ok: true,
       usage: await getUsageStatus(req),
@@ -262,7 +262,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { apiKey, baseUrl, model } = getAiCredentials();
+  const { apiKey, baseUrl, model, fallback } = getAiCredentials("siliconflow");
 
   if (!apiKey) {
     sendJson(res, 500, {
@@ -302,7 +302,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       attempt <= MAX_JSON_GENERATION_ATTEMPTS;
       attempt += 1
     ) {
-      const upstreamResponse = await fetchAiCompletionWithRetry(
+      const upstreamResponse = await fetchAiCompletionWithFallback(
         `${baseUrl}/chat/completions`,
         {
           method: "POST",
@@ -322,6 +322,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             temperature: 0.95,
           }),
         },
+        fallback,
       );
 
       const upstreamPayload = await upstreamResponse.json().catch(() => ({}));

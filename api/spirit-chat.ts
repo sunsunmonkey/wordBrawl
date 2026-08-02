@@ -4,7 +4,7 @@ import {
   clamp,
   consumeUsage,
   extractPartialStringFieldWithStatus,
-  fetchAiCompletionWithRetry,
+  fetchAiCompletionWithFallback,
   getAiCredentials,
   getSafeAiField,
   getSafeAiStreamField,
@@ -212,7 +212,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { apiKey, baseUrl, model } = getAiCredentials();
+  const { apiKey, baseUrl, model, fallback } = getAiCredentials("deepseek");
   if (!apiKey) {
     sendJson(res, 500, {
       error: "服务端还没有配置 AI_API_KEY / OPENAI_API_KEY",
@@ -275,7 +275,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     !isAuxiliaryRequest && acceptHeader.includes("application/x-ndjson");
 
   try {
-    const upstreamResponse = await fetchAiCompletionWithRetry(
+    const upstreamResponse = await fetchAiCompletionWithFallback(
       `${baseUrl}/chat/completions`,
       {
         method: "POST",
@@ -300,6 +300,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ...(wantsStream ? { stream: true } : {}),
         }),
       },
+      fallback,
     );
 
     if (!upstreamResponse.ok) {
