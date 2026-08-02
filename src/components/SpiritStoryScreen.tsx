@@ -50,7 +50,7 @@ import {
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
 import { LOADING_STEPS } from "./loadingSteps";
 
-const MAX_STORY_PARTICIPANTS = 10;
+const MAX_STORY_PARTICIPANTS = 6;
 const COLLAPSED_ROSTER_COUNT = 8;
 const SUGGESTION_IDLE_DELAY_MS = 1800;
 const DEFAULT_CHAPTER_MESSAGE_COUNT = 16;
