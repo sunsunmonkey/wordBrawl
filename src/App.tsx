@@ -97,6 +97,9 @@ function RevealOverlay() {
 function App() {
   const { phase } = useGameStore();
   const setPhase = useGameStore((s) => s.setPhase);
+  const [hasOpenedSpiritChat, setHasOpenedSpiritChat] = useState(
+    () => phase === "SPIRIT_CHAT",
+  );
 
   // 深链：打开 #room=CODE 时自动进入社交大厅（房间码在大厅回填并可一键加入）
   useEffect(() => {
@@ -105,6 +108,10 @@ function App() {
       setPhase("SOCIAL_LOBBY");
     }
   }, [setPhase]);
+
+  useEffect(() => {
+    if (phase === "SPIRIT_CHAT") setHasOpenedSpiritChat(true);
+  }, [phase]);
 
   return (
     <div className="min-h-screen bg-[#0B0C10] text-[#C5C6C7] font-mono">
@@ -116,7 +123,12 @@ function App() {
       {phase === "BATTLE_ARENA" && <BattleScreen />}
       {phase === "GAME_OVER" && <GameOverScreen />}
       {phase === "ROSTER_VIEW" && <RosterScreen />}
-      {phase === "SPIRIT_CHAT" && <SpiritChatScreen />}
+      <div
+        className={phase === "SPIRIT_CHAT" ? undefined : "hidden"}
+        aria-hidden={phase === "SPIRIT_CHAT" ? undefined : true}
+      >
+        {hasOpenedSpiritChat && <SpiritChatScreen />}
+      </div>
       {phase === "SPIRIT_STORY" && <SpiritStoryScreen />}
       {phase === "TOWER_HUB" && <TowerScreen />}
       {phase === "TOWER_RESULT" && <TowerResultScreen />}
