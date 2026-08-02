@@ -50,7 +50,8 @@ export const runBackgroundRecruit = (
       const avatarUrl = await loadGeneratedAvatar(() =>
         generateCharacterImage(
           cfg,
-          charData.imagePrompt || sourceDescription,
+          sourceDescription,
+          charData.imagePrompt,
           1,
         ),
       );

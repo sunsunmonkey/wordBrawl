@@ -177,7 +177,8 @@ export const CharacterCreateScreen: React.FC = () => {
       const avatar = await loadGeneratedAvatar(() =>
         generateCharacterImage(
           cfg,
-          charData.imagePrompt || sourceDescription,
+          sourceDescription,
+          charData.imagePrompt,
           player,
         ),
       );

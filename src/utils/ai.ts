@@ -621,12 +621,18 @@ const generateValidatedImage = (
  */
 export const generateCharacterImage = async (
   _cfg: AIConfig,
-  prompt: string,
+  sourceDescription: string,
+  imagePrompt: string,
   player: 1 | 2,
   modelOverride?: string,
 ): Promise<string> => {
-  if (!prompt) return "";
-  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 240);
+  const source = sourceDescription.replace(/\s+/g, " ").slice(0, 180);
+  const visual = imagePrompt.replace(/\s+/g, " ").slice(0, 240);
+  if (!source && !visual) return "";
+  const cleaned =
+    source && visual && source !== visual
+      ? `user request: ${source}, character visual design: ${visual}`
+      : source || visual;
   const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, dramatic neon rim light, cinematic dark background, sharp focus, polished anime RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
 
   const baseModel =
