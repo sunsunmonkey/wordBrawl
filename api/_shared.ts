@@ -558,12 +558,19 @@ export const getSafeAiStreamField = (
 };
 
 export const getAiCredentials = () => {
-  const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
   const baseUrl = (
     process.env.AI_BASE_URL ||
     process.env.OPENAI_BASE_URL ||
     "https://api.openai.com/v1"
   ).replace(/\/+$/, "");
+  const isSiliconFlow = baseUrl.includes("api.siliconflow.cn");
+  const apiKey = isSiliconFlow
+    ? process.env.SILICONFLOW_API_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.OPENAI_API_KEY
+    : process.env.AI_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.SILICONFLOW_API_KEY;
   const model =
     process.env.AI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
   return { apiKey, baseUrl, model };

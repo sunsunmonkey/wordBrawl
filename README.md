@@ -17,8 +17,9 @@ VITE_FREE_API_BASE_URL=https://your-vercel-domain.vercel.app
 
 ```bash
 AI_API_KEY=sk-your-server-key
-AI_BASE_URL=https://api.openai.com/v1
-AI_MODEL=gpt-4o-mini
+SILICONFLOW_API_KEY=sk-your-siliconflow-key
+AI_BASE_URL=https://api.siliconflow.cn/v1
+AI_MODEL=deepseek-ai/DeepSeek-V3.2
 FREE_DAILY_LIMIT=20
 FREE_USAGE_TIMEZONE=Asia/Shanghai
 ```
@@ -49,34 +50,34 @@ export default tseslint.config({
   languageOptions: {
     // other options...
     parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
+      project: ["./tsconfig.node.json", "./tsconfig.app.json"],
       tsconfigRootDir: import.meta.dirname,
     },
   },
-})
+});
 ```
 
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js
 // eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+import reactX from "eslint-plugin-react-x";
+import reactDom from "eslint-plugin-react-dom";
 
 export default tseslint.config({
   extends: [
     // other configs...
     // Enable lint rules for React
-    reactX.configs['recommended-typescript'],
+    reactX.configs["recommended-typescript"],
     // Enable lint rules for React DOM
     reactDom.configs.recommended,
   ],
   languageOptions: {
     // other options...
     parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
+      project: ["./tsconfig.node.json", "./tsconfig.app.json"],
       tsconfigRootDir: import.meta.dirname,
     },
   },
-})
+});
 ```
