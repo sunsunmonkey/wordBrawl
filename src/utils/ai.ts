@@ -573,6 +573,32 @@ interface PollinationsAttempt {
 }
 
 /**
+ * 通过服务端调用硅基流动的 Kolors。
+ * 未配置 Key 或请求失败时返回空串，由调用方回退到 Pollinations。
+ */
+const generateSiliconFlowImage = async (
+  prompt: string,
+  seedKey: string,
+): Promise<string> => {
+  try {
+    const response = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        seed: hashSeed(seedKey),
+      }),
+    });
+    if (!response.ok) return "";
+
+    const payload = (await response.json()) as { imageUrl?: unknown };
+    return typeof payload.imageUrl === "string" ? payload.imageUrl : "";
+  } catch {
+    return "";
+  }
+};
+
+/**
  * 在全局串行队列里生成并校验一张 Pollinations 图片。
  * 关键：整个“构造 URL → 探测下载 → 429 退避重试”都在同一个队列槽位里完成，
  * 保证同一时刻只有一个 Pollinations 请求在飞行中，从根本上避开匿名层 max=1 的 429。
@@ -633,13 +659,18 @@ export const generateCharacterImage = async (
     source && visual && source !== visual
       ? `user request: ${source}, character visual design: ${visual}`
       : source || visual;
-  const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, dramatic neon rim light, cinematic dark background, sharp focus, crisp clean linework, high detail, sharp edges, high resolution, no blur, no soft focus, no low resolution, polished anime RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
+  const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, polished RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
 
   const baseModel =
     modelOverride === "" ? undefined : (modelOverride ?? "flux-anime");
   const attempts: PollinationsAttempt[] = [
     { model: baseModel, seedKey: `${player}:${cleaned}` },
   ];
+  const siliconFlowImage = await generateSiliconFlowImage(
+    enriched,
+    `${player}:${cleaned}`,
+  );
+  if (siliconFlowImage) return siliconFlowImage;
   return generateValidatedImage(enriched, 512, 512, attempts, 45_000);
 };
 
@@ -667,9 +698,14 @@ export const generateEvolutionImage = async (
   const width = options?.width ?? 384;
   const height = options?.height ?? 384;
   const cleaned = prompt.replace(/\s+/g, " ").slice(0, 160);
-  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, cyberpunk fantasy anime key art, sharp focus, crisp clean linework, high detail, sharp edges, high resolution, no blur, no soft focus, no low resolution, no text, no UI, no screenshot`;
+  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, fantasy RPG key art, no text, no UI, no screenshot`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
+  const siliconFlowImage = await generateSiliconFlowImage(
+    enriched,
+    `${seedSalt}:s1`,
+  );
+  if (siliconFlowImage) return siliconFlowImage;
   const attempts: PollinationsAttempt[] = [
     { model: "flux-anime", seedKey: `${seedSalt}:s1` },
   ];
@@ -702,9 +738,14 @@ export const generateEvolutionUltimateImage = async (
   const width = options?.width ?? 640;
   const height = options?.height ?? 360;
   const cleaned = prompt.replace(/\s+/g, " ").slice(0, 140);
-  const enriched = `${cleaned}, ultimate attack splash art, explosive energy, dramatic anime combat illustration, cinematic lighting, sharp focus, crisp clean linework, high detail, sharp edges, high resolution, no blur, no soft focus, no low resolution, no text`;
+  const enriched = `${cleaned}, ultimate attack splash art, explosive energy, dramatic game combat illustration, cinematic lighting, no text`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
+  const siliconFlowImage = await generateSiliconFlowImage(
+    enriched,
+    `${seedSalt}:u1`,
+  );
+  if (siliconFlowImage) return siliconFlowImage;
   const attempts: PollinationsAttempt[] = [
     { model: "flux-anime", seedKey: `${seedSalt}:u1` },
   ];
