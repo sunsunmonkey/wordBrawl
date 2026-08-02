@@ -633,7 +633,7 @@ export const generateCharacterImage = async (
     source && visual && source !== visual
       ? `user request: ${source}, character visual design: ${visual}`
       : source || visual;
-  const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, dramatic neon rim light, cinematic dark background, sharp focus, polished anime RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
+  const enriched = `${cleaned}, high quality fictional game character concept art, centered head and upper body portrait, clear face or helmet, detailed armor and materials, strong readable silhouette, dramatic neon rim light, cinematic dark background, sharp focus, crisp clean linework, high detail, sharp edges, high resolution, no blur, no soft focus, no low resolution, polished anime RPG key art, no text, no UI, no book, no paper, no chart, no screenshot, no real photo, no collage, no transparent background`;
 
   const baseModel =
     modelOverride === "" ? undefined : (modelOverride ?? "flux-anime");
@@ -667,7 +667,7 @@ export const generateEvolutionImage = async (
   const width = options?.width ?? 384;
   const height = options?.height ?? 384;
   const cleaned = prompt.replace(/\s+/g, " ").slice(0, 160);
-  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, cyberpunk fantasy anime key art, no text, no UI, no screenshot`;
+  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, cyberpunk fantasy anime key art, sharp focus, crisp clean linework, high detail, sharp edges, high resolution, no blur, no soft focus, no low resolution, no text, no UI, no screenshot`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const attempts: PollinationsAttempt[] = [
@@ -702,7 +702,7 @@ export const generateEvolutionUltimateImage = async (
   const width = options?.width ?? 640;
   const height = options?.height ?? 360;
   const cleaned = prompt.replace(/\s+/g, " ").slice(0, 140);
-  const enriched = `${cleaned}, ultimate attack splash art, explosive energy, dramatic anime combat illustration, cinematic lighting, no text`;
+  const enriched = `${cleaned}, ultimate attack splash art, explosive energy, dramatic anime combat illustration, cinematic lighting, sharp focus, crisp clean linework, high detail, sharp edges, high resolution, no blur, no soft focus, no low resolution, no text`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const attempts: PollinationsAttempt[] = [
