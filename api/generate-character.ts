@@ -66,6 +66,7 @@ const systemPrompt = `你是一个充满创意的游戏角色设计大师。
 重要：所有 JSON key 和字符串必须使用英文半角双引号 "，禁止使用中文弯引号 “ ” 或单引号。
 语言要求（强制）：所有会展示给玩家的文本必须使用简体中文，包括 name、全部 skills 的 name 和 description，以及 spiritProfile 的全部文本字段。禁止输出英文角色名、英文技能名或英文技能描述。
 唯一例外：JSON key、type / ultimateType 等枚举 ID，以及用于生成头像的 imagePrompt 必须保持英文。
+imagePrompt 隔离规则（强制）：它只描述用户输入中的角色外观、服装、物种、道具、姿态和场景氛围；不得提及、暗示或根据稀有度、星级、数值、技能倍率或强度档位改变视觉设计。不得使用 rare、epic、legendary、SSR、UR 等稀有度词。
 
 技能体系要求（必须包含 4-5 个技能）：
 1. 一个普通攻击（type="attack"，damageMultiplier 1.0）

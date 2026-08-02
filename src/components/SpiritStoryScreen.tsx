@@ -39,6 +39,7 @@ import {
   useSpiritStoryStore,
   type SpiritStoryMessage,
   type SpiritStoryRoom,
+  type SpiritStoryStreamingState,
 } from "../store/useSpiritStoryStore";
 import {
   requestSpiritStory,
@@ -53,13 +54,6 @@ const MAX_STORY_PARTICIPANTS = 10;
 const COLLAPSED_ROSTER_COUNT = 8;
 const SUGGESTION_IDLE_DELAY_MS = 1800;
 const DEFAULT_CHAPTER_MESSAGE_COUNT = 16;
-
-interface StreamingStoryState {
-  roomId: string;
-  requestId: string;
-  startedAt: number;
-  turns: SpiritStoryTurn[];
-}
 
 const formatTime = (ts: number) => {
   const d = new Date(ts);
@@ -114,7 +108,10 @@ export const SpiritStoryScreen: React.FC = () => {
   const roster = useRosterStore((s) => s.roster);
   const rooms = useSpiritStoryStore((s) => s.rooms);
   const activeRoomId = useSpiritStoryStore((s) => s.activeRoomId);
+  const runtimeByRoomId = useSpiritStoryStore((s) => s.runtimeByRoomId);
   const setActiveRoomId = useSpiritStoryStore((s) => s.setActiveRoomId);
+  const updateRoomRuntime = useSpiritStoryStore((s) => s.updateRoomRuntime);
+  const clearRoomRuntime = useSpiritStoryStore((s) => s.clearRoomRuntime);
   const createRoom = useSpiritStoryStore((s) => s.createRoom);
   const updateRoomScenario = useSpiritStoryStore((s) => s.updateRoomScenario);
   const setRoomParticipants = useSpiritStoryStore((s) => s.setRoomParticipants);
@@ -133,30 +130,33 @@ export const SpiritStoryScreen: React.FC = () => {
   );
   const displayRoster = [...recruitingRoster, ...availableRoster];
 
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [draftInput, setDraftInput] = useState("");
+  const [draftError, setDraftError] = useState("");
+  const [inputByRoomId, setInputByRoomId] = useState<Record<string, string>>(
+    {},
+  );
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
-  const [streamingStory, setStreamingStory] =
-    useState<StreamingStoryState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const latestStoryRequestIdRef = useRef("");
-  const latestNovelRequestIdRef = useRef("");
-  const activeForegroundRequestIdRef = useRef("");
+  const latestStoryRequestIdByRoomIdRef = useRef<Record<string, string>>({});
+  const latestNovelRequestIdByRoomIdRef = useRef<Record<string, string>>({});
+  const activeForegroundRequestIdByRoomIdRef = useRef<Record<string, string>>(
+    {},
+  );
   const latestMetadataRequestIdByRoomIdRef = useRef<Record<string, string>>({});
-  const pendingStreamingTurnsRef = useRef<StreamingStoryState | null>(null);
-  const streamingFrameRef = useRef<number | null>(null);
+  const pendingStreamingTurnsByRoomIdRef = useRef<
+    Record<string, SpiritStoryStreamingState | undefined>
+  >({});
+  const streamingFrameByRoomIdRef = useRef<Record<string, number | undefined>>(
+    {},
+  );
   const initialPromptsByKeyRef = useRef<Record<string, string[]>>({});
   const suggestionRequestRoomIdsRef = useRef(new Set<string>());
   const suggestedForMessageIdByRoomIdRef = useRef<Record<string, string>>({});
-  const draftInputRef = useRef("");
+  const inputByRoomIdRef = useRef<Record<string, string>>({});
   const [suggestedPromptsByRoomId, setSuggestedPromptsByRoomId] = useState<
     Record<string, string[]>
   >({});
   const [isNovelOpen, setIsNovelOpen] = useState(false);
-  const [isNovelGenerating, setIsNovelGenerating] = useState(false);
-  const [novelStreamingContent, setNovelStreamingContent] = useState("");
-  const [novelError, setNovelError] = useState("");
 
   // Draft state (新建故事时使用)
   const [draftIds, setDraftIds] = useState<string[]>([]);
@@ -165,6 +165,14 @@ export const SpiritStoryScreen: React.FC = () => {
   );
 
   const activeRoom = activeRoomId ? rooms[activeRoomId] : null;
+  const activeRuntime = activeRoom ? runtimeByRoomId[activeRoom.id] : undefined;
+  const input = activeRoom ? (inputByRoomId[activeRoom.id] ?? "") : draftInput;
+  const error = activeRoom ? (activeRuntime?.error ?? "") : draftError;
+  const isSending = activeRuntime?.isSending ?? false;
+  const streamingStory = activeRuntime?.streamingStory ?? null;
+  const isNovelGenerating = activeRuntime?.isNovelGenerating ?? false;
+  const novelStreamingContent = activeRuntime?.novelStreamingContent ?? "";
+  const novelError = activeRuntime?.novelError ?? "";
   const pendingNovelMessages = activeRoom
     ? getPendingNovelMessages(activeRoom)
     : [];
@@ -223,6 +231,21 @@ export const SpiritStoryScreen: React.FC = () => {
   const suggestedPrompts = activeRoom
     ? (suggestedPromptsByRoomId[activeRoom.id] ?? initialPrompts)
     : initialPrompts;
+  const setScopeError = (message: string) => {
+    if (activeRoom) {
+      updateRoomRuntime(activeRoom.id, { error: message });
+    } else {
+      setDraftError(message);
+    }
+  };
+  const setCurrentInput = (value: string) => {
+    if (activeRoom) {
+      inputByRoomIdRef.current[activeRoom.id] = value;
+      setInputByRoomId((current) => ({ ...current, [activeRoom.id]: value }));
+    } else {
+      setDraftInput(value);
+    }
+  };
 
   useEffect(() => {
     if (
@@ -245,7 +268,7 @@ export const SpiritStoryScreen: React.FC = () => {
 
     const sourceMessageId = latestStoryMessageId;
     const timeoutId = window.setTimeout(() => {
-      if (draftInputRef.current.trim() || isSending) return;
+      if (inputByRoomIdRef.current[roomId]?.trim() || isSending) return;
 
       const currentRoom = useSpiritStoryStore.getState().rooms[roomId];
       if (currentRoom?.messages.at(-1)?.id !== sourceMessageId) return;
@@ -258,7 +281,7 @@ export const SpiritStoryScreen: React.FC = () => {
           if (
             nextPrompts.length === 0 ||
             latestRoom?.messages.at(-1)?.id !== sourceMessageId ||
-            draftInputRef.current.trim()
+            inputByRoomIdRef.current[roomId]?.trim()
           ) {
             return;
           }
@@ -299,51 +322,77 @@ export const SpiritStoryScreen: React.FC = () => {
     el.scrollTop = el.scrollHeight;
   }, [activeStreamingContentLength]);
 
-  useEffect(
-    () => () => {
-      if (streamingFrameRef.current !== null) {
-        cancelAnimationFrame(streamingFrameRef.current);
-      }
-    },
-    [],
-  );
-
-  const clearPendingStreamingTurns = () => {
-    if (streamingFrameRef.current !== null) {
-      cancelAnimationFrame(streamingFrameRef.current);
-      streamingFrameRef.current = null;
+  const clearPendingStreamingTurns = (roomId: string) => {
+    const frame = streamingFrameByRoomIdRef.current[roomId];
+    if (frame !== undefined) {
+      cancelAnimationFrame(frame);
+      delete streamingFrameByRoomIdRef.current[roomId];
     }
-    pendingStreamingTurnsRef.current = null;
+    delete pendingStreamingTurnsByRoomIdRef.current[roomId];
   };
 
-  const scheduleStreamingTurns = (next: StreamingStoryState) => {
-    if (latestStoryRequestIdRef.current !== next.requestId) return;
-    pendingStreamingTurnsRef.current = next;
-    if (streamingFrameRef.current !== null) return;
-    streamingFrameRef.current = requestAnimationFrame(() => {
-      streamingFrameRef.current = null;
-      const pending = pendingStreamingTurnsRef.current;
-      pendingStreamingTurnsRef.current = null;
-      if (pending && latestStoryRequestIdRef.current === pending.requestId) {
-        setStreamingStory(pending);
-      }
-    });
+  const isCurrentStoryRequest = (roomId: string, requestId: string) =>
+    useSpiritStoryStore.getState().runtimeByRoomId[roomId]?.storyRequestId ===
+    requestId;
+
+  const isCurrentNovelRequest = (roomId: string, requestId: string) =>
+    useSpiritStoryStore.getState().runtimeByRoomId[roomId]?.novelRequestId ===
+    requestId;
+
+  const scheduleStreamingTurns = (next: {
+    roomId: string;
+    requestId: string;
+    startedAt: number;
+    turns: SpiritStoryTurn[];
+  }) => {
+    if (
+      latestStoryRequestIdByRoomIdRef.current[next.roomId] !== next.requestId ||
+      !isCurrentStoryRequest(next.roomId, next.requestId)
+    ) {
+      return;
+    }
+    pendingStreamingTurnsByRoomIdRef.current[next.roomId] = next;
+    if (streamingFrameByRoomIdRef.current[next.roomId] !== undefined) return;
+    streamingFrameByRoomIdRef.current[next.roomId] = requestAnimationFrame(
+      () => {
+        delete streamingFrameByRoomIdRef.current[next.roomId];
+        const pending = pendingStreamingTurnsByRoomIdRef.current[next.roomId];
+        delete pendingStreamingTurnsByRoomIdRef.current[next.roomId];
+        if (
+          pending &&
+          latestStoryRequestIdByRoomIdRef.current[pending.roomId] ===
+            pending.requestId &&
+          isCurrentStoryRequest(pending.roomId, pending.requestId)
+        ) {
+          updateRoomRuntime(pending.roomId, { streamingStory: pending });
+        }
+      },
+    );
   };
 
   const invalidatePendingMetadata = (roomId: string) => {
     latestMetadataRequestIdByRoomIdRef.current[roomId] = "";
   };
 
+  const invalidateRoomRequests = (roomId: string) => {
+    clearPendingStreamingTurns(roomId);
+    delete latestStoryRequestIdByRoomIdRef.current[roomId];
+    delete latestNovelRequestIdByRoomIdRef.current[roomId];
+    delete activeForegroundRequestIdByRoomIdRef.current[roomId];
+    invalidatePendingMetadata(roomId);
+    clearRoomRuntime(roomId);
+  };
+
   const startNewComposing = () => {
     setActiveRoomId(null);
-    setError("");
-    setInput("");
+    setDraftError("");
+    setDraftInput("");
     setDraftIds([]);
     setDraftScenarioId(DEFAULT_STORY_SCENARIO_ID);
   };
 
   const toggleParticipant = (rosterId: string) => {
-    setError("");
+    setScopeError("");
     if (isComposing) {
       setDraftIds((current) => {
         if (current.includes(rosterId)) {
@@ -351,7 +400,7 @@ export const SpiritStoryScreen: React.FC = () => {
           return current.filter((id) => id !== rosterId);
         }
         if (current.length >= MAX_STORY_PARTICIPANTS) {
-          setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
+          setScopeError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
           return current;
         }
         return [...current, rosterId];
@@ -370,7 +419,7 @@ export const SpiritStoryScreen: React.FC = () => {
       return;
     }
     if (current.length >= MAX_STORY_PARTICIPANTS) {
-      setError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
+      setScopeError(`最多同时出场 ${MAX_STORY_PARTICIPANTS} 名词灵。`);
       return;
     }
     invalidatePendingMetadata(activeRoom.id);
@@ -401,20 +450,21 @@ export const SpiritStoryScreen: React.FC = () => {
     const text = content.trim();
     if (!text || isSending) return;
     if (participants.length < 2) {
-      setError("至少选择 2 名词灵才能开始。");
+      setScopeError("至少选择 2 名词灵才能开始。");
       return;
     }
     if (!isReady) {
-      setError("多人故事需要先在首页选择免费体验或填写 custom API。");
+      setScopeError("多人故事需要先在首页选择免费体验或填写 custom API。");
       return;
     }
 
     const currentRoom = ensureRoom();
     if (!currentRoom) return;
 
-    setError("");
-    setInput("");
-    draftInputRef.current = "";
+    updateRoomRuntime(currentRoom.id, { error: "" });
+    inputByRoomIdRef.current[currentRoom.id] = "";
+    setInputByRoomId((current) => ({ ...current, [currentRoom.id]: "" }));
+    setDraftInput("");
     const playerMessage = appendMessage(currentRoom.id, {
       role: "player",
       content: text,
@@ -424,23 +474,31 @@ export const SpiritStoryScreen: React.FC = () => {
       useSpiritStoryStore.getState().rooms[currentRoom.id] ?? currentRoom;
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const startedAt = Date.now();
-    latestStoryRequestIdRef.current = requestId;
-    activeForegroundRequestIdRef.current = requestId;
+    latestStoryRequestIdByRoomIdRef.current[currentRoom.id] = requestId;
+    activeForegroundRequestIdByRoomIdRef.current[currentRoom.id] = requestId;
     latestMetadataRequestIdByRoomIdRef.current[currentRoom.id] = requestId;
-    clearPendingStreamingTurns();
-    setStreamingStory({
-      roomId: currentRoom.id,
-      requestId,
-      startedAt,
-      turns: [],
+    clearPendingStreamingTurns(currentRoom.id);
+    updateRoomRuntime(currentRoom.id, {
+      isSending: true,
+      storyRequestId: requestId,
+      streamingStory: {
+        roomId: currentRoom.id,
+        requestId,
+        startedAt,
+        turns: [],
+      },
     });
-
-    setIsSending(true);
     let turnsCommitted = false;
     const commitTurns = (turns: SpiritStoryTurn[]) => {
       if (turnsCommitted || !turns.some((turn) => turn.content)) return;
+      if (
+        latestStoryRequestIdByRoomIdRef.current[currentRoom.id] !== requestId ||
+        !isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        return;
+      }
       turnsCommitted = true;
-      clearPendingStreamingTurns();
+      clearPendingStreamingTurns(currentRoom.id);
       applyStoryTurn(
         currentRoom.id,
         turns.map((turn, index) => ({
@@ -453,12 +511,19 @@ export const SpiritStoryScreen: React.FC = () => {
         })),
         {},
       );
-      if (latestStoryRequestIdRef.current === requestId) {
-        setStreamingStory(null);
+      if (
+        latestStoryRequestIdByRoomIdRef.current[currentRoom.id] === requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        updateRoomRuntime(currentRoom.id, { streamingStory: null });
       }
-      if (activeForegroundRequestIdRef.current === requestId) {
-        activeForegroundRequestIdRef.current = "";
-        setIsSending(false);
+      if (
+        activeForegroundRequestIdByRoomIdRef.current[currentRoom.id] ===
+          requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        delete activeForegroundRequestIdByRoomIdRef.current[currentRoom.id];
+        updateRoomRuntime(currentRoom.id, { isSending: false });
       }
     };
 
@@ -481,12 +546,14 @@ export const SpiritStoryScreen: React.FC = () => {
           onTurnsComplete: commitTurns,
         },
       );
-      clearPendingStreamingTurns();
+      clearPendingStreamingTurns(currentRoom.id);
       if (!turnsCommitted) {
         commitTurns(result.turns);
       }
       if (
-        latestMetadataRequestIdByRoomIdRef.current[currentRoom.id] === requestId
+        latestMetadataRequestIdByRoomIdRef.current[currentRoom.id] ===
+          requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
       ) {
         applyStoryTurn(currentRoom.id, [], {
           title: result.title,
@@ -496,21 +563,37 @@ export const SpiritStoryScreen: React.FC = () => {
           participantStates: result.participantStates,
         });
       }
-      if (latestStoryRequestIdRef.current === requestId) {
-        setStreamingStory(null);
+      if (
+        latestStoryRequestIdByRoomIdRef.current[currentRoom.id] === requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        updateRoomRuntime(currentRoom.id, { streamingStory: null });
       }
     } catch (err) {
-      clearPendingStreamingTurns();
-      if (latestStoryRequestIdRef.current === requestId) {
-        setStreamingStory(null);
+      clearPendingStreamingTurns(currentRoom.id);
+      if (
+        latestStoryRequestIdByRoomIdRef.current[currentRoom.id] === requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        updateRoomRuntime(currentRoom.id, { streamingStory: null });
       }
-      if (!turnsCommitted) {
-        setError(err instanceof Error ? err.message : "多人故事暂时没有回应。");
+      if (
+        !turnsCommitted &&
+        latestStoryRequestIdByRoomIdRef.current[currentRoom.id] === requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        updateRoomRuntime(currentRoom.id, {
+          error: err instanceof Error ? err.message : "多人故事暂时没有回应。",
+        });
       }
     } finally {
-      if (activeForegroundRequestIdRef.current === requestId) {
-        activeForegroundRequestIdRef.current = "";
-        setIsSending(false);
+      if (
+        activeForegroundRequestIdByRoomIdRef.current[currentRoom.id] ===
+          requestId &&
+        isCurrentStoryRequest(currentRoom.id, requestId)
+      ) {
+        delete activeForegroundRequestIdByRoomIdRef.current[currentRoom.id];
+        updateRoomRuntime(currentRoom.id, { isSending: false });
       }
     }
   };
@@ -534,17 +617,23 @@ export const SpiritStoryScreen: React.FC = () => {
       0,
       DEFAULT_CHAPTER_MESSAGE_COUNT,
     );
-    if (isNovelGenerating || sourceMessages.length === 0) return;
+    const roomRuntime = runtimeByRoomId[room.id];
+    if (roomRuntime?.isNovelGenerating || sourceMessages.length === 0) return;
     if (!isReady) {
-      setNovelError("请先在首页选择免费体验或填写 custom API。");
+      updateRoomRuntime(room.id, {
+        novelError: "请先在首页选择免费体验或填写 custom API。",
+      });
       return;
     }
 
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    latestNovelRequestIdRef.current = requestId;
-    setNovelError("");
-    setNovelStreamingContent("");
-    setIsNovelGenerating(true);
+    latestNovelRequestIdByRoomIdRef.current[room.id] = requestId;
+    updateRoomRuntime(room.id, {
+      novelError: "",
+      novelStreamingContent: "",
+      isNovelGenerating: true,
+      novelRequestId: requestId,
+    });
 
     try {
       const previousChapter = room.novelChapters.at(-1);
@@ -557,13 +646,22 @@ export const SpiritStoryScreen: React.FC = () => {
         previousChapter?.content || "",
         {
           onContentChunk: (nextContent) => {
-            if (latestNovelRequestIdRef.current === requestId) {
-              setNovelStreamingContent(nextContent);
+            if (
+              latestNovelRequestIdByRoomIdRef.current[room.id] === requestId &&
+              isCurrentNovelRequest(room.id, requestId)
+            ) {
+              updateRoomRuntime(room.id, {
+                novelStreamingContent: nextContent,
+              });
             }
           },
         },
       );
-      if (latestNovelRequestIdRef.current !== requestId) return;
+      if (
+        latestNovelRequestIdByRoomIdRef.current[room.id] !== requestId ||
+        !isCurrentNovelRequest(room.id, requestId)
+      )
+        return;
       const lastSourceMessage = sourceMessages.at(-1);
       appendNovelChapter(room.id, {
         id: `chapter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -573,24 +671,33 @@ export const SpiritStoryScreen: React.FC = () => {
         sourceThroughCreatedAt: lastSourceMessage?.createdAt || Date.now(),
         generatedAt: Date.now(),
       });
-      setNovelStreamingContent("");
+      updateRoomRuntime(room.id, { novelStreamingContent: "" });
     } catch (err) {
-      if (latestNovelRequestIdRef.current === requestId) {
-        setNovelError(
-          err instanceof Error ? err.message : "小说编排暂时没有回应。",
-        );
+      if (
+        latestNovelRequestIdByRoomIdRef.current[room.id] === requestId &&
+        isCurrentNovelRequest(room.id, requestId)
+      ) {
+        updateRoomRuntime(room.id, {
+          novelError:
+            err instanceof Error ? err.message : "小说编排暂时没有回应。",
+        });
       }
     } finally {
-      if (latestNovelRequestIdRef.current === requestId) {
-        setIsNovelGenerating(false);
+      if (
+        latestNovelRequestIdByRoomIdRef.current[room.id] === requestId &&
+        isCurrentNovelRequest(room.id, requestId)
+      ) {
+        updateRoomRuntime(room.id, { isNovelGenerating: false });
       }
     }
   };
 
   const openNovelDraft = () => {
     if (!activeRoom || activeRoom.messages.length === 0) return;
-    setNovelError("");
-    setNovelStreamingContent("");
+    updateRoomRuntime(activeRoom.id, {
+      novelError: "",
+      novelStreamingContent: "",
+    });
     setIsNovelOpen(true);
   };
 
@@ -695,7 +802,13 @@ export const SpiritStoryScreen: React.FC = () => {
                       onClick={(event) => {
                         event.stopPropagation();
                         if (window.confirm(`删除故事《${entry.title}》？`)) {
-                          invalidatePendingMetadata(entry.id);
+                          invalidateRoomRequests(entry.id);
+                          delete inputByRoomIdRef.current[entry.id];
+                          setInputByRoomId((current) => {
+                            const next = { ...current };
+                            delete next[entry.id];
+                            return next;
+                          });
                           deleteRoom(entry.id);
                         }
                       }}
@@ -1066,7 +1179,7 @@ export const SpiritStoryScreen: React.FC = () => {
                         `清空《${activeRoom.title}》的故事记忆吗？`,
                       )
                     ) {
-                      invalidatePendingMetadata(activeRoom.id);
+                      invalidateRoomRequests(activeRoom.id);
                       clearRoom(activeRoom.id);
                       delete initialPromptsByKeyRef.current[
                         `room:${activeRoom.id}:${activeRoom.scenarioId}`
@@ -1196,8 +1309,7 @@ export const SpiritStoryScreen: React.FC = () => {
                     value={input}
                     onChange={(event) => {
                       const nextInput = event.target.value;
-                      draftInputRef.current = nextInput;
-                      setInput(nextInput);
+                      setCurrentInput(nextInput);
                     }}
                     disabled={isSending || participants.length < 2}
                     rows={2}

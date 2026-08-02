@@ -23,6 +23,8 @@ interface SocialStore {
   currentRoom: SocialRoom | null;
   /** 当前正在进行的对战（用于 SocialBattleScreen 渲染） */
   activeBattle: SocialBattleState | null;
+  /** 当前浏览器正在等待的词灵回复，仅用于跨界面保留运行态 */
+  activeAiRequest: { roomCode: string; requestId: string } | null;
   /** 是否正在连接房间 */
   isConnecting: boolean;
   /** 错误信息 */
@@ -36,6 +38,8 @@ interface SocialStore {
   leaveRoom: () => void;
   /** 设置错误 */
   setError: (error: string) => void;
+  startAiRequest: (roomCode: string, requestId: string) => void;
+  finishAiRequest: (requestId: string) => void;
 
   /** 切换当前出战词灵（在 carriedSpirits 中选一个） */
   setBattleSpirit: (rosterId: string) => void;
@@ -50,7 +54,8 @@ interface SocialStore {
     hostPlayer: SocialPlayer,
     content: string,
     messageMeta?: Pick<SocialChatMessage, "id" | "timestamp">,
-  ) => void;
+    expectedRoomCode?: string,
+  ) => boolean;
   /** 发送系统消息 */
   sendSystemMessage: (content: string, excludeFromAiContext?: boolean) => void;
   /** 发送战报消息 */
@@ -227,8 +232,18 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
   return {
     currentRoom: null,
     activeBattle: null,
+    activeAiRequest: null,
     isConnecting: false,
     error: "",
+
+    startAiRequest: (roomCode, requestId) =>
+      set({ activeAiRequest: { roomCode, requestId } }),
+    finishAiRequest: (requestId) =>
+      set((state) =>
+        state.activeAiRequest?.requestId === requestId
+          ? { activeAiRequest: null }
+          : state,
+      ),
 
     createRoom: (spirits) => {
       const { playerId, nickname, avatarColor } = usePlayerStore.getState();
@@ -334,7 +349,14 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
           roomCode: room.roomCode,
         });
       }
-      set({ currentRoom: null, activeBattle: null });
+      set((state) => ({
+        currentRoom: null,
+        activeBattle: null,
+        activeAiRequest:
+          state.activeAiRequest?.roomCode === room.roomCode
+            ? null
+            : state.activeAiRequest,
+      }));
     },
 
     setError: (error) => set({ error }),
@@ -429,9 +451,17 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
       set({ currentRoom: updated });
     },
 
-    sendSpiritMessage: (spirit, hostPlayer, content, messageMeta) => {
+    sendSpiritMessage: (
+      spirit,
+      hostPlayer,
+      content,
+      messageMeta,
+      expectedRoomCode,
+    ) => {
       const room = get().currentRoom;
-      if (!room) return;
+      if (!room || (expectedRoomCode && room.roomCode !== expectedRoomCode)) {
+        return false;
+      }
       const sameNameCount = room.players.reduce((count, player) => {
         const carried = player.carriedSpirits?.length
           ? player.carriedSpirits
@@ -469,6 +499,7 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
         message,
       });
       set({ currentRoom: updated });
+      return true;
     },
 
     sendSystemMessage: (content, excludeFromAiContext = false) => {

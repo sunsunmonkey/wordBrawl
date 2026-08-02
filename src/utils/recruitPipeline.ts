@@ -1,8 +1,4 @@
-import {
-  generateCharacter,
-  generateCharacterImage,
-  type AIConfig,
-} from "./ai";
+import { generateCharacter, generateCharacterImage, type AIConfig } from "./ai";
 import { cacheImageUrlAsDataUrl } from "./localImage";
 import { startEvolutionAssetPrefetch } from "./evolutionPrefetch";
 import { buildLocalEvolution } from "./towerProgress";
@@ -42,11 +38,8 @@ export const runBackgroundRecruit = (
   cfg: AIConfig,
 ) => {
   void (async () => {
-    const {
-      completePendingRecruit,
-      failPendingRecruit,
-      updateRecruitStage,
-    } = useRosterStore.getState();
+    const { completePendingRecruit, failPendingRecruit, updateRecruitStage } =
+      useRosterStore.getState();
     const stopTextProgress = startFakeTextProgress(rosterId);
     try {
       const charData = await generateCharacter(cfg, sourceDescription);

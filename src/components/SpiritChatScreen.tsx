@@ -396,28 +396,6 @@ export const SpiritChatScreen: React.FC = () => {
     });
   };
 
-  useEffect(() => {
-    const activeRosterId = selected?.rosterId;
-    const abortControllers = abortControllerByRosterIdRef.current;
-    const latestRequestIds = latestRequestIdByRosterIdRef.current;
-    const activeRequests = activeRequestRosterIdsRef.current;
-    const animationHandles = rafHandleByRosterIdRef.current;
-    const pendingChunks = pendingChunkByRosterIdRef.current;
-    return () => {
-      if (!activeRosterId) return;
-      abortControllers[activeRosterId]?.abort();
-      delete abortControllers[activeRosterId];
-      delete latestRequestIds[activeRosterId];
-      activeRequests.delete(activeRosterId);
-      const handle = animationHandles[activeRosterId];
-      if (handle !== undefined) {
-        cancelAnimationFrame(handle);
-        delete animationHandles[activeRosterId];
-      }
-      delete pendingChunks[activeRosterId];
-    };
-  }, [selected?.rosterId]);
-
   const scheduleStreamingChunk = (
     rosterId: string,
     requestId: string,
@@ -922,9 +900,6 @@ export const SpiritChatScreen: React.FC = () => {
                     key={char.rosterId}
                     type="button"
                     onClick={() => {
-                      if (char.rosterId !== selected.rosterId) {
-                        cancelSpiritRequest(selected.rosterId);
-                      }
                       stickToBottomRef.current = true;
                       setOpenRosterId(char.rosterId);
                     }}
@@ -1010,6 +985,8 @@ export const SpiritChatScreen: React.FC = () => {
                 type="button"
                 onClick={() => {
                   if (window.confirm(`清空 ${selected.name} 的聊天记忆吗？`)) {
+                    // 重置意味着丢弃当前对话，明确取消避免旧响应写回空记录。
+                    cancelSpiritRequest(selected.rosterId);
                     clearChat(selected.rosterId);
                     delete initialSuggestedRepliesByRosterIdRef.current[
                       selected.rosterId

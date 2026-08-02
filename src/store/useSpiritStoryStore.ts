@@ -228,6 +228,29 @@ export interface SpiritStoryNovelChapter {
   generatedAt: number;
 }
 
+export interface SpiritStoryStreamingState {
+  roomId: string;
+  requestId: string;
+  startedAt: number;
+  turns: Array<{
+    role: SpiritStoryRole;
+    content: string;
+    speakerRosterId?: string;
+    speakerName?: string;
+  }>;
+}
+
+export interface SpiritStoryRoomRuntime {
+  error: string;
+  isSending: boolean;
+  storyRequestId?: string;
+  streamingStory: SpiritStoryStreamingState | null;
+  isNovelGenerating: boolean;
+  novelRequestId?: string;
+  novelStreamingContent: string;
+  novelError: string;
+}
+
 export interface SpiritStoryRoom {
   id: string;
   title: string;
@@ -263,7 +286,13 @@ export interface SpiritStoryComposeInput {
 interface SpiritStoryStore {
   rooms: Record<string, SpiritStoryRoom>;
   activeRoomId: string | null;
+  runtimeByRoomId: Record<string, SpiritStoryRoomRuntime>;
   setActiveRoomId: (roomId: string | null) => void;
+  updateRoomRuntime: (
+    roomId: string,
+    updates: Partial<SpiritStoryRoomRuntime>,
+  ) => void;
+  clearRoomRuntime: (roomId: string) => void;
   createRoom: (input: SpiritStoryComposeInput) => SpiritStoryRoom;
   updateRoomScenario: (
     roomId: string,
@@ -305,6 +334,14 @@ interface SpiritStoryStore {
 const MAX_MESSAGES = 80;
 const MAX_PARTICIPANTS = 10;
 const MAX_GOALS = 5;
+const DEFAULT_ROOM_RUNTIME: SpiritStoryRoomRuntime = {
+  error: "",
+  isSending: false,
+  streamingStory: null,
+  isNovelGenerating: false,
+  novelStreamingContent: "",
+  novelError: "",
+};
 const STANCE_IDS = new Set<SpiritStoryStance>(
   SPIRIT_STORY_STANCES.map((entry) => entry.id),
 );
@@ -660,7 +697,26 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
     (set) => ({
       rooms: {},
       activeRoomId: null,
+      runtimeByRoomId: {},
       setActiveRoomId: (roomId) => set({ activeRoomId: roomId }),
+      updateRoomRuntime: (roomId, updates) =>
+        set((state) => ({
+          runtimeByRoomId: {
+            ...state.runtimeByRoomId,
+            [roomId]: {
+              ...DEFAULT_ROOM_RUNTIME,
+              ...state.runtimeByRoomId[roomId],
+              ...updates,
+            },
+          },
+        })),
+      clearRoomRuntime: (roomId) =>
+        set((state) => {
+          if (!state.runtimeByRoomId[roomId]) return state;
+          const runtimeByRoomId = { ...state.runtimeByRoomId };
+          delete runtimeByRoomId[roomId];
+          return { runtimeByRoomId };
+        }),
       createRoom: (input) => {
         const created = createDefaultRoom(input, makeNewSpiritStoryRoomId());
         set((state) => ({
@@ -902,9 +958,12 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
         set((state) => {
           if (!state.rooms[roomId]) return state;
           const nextRooms = { ...state.rooms };
+          const runtimeByRoomId = { ...state.runtimeByRoomId };
           delete nextRooms[roomId];
+          delete runtimeByRoomId[roomId];
           return {
             rooms: nextRooms,
+            runtimeByRoomId,
             activeRoomId:
               state.activeRoomId === roomId ? null : state.activeRoomId,
           };
@@ -913,6 +972,10 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
     {
       name: "word-brawl-spirit-story",
       version: 6,
+      partialize: (state) => ({
+        rooms: state.rooms,
+        activeRoomId: state.activeRoomId,
+      }),
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== "object") {
           return { rooms: {}, activeRoomId: null };

@@ -137,9 +137,12 @@ export const SocialRoomScreen: React.FC = () => {
   const { playerId, nickname } = usePlayerStore();
   const {
     currentRoom,
+    activeAiRequest,
     leaveRoom,
     sendPlayerMessage,
     sendSpiritMessage,
+    startAiRequest,
+    finishAiRequest,
     createChallenge,
     resolveChallenge,
     setBattleSpirit,
@@ -148,7 +151,6 @@ export const SocialRoomScreen: React.FC = () => {
 
   const [input, setInput] = useState("");
   const [inputCaretIndex, setInputCaretIndex] = useState(0);
-  const [isSending, setIsSending] = useState(false);
   const [error, setErrorLocal] = useState("");
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -172,6 +174,17 @@ export const SocialRoomScreen: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeRoomCodeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const roomCode = currentRoom?.roomCode ?? null;
+    activeRoomCodeRef.current = roomCode;
+    return () => {
+      if (activeRoomCodeRef.current === roomCode) {
+        activeRoomCodeRef.current = null;
+      }
+    };
+  }, [currentRoom?.roomCode]);
 
   // 同步错误
   const showError = (msg: string) => {
@@ -388,6 +401,7 @@ export const SocialRoomScreen: React.FC = () => {
   const isCustomReady = apiMode === "custom" && apiKey && baseUrl && model;
   const isFreeMode = apiMode === "free";
   const isAiReady = isFreeMode || isCustomReady;
+  const isSending = activeAiRequest?.roomCode === currentRoom.roomCode;
   const resolveMessageIdentity = (
     message: SocialChatMessage,
   ): SocialChatMessage => {
@@ -410,6 +424,10 @@ export const SocialRoomScreen: React.FC = () => {
     const text = rawText.trim();
     if (!text || isSending) return;
     if (!currentRoom) return;
+    const requestRoomCode = currentRoom.roomCode;
+    const isRequestRoomActive = () =>
+      activeRoomCodeRef.current === requestRoomCode &&
+      useSocialStore.getState().currentRoom?.roomCode === requestRoomCode;
 
     setErrorLocal("");
 
@@ -517,7 +535,8 @@ export const SocialRoomScreen: React.FC = () => {
 
     if (readySpirits.length === 0) return;
 
-    setIsSending(true);
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    startAiRequest(requestRoomCode, requestId);
     const triggerText = stripAtPrefix(text);
     const cfg = { apiKey, baseUrl, model, apiMode };
     const recentMessages: SocialChatMessage[] = [
@@ -586,6 +605,7 @@ export const SocialRoomScreen: React.FC = () => {
             },
             {
               onReplyChunk: (partial) => {
+                if (!isRequestRoomActive()) return;
                 setPendingSpiritReplies((prev) => ({
                   ...prev,
                   [targetSpirit.roomSpiritId]: partial,
@@ -608,12 +628,14 @@ export const SocialRoomScreen: React.FC = () => {
             result.hostPlayer,
             result.finalReply,
             streamingMessages[result.targetSpirit.roomSpiritId],
+            requestRoomCode,
           );
         } else {
           failedSpirits.push(result.targetSpirit.name);
         }
 
         if (targetSpirit) {
+          if (!isRequestRoomActive()) continue;
           setPendingSpiritReplies((prev) => {
             const next = { ...prev };
             delete next[targetSpirit.roomSpiritId];
@@ -629,11 +651,11 @@ export const SocialRoomScreen: React.FC = () => {
           });
         }
       }
-      if (failedSpirits.length > 0) {
+      if (isRequestRoomActive() && failedSpirits.length > 0) {
         showError(`${failedSpirits.join("、")} 暂时没有回应。`);
       }
     } finally {
-      setIsSending(false);
+      finishAiRequest(requestId);
     }
   };
 
