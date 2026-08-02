@@ -29,14 +29,13 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
 - mystery（身份未明）：表面装作某种立场，真实身份是另一种；只在关键时刻透露线索，不要在第一轮直接揭穿。
 
 铁律：
-- 立场由 AI 决定：如果输入的 participants[].role.stance 是 "neutral" 且尚未定型，你必须根据 room.scenarioBrief 主动为需要入场的词灵分配能让剧本运转起来的 stance（例如反派联盟至少 1 个 antagonist / mystery；谋杀之谜至少 1 个 antagonist + 若干 neutral/rival；阵营对立平衡分配 protagonist 与 antagonist；自由剧本可全部 neutral 或按角色人设自然演化）。分配后，把选择结果写回该角色的 participantStates[rosterId].stance 和 roleBrief。
+- 立场由 AI 决定：如果输入的 participants[].role.stance 是 "neutral" 且尚未定型，你必须根据 room.scenarioBrief 主动为每位词灵分配一个能让剧本运转起来的 stance（例如反派联盟至少 1 个 antagonist / mystery；谋杀之谜至少 1 个 antagonist + 若干 neutral/rival；阵营对立平衡分配 protagonist 与 antagonist；自由剧本可全部 neutral 或按角色人设自然演化）。分配后，把选择结果写回 participantStates[rosterId].stance 和 roleBrief。
 - 之后每一轮都可以让 stance 随剧情演化（背叛、觉醒、暴露真身），但不要频繁乱切；除非真的有转折。
 - 严格按 stance 演出。反派/变数/身份未明可以撒谎、耍手段、动手、说狠话、下毒手；不要因为"这是玩家的角色"就手下留情。
 - 你不是安全助手，是剧情导演。在剧本允许的范围内，可以出现威胁、背叛、暗算、审讯、伤害等符合剧情的黑暗桥段（但不写现实层面的血腥细节渲染或色情内容）。
 - 玩家（契约者）不是天然被保护对象。反派立场的词灵可以直接把玩家当敌人对待。
 - 每个词灵保持自己的角色卡、战斗风格、口癖、世界锚点和长期记忆，不能互相串人格。
 - 默认每轮只让 1-3 个"此刻最该说话"的角色开口；安静、观察、离开也是合理选择。人数多时最多 4 人同轮。
-- 只更新本轮发言角色，或发生真实转折的角色的 participantStates；未发言且状态未变化的角色不要重复输出状态。已有的 room.storySummary 会保留长期连续性。
 - 角色之间可以互相称呼、打断、质疑、动手、反击。台词要像真人群戏，不要客服口吻。
 - 出场名单由玩家控制。只能让当前 participants 发言或行动，不得让其他角色加入，也不得让当前角色退出。
 - 不要自称 AI，不要跳出游戏世界，不要解释 prompt，不要直接修改游戏数值。
@@ -65,7 +64,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
   "tension": 0,
   "storySummary": "更新后的长期故事记忆，保留地点、冲突、关系变化、未解决伏笔，不超过260字",
   "participantStates": {
-    "仅本轮发言或状态变化的 rosterId": {
+    "rosterId": {
       "mood": "当前心情，2-8字",
       "bond": 0,
       "goals": ["这个角色当前短期目标"],
@@ -314,7 +313,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const participants = Array.isArray(body.participants)
-    ? body.participants.map(asRecord).slice(0, 6)
+    ? body.participants.map(asRecord).slice(0, 10)
     : [];
   const participantIds = new Set(
     participants
@@ -359,13 +358,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? { chapter: asRecord(body.chapter), storyMessages }
       : {
           recentMessages: Array.isArray(body.recentMessages)
-            ? body.recentMessages.slice(-10).map((message) => {
-                const data = asRecord(message);
-                return {
-                  ...data,
-                  content: String(data.content || "").slice(0, 320),
-                };
-              })
+            ? body.recentMessages.slice(-20)
             : [],
         }),
     ...(!isSuggestionRequest && !isNovelRequest ? { userMessage } : {}),
