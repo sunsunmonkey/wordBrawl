@@ -1864,7 +1864,9 @@ const StoryBubble: React.FC<{
       )}
       <div className={`max-w-[78%] ${isPlayer ? "text-right" : "text-left"}`}>
         <div
-          className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-md shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
+          className={`rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-md shadow-[0_2px_12px_rgba(0,0,0,0.35)] ${
+            isPlayer ? "inline-block max-w-full break-words text-left" : ""
+          }`}
           style={{
             borderColor: isPlayer ? "rgba(255,215,0,0.45)" : `${color}88`,
             background: isPlayer
