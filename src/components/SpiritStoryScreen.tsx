@@ -615,7 +615,7 @@ export const SpiritStoryScreen: React.FC = () => {
     void sendMessage(input);
   };
 
-  const rewriteFromMessage = (messageId: string) => {
+  const undoFromMessage = (messageId: string) => {
     if (!activeRoom || isSending) return;
     const restoredInput = rewindToCheckpoint(activeRoom.id, messageId);
     if (restoredInput === null) return;
@@ -1063,15 +1063,27 @@ export const SpiritStoryScreen: React.FC = () => {
                 <div className="mb-4 rounded-lg border border-[#B78BFF]/30 bg-[#0B0C10]/55 p-3">
                   <button
                     type="button"
+                    aria-expanded={isIdentityOpen}
                     onClick={() => setIsIdentityOpen((open) => !open)}
-                    className="flex w-full items-center justify-between text-left"
+                    className="group flex w-full cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-left transition-all hover:bg-[#B78BFF]/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#B78BFF]/70"
                   >
-                    <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.24em] text-[#B78BFF]">
+                    <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.24em] text-[#B78BFF] transition-colors group-hover:text-[#D6B7FF]">
                       <UserRound size={13} />
                       玩家叙事身份
                     </span>
-                    <span className="text-[10px] text-[#C5C6C7]">
-                      {activeRoom.playerIdentity.name}
+                    <span className="flex items-center gap-2">
+                      <span className="text-[10px] text-[#C5C6C7]">
+                        {activeRoom.playerIdentity.name}
+                      </span>
+                      <span className="text-[9px] font-bold tracking-wider text-[#B78BFF]">
+                        {isIdentityOpen ? "收起" : "编辑"}
+                      </span>
+                      <ChevronDown
+                        size={13}
+                        className={`text-[#B78BFF] transition-transform ${
+                          isIdentityOpen ? "rotate-180" : ""
+                        }`}
+                      />
                     </span>
                   </button>
                   {isIdentityOpen && (
@@ -1081,6 +1093,11 @@ export const SpiritStoryScreen: React.FC = () => {
                         onChange={(event) =>
                           setPlayerIdentity(activeRoom.id, {
                             name: event.target.value,
+                          })
+                        }
+                        onBlur={(event) =>
+                          setPlayerIdentity(activeRoom.id, {
+                            name: event.currentTarget.value.trim() || "契约者",
                           })
                         }
                         maxLength={24}
@@ -1094,6 +1111,11 @@ export const SpiritStoryScreen: React.FC = () => {
                             role: event.target.value,
                           })
                         }
+                        onBlur={(event) =>
+                          setPlayerIdentity(activeRoom.id, {
+                            role: event.currentTarget.value.trim(),
+                          })
+                        }
                         maxLength={40}
                         placeholder="身份，例如：失忆的调查官"
                         className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60 focus:border-[#B78BFF]"
@@ -1103,6 +1125,11 @@ export const SpiritStoryScreen: React.FC = () => {
                         onChange={(event) =>
                           setPlayerIdentity(activeRoom.id, {
                             description: event.target.value,
+                          })
+                        }
+                        onBlur={(event) =>
+                          setPlayerIdentity(activeRoom.id, {
+                            description: event.currentTarget.value.trim(),
                           })
                         }
                         maxLength={180}
@@ -1331,14 +1358,14 @@ export const SpiritStoryScreen: React.FC = () => {
                         allRoster={roster}
                         activeRosterIds={activeRosterIdSet}
                         themeColor={themeColor}
-                        canRewrite={
+                        canUndo={
                           !isSending &&
                           activeRoom.checkpoints.some(
                             (checkpoint) =>
                               checkpoint.playerMessageId === message.id,
                           )
                         }
-                        onRewrite={rewriteFromMessage}
+                        onUndo={undoFromMessage}
                       />
                     ))}
                     {activeStreamingStory?.turns.map((turn, index) =>
@@ -1528,6 +1555,11 @@ export const SpiritStoryScreen: React.FC = () => {
                           name: event.target.value,
                         })
                       }
+                      onBlur={(event) =>
+                        setPlayerIdentity(activeRoom.id, {
+                          name: event.currentTarget.value.trim() || "契约者",
+                        })
+                      }
                       maxLength={24}
                       placeholder="名字"
                       className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60"
@@ -1539,6 +1571,11 @@ export const SpiritStoryScreen: React.FC = () => {
                           role: event.target.value,
                         })
                       }
+                      onBlur={(event) =>
+                        setPlayerIdentity(activeRoom.id, {
+                          role: event.currentTarget.value.trim(),
+                        })
+                      }
                       maxLength={40}
                       placeholder="身份，例如：失忆的调查官"
                       className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60"
@@ -1548,6 +1585,11 @@ export const SpiritStoryScreen: React.FC = () => {
                       onChange={(event) =>
                         setPlayerIdentity(activeRoom.id, {
                           description: event.target.value,
+                        })
+                      }
+                      onBlur={(event) =>
+                        setPlayerIdentity(activeRoom.id, {
+                          description: event.currentTarget.value.trim(),
                         })
                       }
                       maxLength={180}
@@ -1956,16 +1998,16 @@ const StoryBubble: React.FC<{
   activeRosterIds: Set<string>;
   themeColor: string;
   streaming?: boolean;
-  canRewrite?: boolean;
-  onRewrite?: (messageId: string) => void;
+  canUndo?: boolean;
+  onUndo?: (messageId: string) => void;
 }> = ({
   message,
   allRoster,
   activeRosterIds,
   themeColor,
   streaming,
-  canRewrite = false,
-  onRewrite,
+  canUndo = false,
+  onUndo,
 }) => {
   const isPlayer = message.role === "player";
   const isNarrator = message.role === "narrator";
@@ -2001,13 +2043,15 @@ const StoryBubble: React.FC<{
         )}
         {message.content}
         {StreamingCursor}
-        {canRewrite && (
+        {canUndo && (
           <button
             type="button"
-            onClick={() => onRewrite?.(message.id)}
-            className="ml-3 rounded border border-[#FFD700]/35 px-1.5 py-0.5 text-[9px] not-italic text-[#FFD700] transition-colors hover:bg-[#FFD700]/10"
+            onClick={() => onUndo?.(message.id)}
+            aria-label="撤销这次输入及后续剧情"
+            title="撤销这次输入及后续剧情"
+            className="ml-2 inline-flex h-4 w-4 items-center justify-center rounded text-[#8a8d91]/55 transition-colors hover:bg-white/5 hover:text-[#FFD700] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#FFD700]/40"
           >
-            从此改写
+            <RotateCcw size={10} />
           </button>
         )}
       </motion.div>
@@ -2046,7 +2090,9 @@ const StoryBubble: React.FC<{
       )}
       <div className={`max-w-[78%] ${isPlayer ? "text-right" : "text-left"}`}>
         <div
-          className="rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-md shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
+          className={`rounded-lg border px-3 py-2 text-sm leading-relaxed backdrop-blur-md shadow-[0_2px_12px_rgba(0,0,0,0.35)] ${
+            isPlayer ? "inline-block max-w-full break-words text-left" : ""
+          }`}
           style={{
             borderColor: isPlayer ? "rgba(255,215,0,0.45)" : `${color}88`,
             background: isPlayer
@@ -2063,13 +2109,15 @@ const StoryBubble: React.FC<{
         >
           {isPlayer ? message.speakerName || "YOU" : speakerName}
           {!streaming && <> · {formatTime(message.createdAt)}</>}
-          {isPlayer && canRewrite && (
+          {isPlayer && canUndo && (
             <button
               type="button"
-              onClick={() => onRewrite?.(message.id)}
-              className="rounded border border-[#FFD700]/35 px-1 py-0.5 text-[8px] text-[#FFD700] transition-colors hover:bg-[#FFD700]/10"
+              onClick={() => onUndo?.(message.id)}
+              aria-label="撤销这次输入及后续剧情"
+              title="撤销这次输入及后续剧情"
+              className="inline-flex h-4 w-4 items-center justify-center rounded text-[#8a8d91]/55 transition-colors hover:bg-white/5 hover:text-[#FFD700] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#FFD700]/40"
             >
-              从此改写
+              <RotateCcw size={10} />
             </button>
           )}
           {!isPlayer && (

@@ -882,10 +882,20 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
               ...state.rooms,
               [roomId]: {
                 ...current,
-                playerIdentity: normalizePlayerIdentity({
-                  ...current.playerIdentity,
-                  ...identity,
-                }),
+                playerIdentity: {
+                  name:
+                    identity.name !== undefined
+                      ? String(identity.name).slice(0, 24)
+                      : current.playerIdentity.name,
+                  role:
+                    identity.role !== undefined
+                      ? String(identity.role).slice(0, 40)
+                      : current.playerIdentity.role,
+                  description:
+                    identity.description !== undefined
+                      ? String(identity.description).slice(0, 180)
+                      : current.playerIdentity.description,
+                },
                 updatedAt: Date.now(),
               },
             },
