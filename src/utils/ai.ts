@@ -572,6 +572,14 @@ interface PollinationsAttempt {
   seedKey: string;
 }
 
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
 /**
  * 通过服务端调用硅基流动的 Kolors。
  * 未配置 Key 或请求失败时返回空串，由调用方回退到 Pollinations。
@@ -591,8 +599,16 @@ const generateSiliconFlowImage = async (
     });
     if (!response.ok) return "";
 
-    const payload = (await response.json()) as { imageUrl?: unknown };
-    return typeof payload.imageUrl === "string" ? payload.imageUrl : "";
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      // 兼容尚未更新的远端接口，部署完成后正常响应为图片二进制。
+      const payload = (await response.json()) as { imageUrl?: unknown };
+      return typeof payload.imageUrl === "string" ? payload.imageUrl : "";
+    }
+
+    const image = await response.blob();
+    if (!image.type.startsWith("image/") || image.size === 0) return "";
+    return await blobToDataUrl(image);
   } catch {
     return "";
   }
@@ -697,8 +713,8 @@ export const generateEvolutionImage = async (
   if (!prompt) return "";
   const width = options?.width ?? 384;
   const height = options?.height ?? 384;
-  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 160);
-  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, fantasy anime RPG key art, no text, no UI, no screenshot`;
+  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 520);
+  const enriched = `${cleaned}, same character continuity is mandatory, preserve face or helmet, species, signature weapon and main color palette from the original design, evolution must look clearly more elaborate and powerful than the base form, detailed layered costume and premium materials, centered upper body portrait, readable silhouette, polished fantasy anime RPG key art, no text, no UI, no screenshot, no collage`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const siliconFlowImage = await generateSiliconFlowImage(

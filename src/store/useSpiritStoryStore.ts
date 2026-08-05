@@ -251,11 +251,29 @@ export interface SpiritStoryRoomRuntime {
   novelError: string;
 }
 
+export interface SpiritStoryPlayerIdentity {
+  name: string;
+  role: string;
+  description: string;
+}
+
+export interface SpiritStoryCheckpoint {
+  playerMessageId: string;
+  messageCount: number;
+  title: string;
+  scene: string;
+  tension: number;
+  storySummary: string;
+  participantRosterIds: string[];
+  participantStates: Record<string, SpiritStoryParticipantState>;
+}
+
 export interface SpiritStoryRoom {
   id: string;
   title: string;
   participantRosterIds: string[];
   playerMode: SpiritStoryPlayerMode;
+  playerIdentity: SpiritStoryPlayerIdentity;
   scenarioId: string;
   scenarioBrief: string;
   messages: SpiritStoryMessage[];
@@ -264,6 +282,7 @@ export interface SpiritStoryRoom {
   tension: number;
   participantStates: Record<string, SpiritStoryParticipantState>;
   novelChapters: SpiritStoryNovelChapter[];
+  checkpoints: SpiritStoryCheckpoint[];
   createdAt: number;
   updatedAt: number;
 }
@@ -279,6 +298,7 @@ export interface SpiritStoryComposeInput {
   scenarioId: string;
   scenarioBrief?: string;
   playerMode?: SpiritStoryPlayerMode;
+  playerIdentity?: Partial<SpiritStoryPlayerIdentity>;
   title?: string;
   roleAssignments?: SpiritStoryRoleAssignment[];
 }
@@ -300,6 +320,10 @@ interface SpiritStoryStore {
   ) => void;
   setRoomParticipants: (roomId: string, participantRosterIds: string[]) => void;
   setPlayerMode: (roomId: string, mode: SpiritStoryPlayerMode) => void;
+  setPlayerIdentity: (
+    roomId: string,
+    identity: Partial<SpiritStoryPlayerIdentity>,
+  ) => void;
   setParticipantRole: (
     roomId: string,
     rosterId: string,
@@ -327,12 +351,17 @@ interface SpiritStoryStore {
     roomId: string,
     chapter: SpiritStoryNovelChapter,
   ) => void;
+  createCheckpoint: (roomId: string, playerMessageId: string) => void;
+  rewindToCheckpoint: (
+    roomId: string,
+    playerMessageId: string,
+  ) => string | null;
   clearRoom: (roomId: string) => void;
   deleteRoom: (roomId: string) => void;
 }
 
 const MAX_MESSAGES = 80;
-const MAX_PARTICIPANTS = 10;
+const MAX_PARTICIPANTS = 6;
 const MAX_GOALS = 5;
 const DEFAULT_ROOM_RUNTIME: SpiritStoryRoomRuntime = {
   error: "",
@@ -389,6 +418,21 @@ const normalizeStringList = (value: unknown, max: number): string[] => {
     .filter(Boolean)
     .slice(0, max);
 };
+
+const normalizePlayerIdentity = (
+  value: Partial<SpiritStoryPlayerIdentity> | undefined,
+): SpiritStoryPlayerIdentity => ({
+  name:
+    String(value?.name || "契约者")
+      .trim()
+      .slice(0, 24) || "契约者",
+  role: String(value?.role || "")
+    .trim()
+    .slice(0, 40),
+  description: String(value?.description || "")
+    .trim()
+    .slice(0, 180),
+});
 
 const clampInt = (
   value: unknown,
@@ -459,6 +503,7 @@ const createDefaultRoom = (
       input.playerMode === "participant" || input.playerMode === "observer"
         ? input.playerMode
         : "observer",
+    playerIdentity: normalizePlayerIdentity(input.playerIdentity),
     scenarioId,
     scenarioBrief: String(input.scenarioBrief || preset.brief).slice(0, 300),
     messages: [],
@@ -478,6 +523,7 @@ const createDefaultRoom = (
       }),
     ),
     novelChapters: [],
+    checkpoints: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -602,6 +648,39 @@ const normalizeRoom = (
         )
         .slice(-40)
     : [];
+  const checkpoints = Array.isArray(value.checkpoints)
+    ? value.checkpoints
+        .map((checkpoint): SpiritStoryCheckpoint | null => {
+          const playerMessageId = String(checkpoint?.playerMessageId || "");
+          const messageCount = clampInt(
+            checkpoint?.messageCount,
+            0,
+            messages.length,
+            0,
+          );
+          if (!playerMessageId || messageCount < 0) return null;
+          const ids = normalizeParticipantIds(checkpoint.participantRosterIds);
+          if (ids.length < 2) return null;
+          return {
+            playerMessageId,
+            messageCount,
+            title: String(checkpoint.title || value.title || "").slice(0, 40),
+            scene: String(checkpoint.scene || value.scene || "").slice(0, 80),
+            tension: clampInt(checkpoint.tension, 0, 100, 20),
+            storySummary: String(checkpoint.storySummary || "").slice(0, 900),
+            participantRosterIds: ids,
+            participantStates: normalizeParticipantMap(
+              ids,
+              participantStates,
+              checkpoint.participantStates,
+            ),
+          };
+        })
+        .filter((checkpoint): checkpoint is SpiritStoryCheckpoint =>
+          Boolean(checkpoint),
+        )
+        .slice(-24)
+    : [];
   if (
     normalizedChapters.length === 0 &&
     legacyNovelDraft &&
@@ -636,6 +715,7 @@ const normalizeRoom = (
       value.playerMode === "observer" || value.playerMode === "participant"
         ? value.playerMode
         : "observer",
+    playerIdentity: normalizePlayerIdentity(value.playerIdentity),
     scenarioId,
     scenarioBrief: String(value.scenarioBrief || preset.brief).slice(0, 300),
     messages,
@@ -644,6 +724,7 @@ const normalizeRoom = (
     tension: clampInt(value.tension, 0, 100, preset.suggestedTension),
     participantStates,
     novelChapters: normalizedChapters,
+    checkpoints,
     createdAt:
       typeof value.createdAt === "number" ? value.createdAt : Date.now(),
     updatedAt:
@@ -793,6 +874,24 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
           };
         });
       },
+      setPlayerIdentity: (roomId, identity) => {
+        set((state) => {
+          const current = normalizeRoom(roomId, state.rooms[roomId]);
+          return {
+            rooms: {
+              ...state.rooms,
+              [roomId]: {
+                ...current,
+                playerIdentity: normalizePlayerIdentity({
+                  ...current.playerIdentity,
+                  ...identity,
+                }),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
       setParticipantRole: (roomId, rosterId, updates) => {
         set((state) => {
           const current = normalizeRoom(roomId, state.rooms[roomId]);
@@ -930,6 +1029,80 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
             },
           };
         }),
+      createCheckpoint: (roomId, playerMessageId) =>
+        set((state) => {
+          const current = normalizeRoom(roomId, state.rooms[roomId]);
+          const checkpoint: SpiritStoryCheckpoint = {
+            playerMessageId,
+            messageCount: current.messages.length,
+            title: current.title,
+            scene: current.scene,
+            tension: current.tension,
+            storySummary: current.storySummary,
+            participantRosterIds: [...current.participantRosterIds],
+            participantStates: JSON.parse(
+              JSON.stringify(current.participantStates),
+            ) as Record<string, SpiritStoryParticipantState>,
+          };
+          return {
+            rooms: {
+              ...state.rooms,
+              [roomId]: {
+                ...current,
+                checkpoints: [
+                  ...current.checkpoints.filter(
+                    (entry) => entry.playerMessageId !== playerMessageId,
+                  ),
+                  checkpoint,
+                ].slice(-24),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        }),
+      rewindToCheckpoint: (roomId, playerMessageId) => {
+        let restoredInput: string | null = null;
+        set((state) => {
+          const current = normalizeRoom(roomId, state.rooms[roomId]);
+          const checkpoint = current.checkpoints.find(
+            (entry) => entry.playerMessageId === playerMessageId,
+          );
+          const playerMessage = current.messages.find(
+            (message) =>
+              message.id === playerMessageId && message.role === "player",
+          );
+          if (!checkpoint || !playerMessage) return state;
+          restoredInput = playerMessage.content;
+          const messages = current.messages.slice(0, checkpoint.messageCount);
+          const lastMessage = messages.at(-1);
+          return {
+            rooms: {
+              ...state.rooms,
+              [roomId]: {
+                ...current,
+                title: checkpoint.title,
+                scene: checkpoint.scene,
+                tension: checkpoint.tension,
+                storySummary: checkpoint.storySummary,
+                participantRosterIds: checkpoint.participantRosterIds,
+                participantStates: checkpoint.participantStates,
+                messages,
+                novelChapters: current.novelChapters.filter(
+                  (chapter) =>
+                    chapter.sourceMessageCount <= checkpoint.messageCount &&
+                    (!lastMessage ||
+                      chapter.sourceThroughCreatedAt <= lastMessage.createdAt),
+                ),
+                checkpoints: current.checkpoints.filter(
+                  (entry) => entry.messageCount < checkpoint.messageCount,
+                ),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+        return restoredInput;
+      },
       clearRoom: (roomId) =>
         set((state) => {
           const current = normalizeRoom(roomId, state.rooms[roomId]);
@@ -939,6 +1112,7 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
               scenarioId: current.scenarioId,
               scenarioBrief: current.scenarioBrief,
               playerMode: current.playerMode,
+              playerIdentity: current.playerIdentity,
               title: current.title,
               roleAssignments: current.participantRosterIds.map((rosterId) => ({
                 rosterId,
@@ -971,7 +1145,7 @@ export const useSpiritStoryStore = create<SpiritStoryStore>()(
     }),
     {
       name: "word-brawl-spirit-story",
-      version: 6,
+      version: 7,
       partialize: (state) => ({
         rooms: state.rooms,
         activeRoomId: state.activeRoomId,

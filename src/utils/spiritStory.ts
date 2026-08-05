@@ -297,6 +297,7 @@ const SYSTEM_PROMPT = `你是《词灵世界》的多人剧本主持人，参考
 
 契约者参与模式：
 - payload.room.playerMode 为 "participant"：玩家/契约者在故事中真实存在，userMessage 可以被理解为契约者的台词、行动、命令；词灵可以直接回应"你"，反派可以对"你"下手。
+- participant 模式下，payload.room.playerIdentity 是玩家自定义的叙事角色卡（名字、身份、背景）。把它当作真实人物设定，优先使用其名字和身份；不可凭空补充未提供的经历或能力。
 - payload.room.playerMode 为 "observer"：玩家/契约者不在故事现场，userMessage 是导演给出的背景/事件/旁白指令。不要让任何角色对"你/契约者/玩家"说话，不要写契约者动作，不要把 userMessage 当成角色台词。
 
 必须返回合法 JSON，不能包含 markdown、注释或额外文字：
@@ -439,6 +440,7 @@ export async function requestSpiritStory(
       scene: room.scene,
       tension: room.tension,
       playerMode: room.playerMode,
+      playerIdentity: room.playerIdentity,
       storySummary: room.storySummary,
       scenarioId: room.scenarioId,
       scenarioBrief: room.scenarioBrief || scenarioPreset.brief,
@@ -531,6 +533,7 @@ export async function requestSpiritStorySuggestions(
       scene: room.scene,
       tension: room.tension,
       playerMode: room.playerMode,
+      playerIdentity: room.playerIdentity,
       storySummary: room.storySummary,
       scenarioId: room.scenarioId,
       scenarioBrief: room.scenarioBrief || scenarioPreset.brief,
@@ -602,6 +605,7 @@ export async function requestSpiritStoryNovel(
     room: {
       title: room.title,
       playerMode: room.playerMode,
+      playerIdentity: room.playerIdentity,
       storySummary: room.storySummary,
       scenarioId: room.scenarioId,
       scenarioBrief: room.scenarioBrief || scenarioPreset.brief,

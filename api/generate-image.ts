@@ -14,6 +14,7 @@ export const maxDuration = 60;
 const SILICONFLOW_IMAGE_URL =
   "https://api.siliconflow.cn/v1/images/generations";
 const MAX_PROMPT_LENGTH = 1_600;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const fetchWithTimeout = async (
   input: string,
@@ -41,6 +42,43 @@ const getImageUrl = (value: unknown): string => {
   return typeof image.url === "string" ? image.url : "";
 };
 
+const downloadGeneratedImage = async (
+  imageUrl: string,
+): Promise<{ bytes: Buffer; contentType: string }> => {
+  const response = await fetchWithTimeout(
+    imageUrl,
+    {
+      headers: { Accept: "image/webp,image/png,image/jpeg,image/*" },
+      cache: "no-store",
+    },
+    10_000,
+  );
+  if (!response.ok) {
+    throw new Error(`生成图片下载失败：HTTP ${response.status}`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > MAX_IMAGE_BYTES) {
+    throw new Error("生成图片体积超过限制");
+  }
+
+  const contentType = (response.headers.get("content-type") || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!contentType.startsWith("image/")) {
+    throw new Error("生成结果不是有效图片");
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) {
+    throw new Error(
+      bytes.length === 0 ? "生成图片内容为空" : "生成图片体积超过限制",
+    );
+  }
+  return { bytes, contentType };
+};
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(req, res);
   if (req.method === "OPTIONS") {
@@ -51,7 +89,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const body = readBody(req);
-  const prompt = String(body.prompt || "").trim().slice(0, MAX_PROMPT_LENGTH);
+  const prompt = String(body.prompt || "")
+    .trim()
+    .slice(0, MAX_PROMPT_LENGTH);
   if (!prompt) return sendJson(res, 400, { error: "缺少图片提示词" });
 
   const apiKey = process.env.SILICONFLOW_API_KEY?.trim();
@@ -88,7 +128,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             : undefined,
         }),
       },
-      55_000,
+      48_000,
     );
     if (!response.ok) {
       return sendJson(res, response.status, {
@@ -101,9 +141,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return sendJson(res, 502, { error: "硅基流动未返回图片地址" });
     }
 
+    // SiliconFlow 返回的是短期签名 URL。必须在服务端立即下载图片本体，
+    // 否则浏览器跨域缓存失败后会把过期 URL 写入本地存储。
+    const image = await downloadGeneratedImage(imageUrl);
     const nextUsage = await consumeUsage(req);
     res.setHeader("Cache-Control", "no-store");
-    return sendJson(res, 200, { imageUrl, usage: nextUsage });
+    res.setHeader("Content-Type", image.contentType);
+    res.setHeader("Content-Length", String(image.bytes.length));
+    res.setHeader("X-Usage-Remaining", String(nextUsage.remaining));
+    res.status(200);
+    res.write(image.bytes);
+    return res.end();
   } catch (error) {
     const message = error instanceof Error ? error.message : "硅基流动生图失败";
     return sendJson(res, 502, { error: message });

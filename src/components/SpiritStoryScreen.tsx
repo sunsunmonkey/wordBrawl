@@ -50,7 +50,7 @@ import {
 import { evolutionLabel, levelAscensionLabel } from "../utils/towerProgress";
 import { LOADING_STEPS } from "./loadingSteps";
 
-const MAX_STORY_PARTICIPANTS = 10;
+const MAX_STORY_PARTICIPANTS = 6;
 const COLLAPSED_ROSTER_COUNT = 8;
 const SUGGESTION_IDLE_DELAY_MS = 1800;
 const DEFAULT_CHAPTER_MESSAGE_COUNT = 16;
@@ -116,9 +116,12 @@ export const SpiritStoryScreen: React.FC = () => {
   const updateRoomScenario = useSpiritStoryStore((s) => s.updateRoomScenario);
   const setRoomParticipants = useSpiritStoryStore((s) => s.setRoomParticipants);
   const setPlayerMode = useSpiritStoryStore((s) => s.setPlayerMode);
+  const setPlayerIdentity = useSpiritStoryStore((s) => s.setPlayerIdentity);
   const appendMessage = useSpiritStoryStore((s) => s.appendMessage);
   const applyStoryTurn = useSpiritStoryStore((s) => s.applyStoryTurn);
   const appendNovelChapter = useSpiritStoryStore((s) => s.appendNovelChapter);
+  const createCheckpoint = useSpiritStoryStore((s) => s.createCheckpoint);
+  const rewindToCheckpoint = useSpiritStoryStore((s) => s.rewindToCheckpoint);
   const clearRoom = useSpiritStoryStore((s) => s.clearRoom);
   const deleteRoom = useSpiritStoryStore((s) => s.deleteRoom);
 
@@ -157,6 +160,7 @@ export const SpiritStoryScreen: React.FC = () => {
     Record<string, string[]>
   >({});
   const [isNovelOpen, setIsNovelOpen] = useState(false);
+  const [isIdentityOpen, setIsIdentityOpen] = useState(false);
 
   // Draft state (新建故事时使用)
   const [draftIds, setDraftIds] = useState<string[]>([]);
@@ -465,10 +469,18 @@ export const SpiritStoryScreen: React.FC = () => {
     inputByRoomIdRef.current[currentRoom.id] = "";
     setInputByRoomId((current) => ({ ...current, [currentRoom.id]: "" }));
     setDraftInput("");
+    const playerMessageId = `story-player-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 9)}`;
+    createCheckpoint(currentRoom.id, playerMessageId);
     const playerMessage = appendMessage(currentRoom.id, {
+      id: playerMessageId,
       role: "player",
       content: text,
-      speakerName: currentRoom.playerMode === "observer" ? "背景" : "YOU",
+      speakerName:
+        currentRoom.playerMode === "observer"
+          ? "背景"
+          : currentRoom.playerIdentity.name || "契约者",
     });
     const latestRoom =
       useSpiritStoryStore.getState().rooms[currentRoom.id] ?? currentRoom;
@@ -601,6 +613,19 @@ export const SpiritStoryScreen: React.FC = () => {
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     void sendMessage(input);
+  };
+
+  const rewriteFromMessage = (messageId: string) => {
+    if (!activeRoom || isSending) return;
+    const restoredInput = rewindToCheckpoint(activeRoom.id, messageId);
+    if (restoredInput === null) return;
+    invalidateRoomRequests(activeRoom.id);
+    setCurrentInput(restoredInput);
+    setSuggestedPromptsByRoomId((current) => {
+      const next = { ...current };
+      delete next[activeRoom.id];
+      return next;
+    });
   };
 
   const continueStory = () => {
@@ -1035,6 +1060,64 @@ export const SpiritStoryScreen: React.FC = () => {
 
             {activeRoom && (
               <section className="rounded-2xl border border-[#45A29E]/35 bg-[#1F2833]/72 p-4 shadow-lg backdrop-blur-sm">
+                <div className="mb-4 rounded-lg border border-[#B78BFF]/30 bg-[#0B0C10]/55 p-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsIdentityOpen((open) => !open)}
+                    className="flex w-full items-center justify-between text-left"
+                  >
+                    <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.24em] text-[#B78BFF]">
+                      <UserRound size={13} />
+                      玩家叙事身份
+                    </span>
+                    <span className="text-[10px] text-[#C5C6C7]">
+                      {activeRoom.playerIdentity.name}
+                    </span>
+                  </button>
+                  {isIdentityOpen && (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        value={activeRoom.playerIdentity.name}
+                        onChange={(event) =>
+                          setPlayerIdentity(activeRoom.id, {
+                            name: event.target.value,
+                          })
+                        }
+                        maxLength={24}
+                        placeholder="名字，例如：林见星"
+                        className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60 focus:border-[#B78BFF]"
+                      />
+                      <input
+                        value={activeRoom.playerIdentity.role}
+                        onChange={(event) =>
+                          setPlayerIdentity(activeRoom.id, {
+                            role: event.target.value,
+                          })
+                        }
+                        maxLength={40}
+                        placeholder="身份，例如：失忆的调查官"
+                        className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60 focus:border-[#B78BFF]"
+                      />
+                      <textarea
+                        value={activeRoom.playerIdentity.description}
+                        onChange={(event) =>
+                          setPlayerIdentity(activeRoom.id, {
+                            description: event.target.value,
+                          })
+                        }
+                        maxLength={180}
+                        rows={3}
+                        placeholder="角色背景、动机或说话风格。这些会成为群像剧情的上下文。"
+                        className="w-full resize-none rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] leading-relaxed text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60 focus:border-[#B78BFF]"
+                      />
+                    </div>
+                  )}
+                  {!isIdentityOpen && activeRoom.playerIdentity.role && (
+                    <div className="mt-1.5 text-[10px] text-[#8a8d91]">
+                      {activeRoom.playerIdentity.role}
+                    </div>
+                  )}
+                </div>
                 <div className="mb-4 flex items-center justify-between text-[10px] tracking-[0.24em] text-[#8a8d91]">
                   <div className="flex items-center gap-1.5">
                     <Zap size={12} style={{ color: themeColor }} />
@@ -1070,6 +1153,15 @@ export const SpiritStoryScreen: React.FC = () => {
                     activeRoom.storySummary ? [activeRoom.storySummary] : []
                   }
                 />
+                <InfoBlock
+                  icon={<MessageSquareText size={14} />}
+                  title="最近推进"
+                  color="#B78BFF"
+                  empty="第一幕尚未开始。"
+                  items={activeRoom.messages
+                    .slice(-3)
+                    .map((message) => message.content)}
+                />
                 <div className="mt-4 space-y-2">
                   {participants.map((char) => {
                     const state = activeRoom.participantStates[char.rosterId];
@@ -1086,6 +1178,19 @@ export const SpiritStoryScreen: React.FC = () => {
                             {state?.mood || "入场"}
                           </div>
                         </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 text-[9px]">
+                          <span className="rounded bg-[#66FCF1]/10 px-1.5 py-0.5 text-[#66FCF1]">
+                            {state?.stance || "neutral"}
+                          </span>
+                          <span className="rounded bg-[#FFD700]/10 px-1.5 py-0.5 text-[#FFD700]">
+                            羁绊 {state?.bond ?? 0}
+                          </span>
+                        </div>
+                        {state?.goals?.[0] && (
+                          <div className="mt-1 text-[10px] text-[#C5C6C7]">
+                            目标 · {state.goals[0]}
+                          </div>
+                        )}
                         {state?.memory && (
                           <div className="mt-1 text-[10px] leading-relaxed text-[#8a8d91]">
                             {state.memory}
@@ -1226,6 +1331,14 @@ export const SpiritStoryScreen: React.FC = () => {
                         allRoster={roster}
                         activeRosterIds={activeRosterIdSet}
                         themeColor={themeColor}
+                        canRewrite={
+                          !isSending &&
+                          activeRoom.checkpoints.some(
+                            (checkpoint) =>
+                              checkpoint.playerMessageId === message.id,
+                          )
+                        }
+                        onRewrite={rewriteFromMessage}
                       />
                     ))}
                     {activeStreamingStory?.turns.map((turn, index) =>
@@ -1386,6 +1499,15 @@ export const SpiritStoryScreen: React.FC = () => {
                   </div>
                   <button
                     type="button"
+                    onClick={() => setIsIdentityOpen((open) => !open)}
+                    disabled={!activeRoom}
+                    className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#B78BFF]/45 bg-[#B78BFF]/10 px-3 text-[10px] font-black tracking-wider text-[#D6B7FF] transition-colors hover:bg-[#B78BFF]/20 disabled:opacity-40 xl:hidden"
+                  >
+                    <UserRound size={12} />
+                    角色设定
+                  </button>
+                  <button
+                    type="button"
                     onClick={continueStory}
                     disabled={isSending || !isReady || participants.length < 2}
                     className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#FFD700]/55 bg-[#FFD700]/10 px-4 text-[10px] font-black tracking-wider text-[#FFD700] transition-all hover:bg-[#FFD700] hover:text-[#0B0C10] disabled:opacity-40 disabled:hover:bg-[#FFD700]/10 disabled:hover:text-[#FFD700]"
@@ -1394,6 +1516,47 @@ export const SpiritStoryScreen: React.FC = () => {
                     继续故事
                   </button>
                 </div>
+                {activeRoom && isIdentityOpen && (
+                  <div className="space-y-2 rounded-lg border border-[#B78BFF]/30 bg-[#B78BFF]/5 p-3 xl:hidden">
+                    <div className="text-[10px] font-black tracking-[0.18em] text-[#D6B7FF]">
+                      玩家叙事身份
+                    </div>
+                    <input
+                      value={activeRoom.playerIdentity.name}
+                      onChange={(event) =>
+                        setPlayerIdentity(activeRoom.id, {
+                          name: event.target.value,
+                        })
+                      }
+                      maxLength={24}
+                      placeholder="名字"
+                      className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60"
+                    />
+                    <input
+                      value={activeRoom.playerIdentity.role}
+                      onChange={(event) =>
+                        setPlayerIdentity(activeRoom.id, {
+                          role: event.target.value,
+                        })
+                      }
+                      maxLength={40}
+                      placeholder="身份，例如：失忆的调查官"
+                      className="w-full rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60"
+                    />
+                    <textarea
+                      value={activeRoom.playerIdentity.description}
+                      onChange={(event) =>
+                        setPlayerIdentity(activeRoom.id, {
+                          description: event.target.value,
+                        })
+                      }
+                      maxLength={180}
+                      rows={2}
+                      placeholder="背景、动机或说话风格"
+                      className="w-full resize-none rounded border border-[#B78BFF]/25 bg-black/35 px-2.5 py-1.5 text-[11px] text-[#C5C6C7] outline-none placeholder:text-[#8a8d91]/60"
+                    />
+                  </div>
+                )}
               </form>
             </div>
           </main>
@@ -1793,7 +1956,17 @@ const StoryBubble: React.FC<{
   activeRosterIds: Set<string>;
   themeColor: string;
   streaming?: boolean;
-}> = ({ message, allRoster, activeRosterIds, themeColor, streaming }) => {
+  canRewrite?: boolean;
+  onRewrite?: (messageId: string) => void;
+}> = ({
+  message,
+  allRoster,
+  activeRosterIds,
+  themeColor,
+  streaming,
+  canRewrite = false,
+  onRewrite,
+}) => {
   const isPlayer = message.role === "player";
   const isNarrator = message.role === "narrator";
   const isBackground = isPlayer && message.speakerName === "背景";
@@ -1828,6 +2001,15 @@ const StoryBubble: React.FC<{
         )}
         {message.content}
         {StreamingCursor}
+        {canRewrite && (
+          <button
+            type="button"
+            onClick={() => onRewrite?.(message.id)}
+            className="ml-3 rounded border border-[#FFD700]/35 px-1.5 py-0.5 text-[9px] not-italic text-[#FFD700] transition-colors hover:bg-[#FFD700]/10"
+          >
+            从此改写
+          </button>
+        )}
       </motion.div>
     );
   }
@@ -1879,8 +2061,17 @@ const StoryBubble: React.FC<{
         <div
           className={`mt-1 flex items-center gap-2 text-[9px] tracking-widest text-[#8a8d91] ${isPlayer ? "justify-end" : "justify-start"}`}
         >
-          {isPlayer ? "YOU" : speakerName}
+          {isPlayer ? message.speakerName || "YOU" : speakerName}
           {!streaming && <> · {formatTime(message.createdAt)}</>}
+          {isPlayer && canRewrite && (
+            <button
+              type="button"
+              onClick={() => onRewrite?.(message.id)}
+              className="rounded border border-[#FFD700]/35 px-1 py-0.5 text-[8px] text-[#FFD700] transition-colors hover:bg-[#FFD700]/10"
+            >
+              从此改写
+            </button>
+          )}
           {!isPlayer && (
             <span
               className={`flex items-center gap-1 rounded px-1 py-0.5 border ${

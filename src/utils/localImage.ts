@@ -2,6 +2,21 @@ import { isPollinationsUrl } from "./pollinationsQueue";
 
 const DEFAULT_MAX_IMAGE_SIZE = 256;
 
+export const isTemporarySiliconFlowImageUrl = (
+  url?: string | null,
+): boolean => {
+  if (!url || url.startsWith("data:")) return false;
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname.endsWith("siliconflow.cn") &&
+      parsed.pathname.includes("/temporary/")
+    );
+  } catch {
+    return false;
+  }
+};
+
 const blobToDataUrl = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -62,7 +77,7 @@ export const cacheImageUrlAsDataUrl = async (
   url?: string,
   options?: { maxSize?: number },
 ): Promise<string | undefined> => {
-  if (!url || url.startsWith("data:")) return url;
+  if (!url) return url;
 
   // Pollinations 会拦截浏览器 fetch 并要求 Turnstile token；图片标签直连可以正常加载。
   // 因此这里保留远程 URL，避免一次必失败的缓存请求拖慢预览。

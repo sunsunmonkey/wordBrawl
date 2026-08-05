@@ -17,13 +17,18 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
   className = "w-full h-full",
   iconSize = 28,
 }) => {
-  if (imageUrl) {
+  const [failedImageUrl, setFailedImageUrl] = React.useState<string | null>(
+    null,
+  );
+
+  if (imageUrl && failedImageUrl !== imageUrl) {
     return (
       <img
         src={imageUrl}
         alt={name}
         className={`${className} object-cover`}
         loading="lazy"
+        onError={() => setFailedImageUrl(imageUrl)}
       />
     );
   }
