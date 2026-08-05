@@ -217,7 +217,7 @@ const cacheGeneratedImage = async (
   const remote = await buildUrl();
   if (!remote) return undefined;
   const cached = await cacheImageUrlAsDataUrl(remote, { maxSize });
-  return cached || remote;
+  return cached;
 };
 
 /**

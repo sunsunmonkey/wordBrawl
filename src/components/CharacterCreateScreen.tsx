@@ -183,9 +183,13 @@ export const CharacterCreateScreen: React.FC = () => {
         ),
       );
 
-      charData.imageUrl = avatar.ready
+      const cachedAvatar = avatar.ready
         ? await cacheImageUrlAsDataUrl(avatar.url, { maxSize: 512 })
-        : avatar.url;
+        : undefined;
+      if (!cachedAvatar) {
+        throw new Error("头像保存失败，请稍后重试。");
+      }
+      charData.imageUrl = cachedAvatar;
       charData.sourceDescription = sourceDescription;
 
       if (isPlayer1) {

@@ -55,9 +55,13 @@ export const runBackgroundRecruit = (
           1,
         ),
       );
-      charData.imageUrl =
-        (await cacheImageUrlAsDataUrl(avatarUrl, { maxSize: 512 })) ||
-        avatarUrl;
+      const cachedAvatar = await cacheImageUrlAsDataUrl(avatarUrl, {
+        maxSize: 512,
+      });
+      if (!cachedAvatar) {
+        throw new Error("头像保存失败，请稍后重试。");
+      }
+      charData.imageUrl = cachedAvatar;
       charData.sourceDescription = sourceDescription;
 
       const recruited = completePendingRecruit(

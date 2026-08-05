@@ -15,6 +15,15 @@ const SILICONFLOW_IMAGE_URL =
   "https://api.siliconflow.cn/v1/images/generations";
 const MAX_PROMPT_LENGTH = 1_600;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const ALLOWED_POLLINATIONS_PARAMS = new Set([
+  "width",
+  "height",
+  "seed",
+  "nologo",
+  "model",
+]);
+const ALLOWED_POLLINATIONS_MODELS = new Set(["flux-anime"]);
+const ALLOWED_POLLINATIONS_SIZES = new Set(["384x384", "512x512", "640x360"]);
 
 const fetchWithTimeout = async (
   input: string,
@@ -74,45 +83,121 @@ const detectImageContentType = (bytes: Buffer): string | null => {
 
 const downloadGeneratedImage = async (
   imageUrl: string,
+  timeoutMs = 10_000,
 ): Promise<{ bytes: Buffer; contentType: string }> => {
-  const response = await fetchWithTimeout(
-    imageUrl,
-    {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(imageUrl, {
       headers: { Accept: "image/webp,image/png,image/jpeg,image/*" },
       cache: "no-store",
-    },
-    10_000,
-  );
-  if (!response.ok) {
-    throw new Error(`生成图片下载失败：HTTP ${response.status}`);
-  }
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`生成图片下载失败：HTTP ${response.status}`);
+    }
 
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > MAX_IMAGE_BYTES) {
-    throw new Error("生成图片体积超过限制");
-  }
+    const contentLength = Number(response.headers.get("content-length") || 0);
+    if (contentLength > MAX_IMAGE_BYTES) {
+      throw new Error("生成图片体积超过限制");
+    }
 
-  const contentType = (response.headers.get("content-type") || "")
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
+    if (!response.body) {
+      throw new Error("生成图片内容为空");
+    }
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_IMAGE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("生成图片体积超过限制");
+      }
+      chunks.push(Buffer.from(value));
+    }
 
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) {
-    throw new Error(
-      bytes.length === 0 ? "生成图片内容为空" : "生成图片体积超过限制",
-    );
+    if (totalBytes === 0) {
+      throw new Error("生成图片内容为空");
+    }
+    const bytes = Buffer.concat(chunks, totalBytes);
+    const detectedContentType = detectImageContentType(bytes);
+    if (!detectedContentType) {
+      throw new Error("生成结果不是有效图片");
+    }
+    return {
+      bytes,
+      contentType: detectedContentType,
+    };
+  } finally {
+    clearTimeout(timeout);
   }
-  const detectedContentType = detectImageContentType(bytes);
-  if (!detectedContentType) {
-    throw new Error("生成结果不是有效图片");
+};
+
+const getAllowedPollinationsUrl = (value: unknown): string | null => {
+  try {
+    const url = new URL(String(value || ""));
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "image.pollinations.ai" ||
+      !url.pathname.startsWith("/prompt/") ||
+      url.pathname.length <= "/prompt/".length ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.pathname.length > 4_000
+    ) {
+      return null;
+    }
+    if (
+      [...url.searchParams.keys()].some(
+        (key) =>
+          !ALLOWED_POLLINATIONS_PARAMS.has(key) ||
+          url.searchParams.getAll(key).length !== 1,
+      )
+    ) {
+      return null;
+    }
+
+    const width = Number(url.searchParams.get("width"));
+    const height = Number(url.searchParams.get("height"));
+    const seed = Number(url.searchParams.get("seed"));
+    const model = url.searchParams.get("model");
+    if (
+      !Number.isInteger(width) ||
+      width < 96 ||
+      width > 1024 ||
+      !Number.isInteger(height) ||
+      height < 96 ||
+      height > 1024 ||
+      !Number.isInteger(seed) ||
+      seed < 0 ||
+      seed > 999_999 ||
+      url.searchParams.get("nologo") !== "true" ||
+      model === null ||
+      !ALLOWED_POLLINATIONS_MODELS.has(model) ||
+      !ALLOWED_POLLINATIONS_SIZES.has(`${width}x${height}`)
+    ) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
   }
-  return {
-    bytes,
-    contentType: contentType.startsWith("image/")
-      ? contentType
-      : detectedContentType,
-  };
+};
+
+const sendImage = (
+  res: ApiResponse,
+  image: { bytes: Buffer; contentType: string },
+): void => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", image.contentType);
+  res.setHeader("Content-Length", String(image.bytes.length));
+  res.status(200);
+  res.write(image.bytes);
+  res.end();
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -125,6 +210,36 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const body = readBody(req);
+  const sourceUrl = getAllowedPollinationsUrl(body.sourceUrl);
+  if (body.sourceUrl !== undefined) {
+    if (!sourceUrl) {
+      return sendJson(res, 400, { error: "不支持的图片来源" });
+    }
+    const usage = await getUsageStatus(req);
+    if (!usage.unlimited && usage.remaining === 0) {
+      return sendJson(res, 429, {
+        error: "今日生图试用次数已用完",
+        usage,
+      });
+    }
+    try {
+      const image = await downloadGeneratedImage(sourceUrl, 45_000);
+      const nextUsage = await consumeUsage(req);
+      res.setHeader(
+        "X-Usage-Remaining",
+        nextUsage.remaining === null
+          ? "unlimited"
+          : String(nextUsage.remaining),
+      );
+      sendImage(res, image);
+      return;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "兜底图片下载失败";
+      return sendJson(res, 502, { error: message });
+    }
+  }
+
   const prompt = String(body.prompt || "")
     .trim()
     .slice(0, MAX_PROMPT_LENGTH);
@@ -181,16 +296,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // 否则浏览器跨域缓存失败后会把过期 URL 写入本地存储。
     const image = await downloadGeneratedImage(imageUrl);
     const nextUsage = await consumeUsage(req);
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", image.contentType);
-    res.setHeader("Content-Length", String(image.bytes.length));
     res.setHeader(
       "X-Usage-Remaining",
       nextUsage.remaining === null ? "unlimited" : String(nextUsage.remaining),
     );
-    res.status(200);
-    res.write(image.bytes);
-    return res.end();
+    sendImage(res, image);
+    return;
   } catch (error) {
     const message = error instanceof Error ? error.message : "硅基流动生图失败";
     return sendJson(res, 502, { error: message });

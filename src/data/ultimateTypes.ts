@@ -27,10 +27,7 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'inferno hellfire ultimate skill, massive fire tornado, burning apocalyptic sky, explosive flames, anime key visual',
     imageUrl: '/presets/ultimates/types/fire.jpg',
-    alternateImageUrls: [
-      '/presets/ultimates/characters/preset_ultimate_烈焰女王.jpg',
-      '/presets/ultimates/characters/preset_ultimate_孙悟空.jpg',
-    ],
+    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_孙悟空.jpg'],
     themeColor: '#FF4500',
     secondaryColor: '#FFD700',
   },
@@ -41,7 +38,6 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'absolute zero ice blast ultimate skill, massive crystal ice shards explosion, frozen blue wasteland, anime key visual',
     imageUrl: '/presets/ultimates/types/ice.jpg',
-    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_冰霜巨人.jpg'],
     themeColor: '#00E5FF',
     secondaryColor: '#A0E8FF',
   },
@@ -52,10 +48,6 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'shadow void ultimate skill, thousand dark blades slashing, crimson slash marks, dark energy explosion, anime key visual',
     imageUrl: '/presets/ultimates/types/shadow.jpg',
-    alternateImageUrls: [
-      '/presets/ultimates/characters/preset_ultimate_赛博武士.jpg',
-      '/presets/ultimates/characters/preset_ultimate_暗影刺客.jpg',
-    ],
     themeColor: '#BF00FF',
     secondaryColor: '#FF003C',
   },
@@ -66,10 +58,7 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'lightning storm ultimate skill, massive thunderbolt striking, electric energy explosion, stormy sky, anime key visual',
     imageUrl: '/presets/ultimates/types/lightning.jpg',
-    alternateImageUrls: [
-      '/presets/ultimates/characters/preset_ultimate_C罗.jpg',
-      '/presets/ultimates/characters/preset_ultimate_卡卡西.jpg',
-    ],
+    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_卡卡西.jpg'],
     themeColor: '#FFFF00',
     secondaryColor: '#9D00FF',
   },
@@ -81,7 +70,6 @@ export const ULTIMATE_TYPES: UltimateType[] = [
       'cosmic ultimate skill, big bang explosion, galaxies and stars swirling, purple blue cosmic energy, anime key visual',
     imageUrl: '/presets/ultimates/types/cosmic.jpg',
     alternateImageUrls: [
-      '/presets/ultimates/characters/preset_ultimate_星辰法师.jpg',
       '/presets/ultimates/characters/preset_ultimate_唐三.jpg',
       '/presets/ultimates/characters/preset_ultimate_超梦.jpg',
     ],
@@ -95,7 +83,6 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'nature ultimate skill, giant ancient tree awakening, poisonous vines explosion, green life energy surge, anime key visual',
     imageUrl: '/presets/ultimates/types/nature.jpg',
-    alternateImageUrls: ['/presets/ultimates/characters/preset_ultimate_梅西.jpg'],
     themeColor: '#39FF14',
     secondaryColor: '#ADFF2F',
   },
@@ -106,10 +93,6 @@ export const ULTIMATE_TYPES: UltimateType[] = [
     imagePrompt:
       'mecha ultimate skill, giant robot firing all weapons, massive explosion destruction, fire smoke plasma, warzone, anime key visual',
     imageUrl: '/presets/ultimates/types/mecha.jpg',
-    alternateImageUrls: [
-      '/presets/ultimates/characters/preset_ultimate_机械暴君.jpg',
-      '/presets/ultimates/characters/preset_ultimate_钢铁侠.jpg',
-    ],
     themeColor: '#FF6B00',
     secondaryColor: '#C0C0C0',
   },

@@ -1,6 +1,13 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useGameStore } from "./store/useGameStore";
 import {
+  getRosterHydrationStatus,
+  subscribeRosterHydration,
   useRosterStore,
   type PendingRevealEntry,
 } from "./store/useRosterStore";
@@ -97,6 +104,11 @@ function RevealOverlay() {
 function App() {
   const { phase } = useGameStore();
   const setPhase = useGameStore((s) => s.setPhase);
+  const rosterHydrationStatus = useSyncExternalStore(
+    subscribeRosterHydration,
+    getRosterHydrationStatus,
+    getRosterHydrationStatus,
+  );
   const [hasOpenedSpiritChat, setHasOpenedSpiritChat] = useState(
     () => phase === "SPIRIT_CHAT",
   );
@@ -112,6 +124,29 @@ function App() {
   useEffect(() => {
     if (phase === "SPIRIT_CHAT") setHasOpenedSpiritChat(true);
   }, [phase]);
+
+  if (rosterHydrationStatus === "loading") {
+    return <div className="min-h-screen bg-[#0B0C10]" />;
+  }
+  if (rosterHydrationStatus === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0B0C10] px-6 text-[#C5C6C7]">
+        <div className="text-center">
+          <div className="text-sm font-bold text-white">角色存档加载失败</div>
+          <div className="mt-2 text-xs text-white/50">
+            未加载默认数据，以避免覆盖现有存档。
+          </div>
+          <button
+            type="button"
+            onClick={() => void useRosterStore.persist.rehydrate()}
+            className="mt-4 rounded bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/15"
+          >
+            重试加载
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0B0C10] text-[#C5C6C7] font-mono">

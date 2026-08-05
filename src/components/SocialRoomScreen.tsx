@@ -414,9 +414,19 @@ export const SocialRoomScreen: React.FC = () => {
     );
     const spirit =
       exactSpirit ?? (legacyMatches.length === 1 ? legacyMatches[0] : null);
-    return spirit && message.senderName !== spirit.displayName
-      ? { ...message, senderName: spirit.displayName }
-      : message;
+    if (!spirit) return message;
+    const senderAvatar = spirit.imageUrl;
+    if (
+      message.senderName === spirit.displayName &&
+      message.senderAvatar === senderAvatar
+    ) {
+      return message;
+    }
+    return {
+      ...message,
+      senderName: spirit.displayName,
+      senderAvatar,
+    };
   };
 
   /** 处理发消息：解析 @词灵，发送玩家消息，必要时触发词灵回复 */
@@ -1322,7 +1332,10 @@ const PlayerCard: React.FC<{
             return (
               <div key={s.rosterId} className="relative group/card">
                 <SpiritCard
-                  character={s.combatSnapshot}
+                  character={{
+                    ...s.combatSnapshot,
+                    imageUrl: s.imageUrl,
+                  }}
                   size="sm"
                   selected={isActive}
                   showStats={false}
@@ -1881,7 +1894,10 @@ const ChallengeFlipCard: React.FC<{
         {/* 正面：战斗信息 */}
         <div style={{ backfaceVisibility: "hidden" }}>
           <HeroCard
-            character={spirit.combatSnapshot}
+            character={{
+              ...spirit.combatSnapshot,
+              imageUrl: spirit.imageUrl,
+            }}
             size={size}
             showStats
             showQuote={false}
@@ -2050,7 +2066,10 @@ const SpiritDetailModal: React.FC<{
               {/* 正面：完整保留关键战斗信息，口头禅收至背面 */}
               <div style={{ backfaceVisibility: "hidden" }}>
                 <HeroCard
-                  character={spirit.combatSnapshot}
+                  character={{
+                    ...spirit.combatSnapshot,
+                    imageUrl: spirit.imageUrl,
+                  }}
                   size="lg"
                   showStats
                   showQuote={false}

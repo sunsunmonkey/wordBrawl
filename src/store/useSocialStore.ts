@@ -481,7 +481,6 @@ export const useSocialStore = create<SocialStore>()((set, get) => {
             ? `${spirit.name} · ${hostPlayer.nickname}`
             : spirit.name,
         senderColor: hostPlayer.avatarColor,
-        senderAvatar: spirit.imageUrl,
         content,
         timestamp: messageMeta?.timestamp ?? Date.now(),
         spiritRosterId: spirit.rosterId,

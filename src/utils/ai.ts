@@ -246,9 +246,7 @@ const normalizeCharacterData = (
       imagePrompt: s.imagePrompt ? String(s.imagePrompt) : undefined,
       imageUrl: isUltimate
         ? getUltimateTypeById(ultimateType)?.imageUrl
-        : s.imageUrl
-          ? String(s.imageUrl)
-          : undefined,
+        : undefined,
       ultimateType,
       healPercent: s.healPercent
         ? clampInt(s.healPercent, 1, 70, 35)

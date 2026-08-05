@@ -64,31 +64,33 @@ export const cacheImageUrlAsDataUrl = async (
 ): Promise<string | undefined> => {
   if (!url) return url;
 
-  // Pollinations 会拦截浏览器 fetch 并要求 Turnstile token；图片标签直连可以正常加载。
-  // 因此这里保留远程 URL，避免一次必失败的缓存请求拖慢预览。
-  if (isPollinationsUrl(url)) return url;
-
   const fetchBlob = async (): Promise<string | undefined> => {
-    const response = await fetch(url, {
-      headers: { Accept: "image/*,*/*;q=0.8" },
-      cache: "force-cache",
-    });
-    if (!response.ok) return url;
+    const response = isPollinationsUrl(url)
+      ? await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceUrl: url }),
+        })
+      : await fetch(url, {
+          headers: { Accept: "image/*,*/*;q=0.8" },
+          cache: "force-cache",
+        });
+    if (!response.ok) return undefined;
 
     const blob = await response.blob();
-    if (!blob.type.startsWith("image/") || blob.size === 0) return url;
+    if (!blob.type.startsWith("image/") || blob.size === 0) return undefined;
 
     const resized = await resizeImageBlob(
       blob,
       options?.maxSize ?? DEFAULT_MAX_IMAGE_SIZE,
     );
     const dataUrl = await blobToDataUrl(resized);
-    return dataUrl || url;
+    return dataUrl || undefined;
   };
 
   try {
     return await fetchBlob();
   } catch {
-    return url;
+    return undefined;
   }
 };

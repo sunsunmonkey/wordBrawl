@@ -76,6 +76,15 @@ export const usePlayerStore = create<PlayerStore>()(
 export const serializeSpirit = (
   char: import("./useRosterStore").RosterCharacter,
 ): SerializedSpirit => {
+  const combatSnapshot = JSON.parse(
+    JSON.stringify(char),
+  ) as import("./useRosterStore").RosterCharacter;
+  // 社交卡片统一使用顶层 imageUrl。战斗快照不重复携带图片和形态历史，
+  // 避免房间状态、activeSpirit 与聊天消息多次复制同一份 Data URL。
+  combatSnapshot.imageUrl = undefined;
+  combatSnapshot.formHistory = [];
+  delete combatSnapshot.pendingEvolutionReplay;
+
   const persona = char.spiritProfile;
   const signatureSkill =
     char.skills.find((skill) => skill.isUltimate || skill.type === "ultimate")
@@ -93,7 +102,7 @@ export const serializeSpirit = (
     imageUrl: char.imageUrl,
     imagePrompt: char.imagePrompt,
     sourceDescription: char.sourceDescription,
-    combatSnapshot: JSON.parse(JSON.stringify(char)) as typeof char,
+    combatSnapshot,
     persona: {
       archetype: persona?.archetype ?? "未知原型",
       temperament: persona?.temperament ?? "未知",

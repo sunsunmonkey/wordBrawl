@@ -515,8 +515,10 @@ export const ModeSelectScreen: React.FC = () => {
         cfg,
       });
       if (!remote) throw new Error("进化图生成失败，请稍后重试。");
-      const imageUrl =
-        (await cacheImageUrlAsDataUrl(remote, { maxSize: 384 })) || remote;
+      const imageUrl = await cacheImageUrlAsDataUrl(remote, { maxSize: 384 });
+      if (!imageUrl) {
+        throw new Error("进化图保存失败，请稍后重试。");
+      }
 
       updateCharacter(selectedRoster.rosterId, (current) => {
         const targetIndex = current.formHistory

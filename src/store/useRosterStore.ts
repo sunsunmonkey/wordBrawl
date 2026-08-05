@@ -1,7 +1,26 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { RARITY_CONFIGS, type CharacterData, type Skill } from "./useGameStore";
 import { presetCharacters } from "../data/presetCharacters";
+import { indexedDbStateStorage } from "../utils/indexedDbStorage";
+
+export type RosterHydrationStatus = "loading" | "ready" | "error";
+
+let rosterHydrationStatus: RosterHydrationStatus = "loading";
+const rosterHydrationListeners = new Set<() => void>();
+
+const setRosterHydrationStatus = (status: RosterHydrationStatus) => {
+  rosterHydrationStatus = status;
+  rosterHydrationListeners.forEach((listener) => listener());
+};
+
+export const getRosterHydrationStatus = (): RosterHydrationStatus =>
+  rosterHydrationStatus;
+
+export const subscribeRosterHydration = (listener: () => void) => {
+  rosterHydrationListeners.add(listener);
+  return () => rosterHydrationListeners.delete(listener);
+};
 
 /** 进化阶段：0 初始 / 1-6 为每 5 级一次的形态状态 */
 export type EvolutionStage = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -619,6 +638,13 @@ export const useRosterStore = create<RosterStore>()(
     {
       name: "word-brawl-roster",
       version: 6,
+      storage: createJSONStorage(() => indexedDbStateStorage),
+      onRehydrateStorage: () => {
+        setRosterHydrationStatus("loading");
+        return (_state, error) => {
+          setRosterHydrationStatus(error ? "error" : "ready");
+        };
+      },
       // 不持久化 reveal 队列，刷新页面后不重播动画
       partialize: (state) => ({ roster: state.roster }),
       migrate: (persistedState: unknown) => {
