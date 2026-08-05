@@ -711,8 +711,8 @@ export const generateEvolutionImage = async (
   if (!prompt) return "";
   const width = options?.width ?? 384;
   const height = options?.height ?? 384;
-  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 520);
-  const enriched = `${cleaned}, same character continuity is mandatory, preserve face or helmet, species, signature weapon and main color palette from the original design, evolution must look clearly more elaborate and powerful than the base form, detailed layered costume and premium materials, centered upper body portrait, readable silhouette, polished fantasy anime RPG key art, no text, no UI, no screenshot, no collage`;
+  const cleaned = prompt.replace(/\s+/g, " ").slice(0, 160);
+  const enriched = `${cleaned}, evolved game character portrait, same character upgraded form, centered upper body, clear silhouette, radiant aura, fantasy anime RPG key art, no text, no UI, no screenshot`;
 
   const seedSalt = options?.seedSalt ?? String(Date.now());
   const siliconFlowImage = await generateSiliconFlowImage(

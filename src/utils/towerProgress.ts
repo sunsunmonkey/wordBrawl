@@ -457,15 +457,6 @@ const EVOLUTION_SUFFIX: Record<ActiveEvolutionStage, string> = {
   6: "超凡",
 };
 
-const EVOLUTION_VISUAL_DIRECTION: Record<ActiveEvolutionStage, string> = {
-  1: "a newly awakened core, one distinctive upgraded signature accessory, richer materials",
-  2: "refined layered equipment, visible combat wear, denser energy channels",
-  3: "a redesigned silhouette, evolved weapon or focus, complex armor construction",
-  4: "a dramatic transformed mantle or armor frame, dimensional energy effects",
-  5: "regal high-tier armor, a restrained divine halo, intricate ceremonial details",
-  6: "mythic final-form design, the most elaborate silhouette, luminous but grounded materials",
-};
-
 const EVOLUTION_ULT_MULTIPLIER: Record<ActiveEvolutionStage, number> = {
   1: 5.0,
   2: 5.8,
@@ -520,13 +511,6 @@ export const buildLocalEvolution = (
 ): LocalEvolutionResult => {
   const suffix = EVOLUTION_SUFFIX[stage];
   const basePrompt = char.imagePrompt || `${char.name} cyberpunk anime warrior`;
-  const identity = [
-    char.name,
-    char.spiritProfile?.archetype,
-    char.spiritProfile?.worldAnchors?.slice(0, 2).join(", "),
-  ]
-    .filter(Boolean)
-    .join(", ");
   const lorePool = STAGE_LORE[stage];
   const lore = `${char.name}${lorePool[(char.name.length + stage) % lorePool.length]}`;
   const ultimate = char.skills.find(
@@ -538,14 +522,12 @@ export const buildLocalEvolution = (
 
   return {
     imagePrompt: [
-      `same named character: ${identity}`,
-      `preserve these original visual anchors exactly: ${basePrompt}`,
-      `${suffix} evolution form, ${EVOLUTION_VISUAL_DIRECTION[stage]}`,
-      "visibly more premium than the base form, stronger silhouette and material detail, centered upper-body character key art",
-      "do not simplify the costume, do not make the character younger or weaker, no text, no UI",
+      basePrompt,
+      `${char.name} ${suffix} evolution form`,
+      "upgraded armor, radiant aura, stronger silhouette, cyberpunk anime portrait",
     ]
       .join(", ")
-      .slice(0, 520),
+      .slice(0, 240),
     lore,
     newUltimate,
   };

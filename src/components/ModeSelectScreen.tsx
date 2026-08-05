@@ -328,17 +328,9 @@ export const ModeSelectScreen: React.FC = () => {
     isRosterCharacterEvolutionLocked(selectedRoster);
   const selectedRecruitLocked = isRosterCharacterRecruitLocked(selectedRoster);
   const selectedUnavailable = isRosterCharacterUnavailable(selectedRoster);
-  const selectedEvolutionStage =
-    selectedFallbackForm?.stage ??
-    (selectedRoster && isActiveEvolutionStage(selectedRoster.evolutionStage)
-      ? selectedRoster.evolutionStage
-      : null) ??
-    (selectedRoster?.evolutionLock &&
-    isActiveEvolutionStage(selectedRoster.evolutionLock.stage)
-      ? selectedRoster.evolutionLock.stage
-      : null);
   const canRegenerateEvolutionImage =
-    Boolean(selectedRoster) && Boolean(selectedEvolutionStage);
+    Boolean(selectedRoster) &&
+    Boolean(selectedFallbackForm || selectedRoster?.evolutionLock);
   const evolutionDebugAvailable = isEvolutionDebugAvailable();
   const activeEvolutionDebugMode =
     evolutionDebugAvailable && evolutionDebugMode;
@@ -499,7 +491,10 @@ export const ModeSelectScreen: React.FC = () => {
 
   const regenerateEvolutionImage = async () => {
     if (!selectedRoster) return;
-    const stage = selectedEvolutionStage;
+    const lockedStage = selectedRoster.evolutionLock?.stage;
+    const stage =
+      selectedFallbackForm?.stage ??
+      (lockedStage && isActiveEvolutionStage(lockedStage) ? lockedStage : null);
     if (!stage) return;
     setRegenerateError("");
     setRegeneratingRosterId(selectedRoster.rosterId);
@@ -524,7 +519,10 @@ export const ModeSelectScreen: React.FC = () => {
         const targetIndex = current.formHistory
           .map((form, index) => ({ form, index }))
           .reverse()
-          .find(({ form }) => form.stage === stage)?.index;
+          .find(
+            ({ form }) =>
+              form.stage === stage && form.imageStatus === "fallback",
+          )?.index;
         const formHistory =
           typeof targetIndex === "number"
             ? current.formHistory.map((form, index) =>
@@ -1225,14 +1223,12 @@ export const ModeSelectScreen: React.FC = () => {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <div className="text-[10px] font-black tracking-[0.28em] text-[#FFD700]">
-                            重绘进化形态
+                            进化图后台任务
                           </div>
                           <div className="mt-1 text-[11px] leading-relaxed text-[#C5C6C7]">
                             {selectedFallbackForm
                               ? `${selectedRoster.name} 当前 ${evolutionLabel(selectedFallbackForm.stage)} 使用临时形态图，可在这里重新生成真实进化图。`
-                              : selectedEvolutionLocked
-                                ? `${selectedRoster.name} 的进化更新可能已中断，可在这里重新生成真实进化图并解锁。`
-                                : `不满意当前 ${evolutionLabel(selectedEvolutionStage ?? 0)} 的视觉表现？可按新进化提示词重绘当前形态。`}
+                              : `${selectedRoster.name} 的进化更新可能已中断，可在这里重新生成真实进化图并解锁。`}
                           </div>
                         </div>
                         <button
