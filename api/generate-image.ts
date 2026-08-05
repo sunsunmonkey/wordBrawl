@@ -42,6 +42,36 @@ const getImageUrl = (value: unknown): string => {
   return typeof image.url === "string" ? image.url : "";
 };
 
+const detectImageContentType = (bytes: Buffer): string | null => {
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes.subarray(1, 4).toString("ascii") === "PNG" &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+};
+
 const downloadGeneratedImage = async (
   imageUrl: string,
 ): Promise<{ bytes: Buffer; contentType: string }> => {
@@ -66,9 +96,6 @@ const downloadGeneratedImage = async (
     .split(";")[0]
     .trim()
     .toLowerCase();
-  if (!contentType.startsWith("image/")) {
-    throw new Error("生成结果不是有效图片");
-  }
 
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) {
@@ -76,7 +103,16 @@ const downloadGeneratedImage = async (
       bytes.length === 0 ? "生成图片内容为空" : "生成图片体积超过限制",
     );
   }
-  return { bytes, contentType };
+  const detectedContentType = detectImageContentType(bytes);
+  if (!detectedContentType) {
+    throw new Error("生成结果不是有效图片");
+  }
+  return {
+    bytes,
+    contentType: contentType.startsWith("image/")
+      ? contentType
+      : detectedContentType,
+  };
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -148,7 +184,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", image.contentType);
     res.setHeader("Content-Length", String(image.bytes.length));
-    res.setHeader("X-Usage-Remaining", String(nextUsage.remaining));
+    res.setHeader(
+      "X-Usage-Remaining",
+      nextUsage.remaining === null ? "unlimited" : String(nextUsage.remaining),
+    );
     res.status(200);
     res.write(image.bytes);
     return res.end();
