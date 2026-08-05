@@ -2,21 +2,6 @@ import { isPollinationsUrl } from "./pollinationsQueue";
 
 const DEFAULT_MAX_IMAGE_SIZE = 256;
 
-export const isTemporarySiliconFlowImageUrl = (
-  url?: string | null,
-): boolean => {
-  if (!url || url.startsWith("data:")) return false;
-  try {
-    const parsed = new URL(url);
-    return (
-      parsed.hostname.endsWith("siliconflow.cn") &&
-      parsed.pathname.includes("/temporary/")
-    );
-  } catch {
-    return false;
-  }
-};
-
 const blobToDataUrl = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

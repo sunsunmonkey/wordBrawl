@@ -36,15 +36,8 @@ import {
   xpProgress,
 } from "../utils/towerProgress";
 import { BackButton } from "./BackButton";
-import {
-  generateCharacterImage,
-  generateEvolutionImage,
-  type AIConfig,
-} from "../utils/ai";
-import {
-  cacheImageUrlAsDataUrl,
-  isTemporarySiliconFlowImageUrl,
-} from "../utils/localImage";
+import { generateEvolutionImage, type AIConfig } from "../utils/ai";
+import { cacheImageUrlAsDataUrl } from "../utils/localImage";
 import { getScaledTowerBoss } from "../data/towerBosses";
 import type { BattleSummary } from "../utils/towerAnalysis";
 import { runBackgroundRecruit } from "../utils/recruitPipeline";
@@ -325,12 +318,6 @@ export const ModeSelectScreen: React.FC = () => {
     string | null
   >(null);
   const [regenerateError, setRegenerateError] = useState("");
-  const [repairingLegacyImages, setRepairingLegacyImages] = useState(false);
-  const [legacyRepairProgress, setLegacyRepairProgress] = useState({
-    completed: 0,
-    total: 0,
-  });
-  const [legacyRepairError, setLegacyRepairError] = useState("");
   const previewRoster = previewRosterId
     ? (roster.find((char) => char.rosterId === previewRosterId) ?? null)
     : null;
@@ -361,9 +348,6 @@ export const ModeSelectScreen: React.FC = () => {
     model,
     apiMode,
   };
-  const legacyImageCount = roster.filter((char) =>
-    isTemporarySiliconFlowImageUrl(char.imageUrl),
-  ).length;
 
   useEffect(() => {
     if (
@@ -511,101 +495,6 @@ export const ModeSelectScreen: React.FC = () => {
 
   const goRoster = () => {
     setPhase("ROSTER_VIEW");
-  };
-
-  const repairLegacyImages = async () => {
-    const targets = roster.filter((char) =>
-      isTemporarySiliconFlowImageUrl(char.imageUrl),
-    );
-    if (targets.length === 0 || repairingLegacyImages) return;
-
-    setRepairingLegacyImages(true);
-    setLegacyRepairError("");
-    setLegacyRepairProgress({ completed: 0, total: targets.length });
-    const failedNames: string[] = [];
-
-    for (let index = 0; index < targets.length; index++) {
-      const target = targets[index];
-      const stage = isActiveEvolutionStage(target.evolutionStage)
-        ? target.evolutionStage
-        : null;
-      const currentForm = stage
-        ? [...target.formHistory].reverse().find((form) => form.stage === stage)
-        : null;
-      const prompt =
-        currentForm?.imagePrompt ||
-        target.imagePrompt ||
-        target.sourceDescription ||
-        target.name;
-
-      try {
-        const remote = stage
-          ? await generateEvolutionImage(prompt, {
-              seedSalt: `${target.rosterId}:${stage}:legacy:${Date.now()}`,
-              cfg,
-            })
-          : await generateCharacterImage(
-              cfg,
-              target.sourceDescription || target.name,
-              prompt,
-              1,
-            );
-        if (!remote) throw new Error("图片生成失败");
-
-        const imageUrl =
-          (await cacheImageUrlAsDataUrl(remote, {
-            maxSize: stage ? 384 : 512,
-          })) || remote;
-
-        updateCharacter(target.rosterId, (current) => {
-          if (!isTemporarySiliconFlowImageUrl(current.imageUrl)) return current;
-          const expiredUrl = current.imageUrl;
-          return {
-            ...current,
-            imageUrl,
-            formHistory: current.formHistory.map((form) =>
-              form.imageUrl === expiredUrl ||
-              (form.stage === current.evolutionStage &&
-                isTemporarySiliconFlowImageUrl(form.imageUrl))
-                ? {
-                    ...form,
-                    imageUrl,
-                    imageStatus: "ready" as const,
-                    createdAt: Date.now(),
-                  }
-                : form,
-            ),
-            pendingEvolutionReplay: current.pendingEvolutionReplay
-              ? {
-                  ...current.pendingEvolutionReplay,
-                  oldImageUrl:
-                    current.pendingEvolutionReplay.oldImageUrl === expiredUrl
-                      ? imageUrl
-                      : current.pendingEvolutionReplay.oldImageUrl,
-                  newImageUrl:
-                    current.pendingEvolutionReplay.newImageUrl === expiredUrl
-                      ? imageUrl
-                      : current.pendingEvolutionReplay.newImageUrl,
-                }
-              : undefined,
-          };
-        });
-      } catch {
-        failedNames.push(target.name);
-      } finally {
-        setLegacyRepairProgress({
-          completed: index + 1,
-          total: targets.length,
-        });
-      }
-    }
-
-    if (failedNames.length > 0) {
-      setLegacyRepairError(
-        `${failedNames.join("、")} 修复失败，可稍后再次尝试。`,
-      );
-    }
-    setRepairingLegacyImages(false);
   };
 
   const regenerateEvolutionImage = async () => {
@@ -1152,39 +1041,6 @@ export const ModeSelectScreen: React.FC = () => {
 
               {roster.length > 0 ? (
                 <div className="flex flex-1 flex-col gap-4">
-                  {(legacyImageCount > 0 || repairingLegacyImages) && (
-                    <div className="flex flex-col gap-3 rounded-lg bg-[#151821]/90 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="text-[11px] font-black tracking-[0.2em] text-white">
-                          检测到 {legacyImageCount} 张历史临时图片
-                        </div>
-                        <div className="mt-1 text-[10px] leading-relaxed text-[#8a8d91]">
-                          旧地址已过期，需按原角色提示词重新生成并保存到当前浏览器。
-                          {repairingLegacyImages &&
-                            ` 当前进度 ${legacyRepairProgress.completed}/${legacyRepairProgress.total}。`}
-                        </div>
-                        {legacyRepairError && (
-                          <div className="mt-1 text-[10px] text-[#FF6B9D]">
-                            {legacyRepairError}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={repairLegacyImages}
-                        disabled={repairingLegacyImages}
-                        className="flex shrink-0 items-center justify-center gap-2 rounded bg-white/10 px-3 py-2 text-[10px] font-black tracking-[0.16em] text-white transition-colors hover:bg-white/15 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        <RotateCcw
-                          size={13}
-                          className={
-                            repairingLegacyImages ? "animate-spin" : ""
-                          }
-                        />
-                        {repairingLegacyImages ? "正在修复" : "修复历史图片"}
-                      </button>
-                    </div>
-                  )}
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
                     {rosterPreview.map((char) => {
                       const evolutionLocked =
